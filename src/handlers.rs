@@ -1,0 +1,115 @@
+use crate::{
+    events::{Event, EventError, IssueCommentEvent},
+    Args,
+};
+use anyhow::{format_err, Error, Result};
+use axum::{
+    body::Bytes,
+    http::{HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
+    Extension, Router,
+};
+use hmac::{Hmac, Mac};
+use octocrab::Octocrab;
+use sha2::Sha256;
+use std::{env, fs};
+use tower::ServiceBuilder;
+use tower_http::trace::TraceLayer;
+use tracing::{debug, error};
+
+/// Environment variable containing the webhook secret.
+const WEBHOOK_SECRET: &str = "WEBHOOK_SECRET";
+
+/// Header representing the kind of the event received.
+const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
+
+/// Header representing the event payload signature.
+const GITHUB_SIGNATURE_HEADER: &str = "X-Hub-Signature-256";
+
+/// Setup HTTP server router.
+pub(crate) fn setup_router(args: Args) -> Result<Router> {
+    // Setup Github client
+    let app_private_key = fs::read(args.app_private_key)?;
+    let app_private_key = jsonwebtoken::EncodingKey::from_rsa_pem(&app_private_key[..])?;
+    let github_client = Octocrab::builder()
+        .app(args.app_id.into(), app_private_key)
+        .build()?;
+
+    // Setup webhook secret
+    let webhook_secret = match env::var(WEBHOOK_SECRET) {
+        Err(_) => return Err(format_err!("{} not found in environment", WEBHOOK_SECRET)),
+        Ok(v) => v,
+    };
+
+    // Setup router
+    let router = Router::new()
+        .route("/", get(index))
+        .route("/api/events", post(event))
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .layer(Extension(github_client))
+                .layer(Extension(webhook_secret)),
+        );
+
+    Ok(router)
+}
+
+/// Handler that returns the index document.
+async fn index() -> impl IntoResponse {
+    "Welcome to GitVote!"
+}
+
+/// Handler that processes webhook events from GitHub.
+async fn event(
+    headers: HeaderMap,
+    body: Bytes,
+    Extension(webhook_secret): Extension<String>,
+) -> Result<(), StatusCode> {
+    // Verify signature
+    if verify_signature(
+        headers.get(GITHUB_SIGNATURE_HEADER),
+        webhook_secret.as_bytes(),
+        &body[..],
+    )
+    .is_err()
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+
+    // Parse event kind
+    let event = match Event::try_from(headers.get(GITHUB_EVENT_HEADER)) {
+        Ok(event) => event,
+        Err(EventError::HeaderMissing) => return Err(StatusCode::BAD_REQUEST),
+        Err(EventError::UnsupportedEvent) => return Ok(()),
+    };
+
+    // Take action based on the event received
+    match event {
+        Event::IssueComment => {
+            let event: IssueCommentEvent = serde_json::from_slice(&body[..]).map_err(|err| {
+                error!("error deserializing event: {}", err);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+            debug!("{:?}", event);
+        }
+    }
+
+    Ok(())
+}
+
+/// Verify that the signature provided is valid.
+fn verify_signature(signature: Option<&HeaderValue>, secret: &[u8], body: &[u8]) -> Result<()> {
+    if let Some(signature) = signature
+        .and_then(|s| s.to_str().ok())
+        .and_then(|s| s.strip_prefix("sha256="))
+        .and_then(|s| hex::decode(s).ok())
+    {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret)?;
+        mac.update(body);
+        mac.verify_slice(&signature[..]).map_err(Error::new)
+    } else {
+        Err(format_err!("no valid signature found"))
+    }
+}
