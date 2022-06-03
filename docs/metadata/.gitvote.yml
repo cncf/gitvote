@@ -1,0 +1,22 @@
+# GitVote metadata file
+# This file must be located at the root of the repository
+
+# Voters (required)
+# List of GitHub usernames of the users who have binding votes
+voters:
+  - tegioz
+  - cynthia-sg
+
+# Pass threshold (required)
+# Percentage of votes required to pass the vote
+passThreshold: 67
+
+# Voting duration (required)
+# How long the vote will be open
+# See https://docs.rs/humantime/latest/humantime/ for format details
+duration: 5min 30s
+
+# Close reminder (optional)
+# Send a friendly reminder before the vote ends
+# See https://docs.rs/humantime/latest/humantime/ for format details
+reminder: 1min

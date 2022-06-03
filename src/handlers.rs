@@ -1,6 +1,6 @@
 use crate::{
+    commands::Command,
     events::{Event, EventError, IssueCommentEvent},
-    Args,
 };
 use anyhow::{format_err, Error, Result};
 use axum::{
@@ -11,12 +11,12 @@ use axum::{
     Extension, Router,
 };
 use hmac::{Hmac, Mac};
-use octocrab::Octocrab;
 use sha2::Sha256;
-use std::{env, fs};
+use std::env;
+use tokio::sync::mpsc::Sender;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error};
+use tracing::error;
 
 /// Environment variable containing the webhook secret.
 const WEBHOOK_SECRET: &str = "WEBHOOK_SECRET";
@@ -28,14 +28,7 @@ const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
 const GITHUB_SIGNATURE_HEADER: &str = "X-Hub-Signature-256";
 
 /// Setup HTTP server router.
-pub(crate) fn setup_router(args: Args) -> Result<Router> {
-    // Setup Github client
-    let app_private_key = fs::read(args.app_private_key)?;
-    let app_private_key = jsonwebtoken::EncodingKey::from_rsa_pem(&app_private_key[..])?;
-    let github_client = Octocrab::builder()
-        .app(args.app_id.into(), app_private_key)
-        .build()?;
-
+pub(crate) async fn setup_router(cmds_tx: Sender<Command>) -> Result<Router> {
     // Setup webhook secret
     let webhook_secret = match env::var(WEBHOOK_SECRET) {
         Err(_) => return Err(format_err!("{} not found in environment", WEBHOOK_SECRET)),
@@ -49,8 +42,8 @@ pub(crate) fn setup_router(args: Args) -> Result<Router> {
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
-                .layer(Extension(github_client))
-                .layer(Extension(webhook_secret)),
+                .layer(Extension(webhook_secret))
+                .layer(Extension(cmds_tx)),
         );
 
     Ok(router)
@@ -66,6 +59,7 @@ async fn event(
     headers: HeaderMap,
     body: Bytes,
     Extension(webhook_secret): Extension<String>,
+    Extension(cmds_tx): Extension<Sender<Command>>,
 ) -> Result<(), StatusCode> {
     // Verify signature
     if verify_signature(
@@ -85,14 +79,18 @@ async fn event(
         Err(EventError::UnsupportedEvent) => return Ok(()),
     };
 
-    // Take action based on the event received
+    // Take action based on the kind of event received
     match event {
+        // Extract command from comment (if available) and queue it
         Event::IssueComment => {
             let event: IssueCommentEvent = serde_json::from_slice(&body[..]).map_err(|err| {
                 error!("error deserializing event: {}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-            debug!("{:?}", event);
+            match Command::try_from(event).ok() {
+                Some(cmd) => cmds_tx.send(cmd).await.unwrap(),
+                None => return Ok(()),
+            };
         }
     }
 

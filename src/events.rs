@@ -1,15 +1,17 @@
 use axum::http::HeaderValue;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
-pub(crate) enum Event {
-    IssueComment,
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
+/// Errors that may occur while creating a new event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum EventError {
     HeaderMissing,
     UnsupportedEvent,
+}
+
+/// Represents the kind of a GitHub webhook event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) enum Event {
+    IssueComment,
 }
 
 impl TryFrom<Option<&HeaderValue>> for Event {
@@ -26,7 +28,7 @@ impl TryFrom<Option<&HeaderValue>> for Event {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct IssueCommentEvent {
     pub action: IssueCommentEventAction,
     pub comment: Comment,
@@ -35,7 +37,7 @@ pub(crate) struct IssueCommentEvent {
     pub repository: Repository,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum IssueCommentEventAction {
     Created,
@@ -43,7 +45,7 @@ pub(crate) enum IssueCommentEventAction {
     Edited,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Comment {
     pub id: u64,
     pub node_id: String,
@@ -51,27 +53,27 @@ pub(crate) struct Comment {
     pub user: User,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct User {
     pub id: u64,
     pub node_id: String,
     pub login: String,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Installation {
     pub id: u64,
     pub node_id: String,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Issue {
     pub id: u64,
     pub node_id: String,
     pub title: String,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Repository {
     pub id: u64,
     pub node_id: String,
