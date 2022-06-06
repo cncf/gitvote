@@ -1,17 +1,10 @@
-use std::fs;
-
 use crate::{events::IssueCommentEvent, Args};
 use anyhow::Result;
-use lazy_static::lazy_static;
 use octocrab::Octocrab;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 use tracing::debug;
-
-lazy_static! {
-    pub(crate) static ref CMD: Regex = Regex::new(r#"^/([a-z]+)$"#).expect("invalid CMD regexp");
-}
 
 /// Errors that may occur while creating a new command.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -39,15 +32,16 @@ impl TryFrom<IssueCommentEvent> for Command {
     }
 }
 
-/// A processor is in charge of executing commands.
+/// A manager is in charge of managing votes. It creates them when requested
+/// via commands, closes them at the scheduled time and publishes results.
 #[derive(Debug)]
-pub(crate) struct Processor {
-    cmds_rx: Receiver<Command>,
+pub(crate) struct Manager {
     app_github_client: Octocrab,
+    commands_dispatcher: JoinHandle<()>,
 }
 
-impl Processor {
-    /// Create a new processor instance.
+impl Manager {
+    /// Create a new manager instance.
     pub(crate) fn new(args: Args, cmds_rx: Receiver<Command>) -> Result<Self> {
         // Setup application Github client
         let app_private_key = fs::read(args.app_private_key)?;
@@ -56,16 +50,24 @@ impl Processor {
             .app(args.app_id.into(), app_private_key)
             .build()?;
 
+        // Launch commands dispatcher
+        let commands_dispatcher = Manager::commands_dispatcher(cmds_rx);
+
         Ok(Self {
-            cmds_rx,
             app_github_client,
+            commands_dispatcher,
         })
     }
 
-    /// Start processing commands.
-    pub(crate) fn start(mut self) -> JoinHandle<()> {
+    /// Stop the manager instance.
+    pub(crate) fn stop(&self) {
+        self.commands_dispatcher.abort();
+    }
+
+    /// Launch commands dispatcher.
+    fn commands_dispatcher(mut cmds_rx: Receiver<Command>) -> JoinHandle<()> {
         tokio::spawn(async move {
-            while let Some(cmd) = self.cmds_rx.recv().await {
+            while let Some(cmd) = cmds_rx.recv().await {
                 debug!("{:?}", cmd);
             }
         })

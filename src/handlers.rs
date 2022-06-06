@@ -1,6 +1,6 @@
 use crate::{
-    commands::Command,
     events::{Event, EventError, IssueCommentEvent},
+    votes::Command,
 };
 use anyhow::{format_err, Error, Result};
 use axum::{
