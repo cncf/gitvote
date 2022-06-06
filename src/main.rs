@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{signal, sync::mpsc};
 use tracing::info;
 
@@ -31,9 +31,10 @@ async fn main() -> Result<()> {
     }
     tracing_subscriber::fmt::init();
 
-    // Setup and launch votes manager
+    // Setup and launch votes manager and commands dispatcher
     let (cmds_tx, cmds_rx) = mpsc::channel(100);
-    let manager = votes::Manager::new(args, cmds_rx)?;
+    let votes_manager = Arc::new(votes::Manager::new(args)?);
+    let commands_dispatcher = votes::commands_dispatcher(cmds_rx, votes_manager.clone());
 
     // Setup and launch HTTP server
     let router = handlers::setup_router(cmds_tx).await?;
@@ -46,8 +47,8 @@ async fn main() -> Result<()> {
         .unwrap();
     info!("gitvote service stopped");
 
-    // Stop votes manager
-    manager.stop();
+    // Stop commands dispatcher
+    commands_dispatcher.abort();
 
     Ok(())
 }

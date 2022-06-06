@@ -4,7 +4,7 @@ use serde::Deserialize;
 use std::time::Duration;
 
 /// Metadata file name.
-const METADATA_FILE: &str = ".gitvote.yml";
+pub const METADATA_FILE: &str = ".gitvote.yml";
 
 /// GitVote metadata.
 #[derive(Debug, Clone, Deserialize, PartialEq)]

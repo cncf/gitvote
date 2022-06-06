@@ -70,6 +70,7 @@ pub(crate) struct Installation {
 pub(crate) struct Issue {
     pub id: u64,
     pub node_id: String,
+    pub number: u64,
     pub title: String,
 }
 
