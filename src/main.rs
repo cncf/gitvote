@@ -1,3 +1,4 @@
+use crate::votes::Processor;
 use anyhow::{Context, Result};
 use clap::Parser;
 use config::{Config, File};
@@ -47,10 +48,9 @@ async fn main() -> Result<()> {
     let db_cfg: DbConfig = cfg.get("db")?;
     let db = db_cfg.create_pool(Some(Runtime::Tokio1), connector)?;
 
-    // Setup and launch votes manager and commands dispatcher
+    // Setup and launch votes processor
     let (cmds_tx, cmds_rx) = mpsc::channel(100);
-    let votes_manager = Arc::new(votes::Manager::new(cfg.clone(), db)?);
-    let commands_dispatcher = votes::commands_dispatcher(cmds_rx, votes_manager.clone());
+    let processor_done = Processor::start(cfg.clone(), db, cmds_rx)?;
 
     // Setup and launch HTTP server
     let router = handlers::setup_router(cmds_tx).await?;
@@ -63,8 +63,8 @@ async fn main() -> Result<()> {
         .unwrap();
     info!("gitvote service stopped");
 
-    // Stop commands dispatcher
-    commands_dispatcher.abort();
+    // Wait for votes processor to finish
+    processor_done.await;
 
     Ok(())
 }

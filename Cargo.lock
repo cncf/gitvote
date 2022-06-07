@@ -634,6 +634,7 @@ dependencies = [
  "clap",
  "config",
  "deadpool-postgres",
+ "futures",
  "hex",
  "hmac",
  "humantime",

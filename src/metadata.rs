@@ -18,7 +18,7 @@ pub(crate) struct Metadata {
 
 impl Metadata {
     /// Create a new metadata instance from the metadata file in the GitHub repo.
-    pub(crate) async fn from_remote(
+    pub(crate) async fn from_repo(
         installation_github_client: &Octocrab,
         owner: &str,
         repo: &str,
