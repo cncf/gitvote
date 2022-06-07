@@ -1,13 +1,13 @@
 use anyhow::Result;
 use octocrab::Octocrab;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Metadata file name.
 pub const METADATA_FILE: &str = ".gitvote.yml";
 
 /// GitVote metadata.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Metadata {
     pub voters: Vec<String>,

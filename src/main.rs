@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use config::{Config, File};
+use deadpool_postgres::{Config as DbConfig, Runtime};
+use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
+use postgres_openssl::MakeTlsConnector;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{signal, sync::mpsc};
 use tracing::info;
@@ -37,9 +40,16 @@ async fn main() -> Result<()> {
     }
     tracing_subscriber::fmt::init();
 
+    // Setup database
+    let mut builder = SslConnector::builder(SslMethod::tls())?;
+    builder.set_verify(SslVerifyMode::NONE);
+    let connector = MakeTlsConnector::new(builder.build());
+    let db_cfg: DbConfig = cfg.get("db")?;
+    let db = db_cfg.create_pool(Some(Runtime::Tokio1), connector)?;
+
     // Setup and launch votes manager and commands dispatcher
     let (cmds_tx, cmds_rx) = mpsc::channel(100);
-    let votes_manager = Arc::new(votes::Manager::new(cfg.clone())?);
+    let votes_manager = Arc::new(votes::Manager::new(cfg.clone(), db)?);
     let commands_dispatcher = votes::commands_dispatcher(cmds_rx, votes_manager.clone());
 
     // Setup and launch HTTP server

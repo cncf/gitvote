@@ -6,10 +6,12 @@ use crate::{
 use anyhow::{Context, Result};
 use askama::Template;
 use config::Config;
+use deadpool_postgres::Pool as DbPool;
 use octocrab::{models::InstallationId, Octocrab};
 use serde::{Deserialize, Serialize};
 use std::{fs, sync::Arc};
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
+use tokio_postgres::types::Json;
 use tracing::error;
 
 /// Errors that may occur while creating a new command.
@@ -66,14 +68,14 @@ pub(crate) fn commands_dispatcher(
 
 /// A manager is in charge of managing votes: create them, stop at scheduled
 /// time, publish results, etc.
-#[derive(Debug)]
 pub(crate) struct Manager {
     app_github_client: Octocrab,
+    db: DbPool,
 }
 
 impl Manager {
     /// Create a new manager instance.
-    pub(crate) fn new(cfg: Arc<Config>) -> Result<Self> {
+    pub(crate) fn new(cfg: Arc<Config>, db: DbPool) -> Result<Self> {
         // Setup application Github client
         let app_id = cfg.get_int("github.appID")? as u64;
         let app_private_key_path = cfg.get_string("github.appPrivateKey")?;
@@ -83,7 +85,10 @@ impl Manager {
             .app(app_id.into(), app_private_key)
             .build()?;
 
-        Ok(Self { app_github_client })
+        Ok(Self {
+            app_github_client,
+            db,
+        })
     }
 
     /// Create a new vote.
@@ -107,7 +112,15 @@ impl Manager {
         //
         // Metadata will be stored as well as we want the vote to be processed
         // with the configuration available at the moment the vote was created
-        // TODO
+        let db = self.db.get().await?;
+        db.execute(
+            "
+            insert into vote (event, metadata, ends_at)
+            values ($1::jsonb, $2::jsonb, current_timestamp + ($3::bigint || ' seconds')::interval)
+            ",
+            &[&Json(&event), &Json(&md), &(md.duration.as_secs() as i64)],
+        )
+        .await?;
 
         // Post vote created comment on the issue/pr
         installation_github_client

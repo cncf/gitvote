@@ -48,35 +48,27 @@ pub(crate) enum IssueCommentEventAction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Comment {
     pub id: u64,
-    pub node_id: String,
     pub body: Option<String>,
     pub user: User,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct User {
-    pub id: u64,
-    pub node_id: String,
     pub login: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Installation {
     pub id: u64,
-    pub node_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Issue {
-    pub id: u64,
-    pub node_id: String,
     pub number: u64,
     pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Repository {
-    pub id: u64,
-    pub node_id: String,
     pub full_name: String,
 }
