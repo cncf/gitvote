@@ -1,10 +1,10 @@
 use crate::{
     events::{IssueCommentEvent, IssueCommentEventAction},
     metadata::{Metadata, METADATA_FILE},
-    Args,
 };
 use anyhow::{Context, Result};
 use askama::Template;
+use config::Config;
 use octocrab::{models::InstallationId, Octocrab};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, sync::Arc};
@@ -72,12 +72,14 @@ pub(crate) struct Manager {
 
 impl Manager {
     /// Create a new manager instance.
-    pub(crate) fn new(args: Args) -> Result<Self> {
+    pub(crate) fn new(cfg: Arc<Config>) -> Result<Self> {
         // Setup application Github client
-        let app_private_key = fs::read(args.app_private_key)?;
+        let app_id = cfg.get_int("github.appID")? as u64;
+        let app_private_key_path = cfg.get_string("github.appPrivateKey")?;
+        let app_private_key = fs::read(app_private_key_path)?;
         let app_private_key = jsonwebtoken::EncodingKey::from_rsa_pem(&app_private_key[..])?;
         let app_github_client = Octocrab::builder()
-            .app(args.app_id.into(), app_private_key)
+            .app(app_id.into(), app_private_key)
             .build()?;
 
         Ok(Self { app_github_client })
@@ -92,7 +94,7 @@ impl Manager {
         // Get metadata from repository
         let mut parts = event.repository.full_name.split('/');
         let (owner, repo) = (parts.next().unwrap(), parts.next().unwrap());
-        let md = match Metadata::new(&installation_github_client, owner, repo)
+        let md = match Metadata::from_remote(&installation_github_client, owner, repo)
             .await
             .context("error getting metadata")?
         {

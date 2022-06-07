@@ -13,10 +13,13 @@ passThreshold: 67
 
 # Voting duration (required)
 # How long the vote will be open
-# See https://docs.rs/humantime/latest/humantime/ for format details
-duration: 5min 30s
-
-# Close reminder (optional)
-# Send a friendly reminder before the vote ends
-# See https://docs.rs/humantime/latest/humantime/ for format details
-reminder: 1min
+#
+# Units supported (can be combined as in 5mins 30s):
+#
+#   seconds | second | secs | sec | s
+#   minutes | minute | mins | min | m
+#   hours   | hour   | hrs  | hrs | h
+#   days    | day    | d
+#   weeks   | week   | w
+#
+duration: 5mins 30s

@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
+use config::{Config, File};
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{signal, sync::mpsc};
 use tracing::info;
@@ -12,18 +13,22 @@ mod votes;
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
 struct Args {
-    /// GitHub App ID.
-    #[clap(long)]
-    app_id: u64,
-
-    /// GitHub App private key path.
-    #[clap(long, parse(from_os_str))]
-    app_private_key: PathBuf,
+    /// Config file path
+    #[clap(short, long, parse(from_os_str))]
+    config: PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    // Setup configuration
+    let cfg = Config::builder()
+        .set_default("addr", "127.0.0.1:9000")?
+        .add_source(File::from(args.config))
+        .build()
+        .context("error setting up configuration")?;
+    let cfg = Arc::new(cfg);
 
     // Setup logging
     if std::env::var_os("RUST_LOG").is_none() {
@@ -33,12 +38,12 @@ async fn main() -> Result<()> {
 
     // Setup and launch votes manager and commands dispatcher
     let (cmds_tx, cmds_rx) = mpsc::channel(100);
-    let votes_manager = Arc::new(votes::Manager::new(args)?);
+    let votes_manager = Arc::new(votes::Manager::new(cfg.clone())?);
     let commands_dispatcher = votes::commands_dispatcher(cmds_rx, votes_manager.clone());
 
     // Setup and launch HTTP server
     let router = handlers::setup_router(cmds_tx).await?;
-    let addr = SocketAddr::from(([0, 0, 0, 0], 9000));
+    let addr: SocketAddr = cfg.get_string("addr")?.parse()?;
     info!("gitvote service started - listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(router.into_make_service())

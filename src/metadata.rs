@@ -14,13 +14,11 @@ pub(crate) struct Metadata {
     pub pass_threshold: f64,
     #[serde(with = "humantime_serde")]
     pub duration: Duration,
-    #[serde(with = "humantime_serde")]
-    pub reminder: Duration,
 }
 
 impl Metadata {
     /// Create a new metadata instance from the metadata file in the GitHub repo.
-    pub(crate) async fn new(
+    pub(crate) async fn from_remote(
         installation_github_client: &Octocrab,
         owner: &str,
         repo: &str,
