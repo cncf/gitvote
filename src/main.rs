@@ -8,6 +8,7 @@ use tracing::info;
 mod events;
 mod handlers;
 mod metadata;
+mod templates;
 mod votes;
 
 #[derive(Debug, Parser)]
