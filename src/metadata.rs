@@ -8,7 +8,6 @@ pub const METADATA_FILE: &str = ".gitvote.yml";
 
 /// GitVote metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct Metadata {
     pub voters: Vec<String>,
     pub pass_threshold: f64,

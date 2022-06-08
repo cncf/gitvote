@@ -1,4 +1,3 @@
-use crate::votes::Processor;
 use anyhow::{Context, Result};
 use clap::Parser;
 use config::{Config, File};
@@ -6,7 +5,10 @@ use deadpool_postgres::{Config as DbConfig, Runtime};
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio::{signal, sync::mpsc};
+use tokio::{
+    signal,
+    sync::{broadcast, mpsc},
+};
 use tracing::info;
 
 mod events;
@@ -50,7 +52,9 @@ async fn main() -> Result<()> {
 
     // Setup and launch votes processor
     let (cmds_tx, cmds_rx) = mpsc::channel(100);
-    let processor_done = Processor::start(cfg.clone(), db, cmds_rx)?;
+    let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
+    let votes_processor = votes::Processor::new(cfg.clone(), db)?;
+    let votes_processor_done = votes_processor.start(cmds_rx, stop_tx.clone());
 
     // Setup and launch HTTP server
     let router = handlers::setup_router(cmds_tx).await?;
@@ -63,8 +67,9 @@ async fn main() -> Result<()> {
         .unwrap();
     info!("gitvote service stopped");
 
-    // Wait for votes processor to finish
-    processor_done.await;
+    // Ask votes processor to stop and wait for it to finish
+    drop(stop_tx);
+    votes_processor_done.await;
 
     Ok(())
 }

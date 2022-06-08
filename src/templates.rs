@@ -1,9 +1,9 @@
 use crate::{
     events::IssueCommentEvent,
     metadata::{Metadata, METADATA_FILE},
+    votes::VoteResults,
 };
 use askama::Template;
-use std::collections::HashMap;
 
 /// Template for the vote created comment.
 #[derive(Debug, Clone, Template)]
@@ -19,6 +19,7 @@ pub(crate) struct VoteCreated<'a> {
 }
 
 impl<'a> VoteCreated<'a> {
+    /// Create a new VoteCreated template.
     pub(crate) fn new(event: &'a IssueCommentEvent, md: &'a Metadata) -> Self {
         Self {
             creator: &event.comment.user.login,
@@ -39,12 +40,12 @@ impl<'a> VoteCreated<'a> {
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-closed.md")]
 pub(crate) struct VoteClosed<'a> {
-    passed: bool,
-    in_favor_percentage: f64,
-    pass_threshold: f64,
-    in_favor: u64,
-    against: u64,
-    abstain: u64,
-    not_voted: u64,
-    voters: HashMap<&'a str, &'a str>,
+    results: &'a VoteResults,
+}
+
+impl<'a> VoteClosed<'a> {
+    /// Create a new VoteClosed template.
+    pub(crate) fn new(results: &'a VoteResults) -> Self {
+        Self { results }
+    }
 }
