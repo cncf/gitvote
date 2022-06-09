@@ -9,7 +9,7 @@ use config::Config;
 use deadpool_postgres::Pool as DbPool;
 use futures::future::{self, JoinAll};
 use lazy_static::lazy_static;
-use octocrab::{models::InstallationId, Octocrab};
+use octocrab::{models::InstallationId, Octocrab, Page};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, sync::Arc};
@@ -331,7 +331,8 @@ impl Processor {
             "https://api.github.com/repos/{}/{}/issues/comments/{}/reactions",
             owner, repo, vote_comment_id
         );
-        let reactions: Vec<Reaction> = installation_github_client.get(url, None::<&()>).await?;
+        let first_page: Page<Reaction> = installation_github_client.get(url, None::<&()>).await?;
+        let reactions = installation_github_client.all_pages(first_page).await?;
 
         // Count votes
         let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
