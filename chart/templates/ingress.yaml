@@ -1,0 +1,27 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "chart.resourceNamePrefix" . }}gitvote
+  labels:
+    app.kubernetes.io/component: gitvote
+    {{- include "chart.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  defaultBackend:
+    service:
+      name: {{ include "chart.resourceNamePrefix" . }}gitvote
+      port:
+        number: {{ .Values.service.port }}
+  {{- with .Values.ingress.rules }}
+  rules:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

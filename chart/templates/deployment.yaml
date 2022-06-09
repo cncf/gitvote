@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.resourceNamePrefix" . }}gitvote
+  labels:
+    app.kubernetes.io/component: gitvote
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.deploy.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: gitvote
+      {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: gitvote
+        {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      initContainers:
+      - name: check-db-ready
+        image: {{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}
+        imagePullPolicy: {{ .Values.pullPolicy }}
+        env:
+          - name: PGHOST
+            value: {{ default (printf "%s-postgresql.%s" .Release.Name .Release.Namespace) .Values.db.host }}
+          - name: PGPORT
+            value: "{{ .Values.db.port }}"
+        command: ['sh', '-c', 'until pg_isready; do echo waiting for database; sleep 2; done;']
+      containers:
+        - name: gitvote
+          image: {{ .Values.deploy.image.repository }}:{{ .Values.imageTag | default (printf "v%s" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          volumeMounts:
+          - name: gitvote-config
+            mountPath: {{ .Values.configDir | quote }}
+            readOnly: true
+          ports:
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.deploy.resources | nindent 12 }}
+          command: ['gitvote', '-c', '{{ .Values.configDir }}/gitvote.yml']
+      volumes:
+      - name: gitvote-config
+        secret:
+          secretName: {{ include "chart.resourceNamePrefix" . }}gitvote-config
