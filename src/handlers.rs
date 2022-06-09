@@ -11,16 +11,14 @@ use axum::{
     routing::{get, post},
     Extension, Router,
 };
+use config::Config;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use std::env;
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::error;
-
-/// Environment variable containing the webhook secret.
-const WEBHOOK_SECRET: &str = "WEBHOOK_SECRET";
 
 /// Header representing the kind of the event received.
 const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
@@ -29,12 +27,9 @@ const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
 const GITHUB_SIGNATURE_HEADER: &str = "X-Hub-Signature-256";
 
 /// Setup HTTP server router.
-pub(crate) async fn setup_router(cmds_tx: Sender<Command>) -> Result<Router> {
+pub(crate) async fn setup_router(cfg: Arc<Config>, cmds_tx: Sender<Command>) -> Result<Router> {
     // Setup webhook secret
-    let webhook_secret = match env::var(WEBHOOK_SECRET) {
-        Err(_) => return Err(format_err!("{} not found in environment", WEBHOOK_SECRET)),
-        Ok(v) => v,
-    };
+    let webhook_secret = cfg.get_string("github.webhookSecret")?;
 
     // Setup router
     let router = Router::new()

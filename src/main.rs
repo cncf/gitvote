@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
     let votes_processor_done = votes_processor.start(cmds_rx, stop_tx.clone());
 
     // Setup and launch HTTP server
-    let router = handlers::setup_router(cmds_tx).await?;
+    let router = handlers::setup_router(cfg.clone(), cmds_tx).await?;
     let addr: SocketAddr = cfg.get_string("addr")?.parse()?;
     info!("gitvote service started - listening on {}", addr);
     axum::Server::bind(&addr)
