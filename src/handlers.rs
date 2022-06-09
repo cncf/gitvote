@@ -1,5 +1,5 @@
 use crate::{
-    events::{Event, EventError, IssueCommentEvent},
+    github::{Event, EventError, IssueCommentEvent},
     templates,
     votes::Command,
 };
@@ -88,7 +88,7 @@ async fn event(
                 error!("error deserializing event: {}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-            match Command::try_from(event).ok() {
+            match Command::from_event(event) {
                 Some(cmd) => cmds_tx.send(cmd).await.unwrap(),
                 None => return Ok(()),
             };

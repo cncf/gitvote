@@ -64,6 +64,7 @@ pub(crate) struct Installation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Issue {
+    pub id: u64,
     pub number: u64,
     pub title: String,
 }
@@ -71,4 +72,10 @@ pub(crate) struct Issue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Repository {
     pub full_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Reaction {
+    pub user: User,
+    pub content: String,
 }

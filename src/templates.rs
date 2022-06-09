@@ -1,7 +1,7 @@
 use crate::{
-    events::IssueCommentEvent,
+    github::IssueCommentEvent,
     metadata::{Metadata, METADATA_FILE},
-    votes::VoteResults,
+    votes::Results,
 };
 use askama::Template;
 
@@ -25,7 +25,7 @@ pub(crate) struct VoteCreated<'a> {
 
 impl<'a> VoteCreated<'a> {
     /// Create a new VoteCreated template.
-    pub(crate) fn new(event: &'a IssueCommentEvent, md: &'a Metadata) -> Self {
+    pub(crate) fn new(event: &'a IssueCommentEvent, metadata: &'a Metadata) -> Self {
         Self {
             creator: &event.comment.user.login,
             issue_title: &event.issue.title,
@@ -34,9 +34,9 @@ impl<'a> VoteCreated<'a> {
                 "https://github.com/{}/blob/HEAD/{}",
                 &event.repository.full_name, METADATA_FILE
             ),
-            voters: &md.voters,
-            duration: humantime::format_duration(md.duration).to_string(),
-            pass_threshold: md.pass_threshold,
+            voters: &metadata.voters,
+            duration: humantime::format_duration(metadata.duration).to_string(),
+            pass_threshold: metadata.pass_threshold,
         }
     }
 }
@@ -45,12 +45,12 @@ impl<'a> VoteCreated<'a> {
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-closed.md")]
 pub(crate) struct VoteClosed<'a> {
-    results: &'a VoteResults,
+    results: &'a Results,
 }
 
 impl<'a> VoteClosed<'a> {
     /// Create a new VoteClosed template.
-    pub(crate) fn new(results: &'a VoteResults) -> Self {
+    pub(crate) fn new(results: &'a Results) -> Self {
         Self { results }
     }
 }

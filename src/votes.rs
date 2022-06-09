@@ -1,5 +1,5 @@
 use crate::{
-    events::{IssueCommentEvent, IssueCommentEventAction, User},
+    github::{IssueCommentEvent, IssueCommentEventAction, Reaction},
     metadata::Metadata,
     templates,
 };
@@ -20,9 +20,8 @@ use tokio_postgres::types::Json;
 use tracing::error;
 use uuid::Uuid;
 
-/// How often do we check the database for votes that should be closed (in
-/// seconds).
-const VOTES_CLOSER_FREQUENCY: u64 = 30;
+/// How often do we check the database for votes that should be closed.
+const VOTES_CLOSER_FREQUENCY: Duration = Duration::from_secs(30);
 
 /// Vote options.
 const IN_FAVOR: &str = "In favor";
@@ -30,41 +29,14 @@ const AGAINST: &str = "Against";
 const ABSTAIN: &str = "Abstain";
 const NOT_VOTED: &str = "Not voted";
 
-/// Errors that may occur while creating a new command.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) enum CommandError {
-    CommandNotFound,
-    UnsupportedEventAction,
-}
-
-/// Represents a command to be executed, usually created from a GitHub event.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) enum Command {
-    CreateVote { event: IssueCommentEvent },
-}
-
-impl TryFrom<IssueCommentEvent> for Command {
-    type Error = CommandError;
-
-    /// Try to create a new command from an issue comment event.
-    fn try_from(event: IssueCommentEvent) -> Result<Self, Self::Error> {
-        if event.action != IssueCommentEventAction::Created {
-            // We only react when a comment with a command is created for now
-            return Err(CommandError::UnsupportedEventAction);
-        }
-        match &event.comment.body {
-            Some(content) => match content.as_str() {
-                "/vote" => Ok(Command::CreateVote { event }),
-                _ => Err(CommandError::CommandNotFound),
-            },
-            None => Err(CommandError::CommandNotFound),
-        }
-    }
-}
+/// Vote options reactions.
+const IN_FAVOR_REACTION: &str = "+1";
+const AGAINST_REACTION: &str = "-1";
+const ABSTAIN_REACTION: &str = "eyes";
 
 /// Represents the results of a vote.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct VoteResults {
+pub(crate) struct Results {
     pub passed: bool,
     pub in_favor_percentage: f64,
     pub pass_threshold: f64,
@@ -75,15 +47,29 @@ pub(crate) struct VoteResults {
     pub voters: HashMap<String, String>,
 }
 
-/// Represents a reaction on an issue or pull request comment, which is the way
-/// of casting a vote.
+/// Represents a command to be executed, usually created from a GitHub event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct Reaction {
-    pub user: User,
-    pub content: String,
+pub(crate) enum Command {
+    CreateVote { event: IssueCommentEvent },
 }
 
-/// A votes processor is in charge of creating the votes requested, stopping
+impl Command {
+    /// Try to create a new command from an issue comment event.
+    pub(crate) fn from_event(event: IssueCommentEvent) -> Option<Self> {
+        if event.action != IssueCommentEventAction::Created {
+            return None;
+        }
+        match &event.comment.body {
+            Some(content) => match content.as_str() {
+                "/vote" => Some(Command::CreateVote { event }),
+                _ => None,
+            },
+            None => None,
+        }
+    }
+}
+
+/// A votes processor is in charge of creating the requested votes, stopping
 /// them at the scheduled time and publishing results, etc.
 pub(crate) struct Processor {
     db: DbPool,
@@ -102,7 +88,7 @@ impl Processor {
             .app(app_id.into(), app_private_key)
             .build()?;
 
-        // Setup votes processor and return it.
+        // Setup votes processor and return it
         let processor = Arc::new(Self {
             db,
             app_github_client,
@@ -125,9 +111,9 @@ impl Processor {
         future::join_all(vec![commands_handler, votes_closer])
     }
 
-    /// Receive commands from the queue and executes them. Commands are added
-    /// to the queue when certain events from GitHub are received on the
-    /// webhook endpoint.
+    /// Worker that receives commands from the queue and executes them.
+    /// Commands are added to the queue when certain events from GitHub are
+    /// received on the webhook endpoint.
     fn commands_handler(
         self: Arc<Self>,
         mut cmds_rx: mpsc::Receiver<Command>,
@@ -156,10 +142,11 @@ impl Processor {
         })
     }
 
-    /// Close votes that have finished periodically.
+    /// Worker that periodically checks the database for votes that should be
+    /// closed and closes them.
     fn votes_closer(self: Arc<Self>, mut stop_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_secs(VOTES_CLOSER_FREQUENCY));
+            let mut interval = time::interval(VOTES_CLOSER_FREQUENCY);
             loop {
                 tokio::select! {
                     // Call close_finished_votes periodically.
@@ -180,8 +167,6 @@ impl Processor {
 
     /// Close votes that have finished.
     async fn close_finished_votes(&self) -> Result<()> {
-        // Get finished votes not yet closed from database
-        let mut votes: Vec<Uuid> = Vec::new();
         let db = self.db.get().await?;
         let rows = db
             .query(
@@ -195,16 +180,11 @@ impl Processor {
             )
             .await?;
         for row in rows {
-            votes.push(row.get("vote_id"));
-        }
-
-        // Close them
-        for vote_id in votes {
+            let vote_id: Uuid = row.get("vote_id");
             if let Err(err) = self.close_vote(vote_id).await {
                 error!("error closing vote {}: {}", vote_id, err);
             }
         }
-
         Ok(())
     }
 
@@ -216,7 +196,7 @@ impl Processor {
 
         // Get metadata from repository
         let (owner, repo) = split_full_name(&event.repository.full_name);
-        let md = match Metadata::from_repo(&installation_github_client, owner, repo)
+        let metadata = match Metadata::from_repo(&installation_github_client, owner, repo)
             .await
             .context("error getting metadata")?
         {
@@ -229,7 +209,7 @@ impl Processor {
             .issues(owner, repo)
             .create_comment(
                 event.issue.number,
-                templates::VoteCreated::new(&event, &md).render()?,
+                templates::VoteCreated::new(&event, &metadata).render()?,
             )
             .await?;
 
@@ -255,8 +235,8 @@ impl Processor {
             &[
                 &(vote_comment.id.0 as i64),
                 &Json(&event),
-                &Json(&md),
-                &(md.duration.as_secs() as i64),
+                &Json(&metadata),
+                &(metadata.duration.as_secs() as i64),
             ],
         )
         .await?;
@@ -266,11 +246,9 @@ impl Processor {
 
     /// Close the vote provided.
     async fn close_vote(&self, vote_id: Uuid) -> Result<()> {
-        // Setup transaction
+        // Get vote information from database
         let mut db = self.db.get().await?;
         let tx = db.transaction().await?;
-
-        // Get vote information from database
         let row = tx
             .query_one(
                 "
@@ -284,7 +262,7 @@ impl Processor {
             .await?;
         let vote_comment_id: i64 = row.get("vote_comment_id");
         let Json(event): Json<IssueCommentEvent> = row.get("event");
-        let Json(md): Json<Metadata> = row.get("metadata");
+        let Json(metadata): Json<Metadata> = row.get("metadata");
 
         // Calculate results
         let installation_id = InstallationId(event.installation.id);
@@ -293,14 +271,14 @@ impl Processor {
         let results = self
             .calculate_vote_results(
                 &installation_github_client,
-                &md,
+                &metadata,
                 owner,
                 repo,
                 vote_comment_id,
             )
             .await?;
 
-        // Store results in database and commit transaction
+        // Store results in database
         tx.execute(
             "
             update vote set
@@ -330,11 +308,11 @@ impl Processor {
     async fn calculate_vote_results(
         &self,
         installation_github_client: &Octocrab,
-        md: &Metadata,
+        metadata: &Metadata,
         owner: &str,
         repo: &str,
         vote_comment_id: i64,
-    ) -> Result<VoteResults> {
+    ) -> Result<Results> {
         // Get vote comment reactions (aka votes)
         let url = format!(
             "https://api.github.com/repos/{}/{}/issues/comments/{}/reactions",
@@ -344,13 +322,13 @@ impl Processor {
 
         // Count votes
         let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
-        let mut voters: HashMap<String, String> = HashMap::with_capacity(md.voters.len());
+        let mut voters: HashMap<String, String> = HashMap::with_capacity(metadata.voters.len());
         let mut multiple_options_voters: Vec<String> = Vec::new();
         for reaction in reactions {
             let user = reaction.user.login;
 
-            // We only count the votes of user with a binding vote
-            if !md.voters.contains(&user) {
+            // We only count the votes of users with a binding vote
+            if !metadata.voters.contains(&user) {
                 continue;
             }
 
@@ -359,31 +337,34 @@ impl Processor {
                 continue;
             }
             if voters.contains_key(&user) {
+                // User has already voted (multiple options voter)
                 multiple_options_voters.push(user.clone());
                 voters.remove(&user);
             }
 
             // Track binding votes
             match reaction.content.as_str() {
-                "+1" => {
+                IN_FAVOR_REACTION => {
                     in_favor += 1;
                     voters.insert(user.clone(), IN_FAVOR.to_string());
                 }
-                "-1" => {
+                AGAINST_REACTION => {
                     against += 1;
                     voters.insert(user.clone(), AGAINST.to_string());
                 }
-                "eyes" => {
+                ABSTAIN_REACTION => {
                     abstain += 1;
                     voters.insert(user.clone(), ABSTAIN.to_string());
                 }
-                _ => {}
+                _ => {
+                    // Ignore other reactions
+                }
             }
         }
 
-        // Add users with binding vote who did not vote to the list of voters
+        // Add users with a binding vote who did not vote to the list of voters
         let mut not_voted = 0;
-        for user in &md.voters {
+        for user in &metadata.voters {
             if !voters.contains_key(user) {
                 not_voted += 1;
                 voters.insert(user.clone(), NOT_VOTED.to_string());
@@ -391,13 +372,13 @@ impl Processor {
         }
 
         // Prepare results and return them
-        let in_favor_percentage = in_favor as f64 / md.voters.len() as f64;
-        let passed = in_favor_percentage >= md.pass_threshold;
+        let in_favor_percentage = in_favor as f64 / metadata.voters.len() as f64;
+        let passed = in_favor_percentage >= metadata.pass_threshold;
 
-        Ok(VoteResults {
+        Ok(Results {
             passed,
             in_favor_percentage,
-            pass_threshold: md.pass_threshold,
+            pass_threshold: metadata.pass_threshold,
             in_favor,
             against,
             abstain,
