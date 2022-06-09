@@ -70,3 +70,7 @@ Only votes from users with a binding vote as defined in the configuration file w
 Once the vote time is up, the vote will be automatically closed and the results will be published in a new comment.
 
 ![create-vote](docs/screenshots/vote-closed.png)
+
+## License
+
+GitVote is an Open Source project licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
