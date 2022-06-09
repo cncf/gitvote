@@ -1,6 +1,6 @@
 use crate::{
+    conf::RepoConfig,
     github::{IssueCommentEvent, IssueCommentEventAction, Reaction},
-    metadata::Metadata,
     templates,
 };
 use anyhow::{Context, Result};
@@ -207,11 +207,11 @@ impl Processor {
         let installation_id = InstallationId(event.installation.id);
         let installation_github_client = self.app_github_client.installation(installation_id);
 
-        // Get metadata from repository
+        // Get repository configuration
         let (owner, repo) = split_full_name(&event.repository.full_name);
-        let metadata = match Metadata::from_repo(&installation_github_client, owner, repo)
+        let cfg = match RepoConfig::new(&installation_github_client, owner, repo)
             .await
-            .context("error getting metadata")?
+            .context("error getting repository configuration")?
         {
             Some(md) => md,
             None => return Ok(()),
@@ -222,21 +222,18 @@ impl Processor {
             .issues(owner, repo)
             .create_comment(
                 event.issue.number,
-                templates::VoteCreated::new(&event, &metadata).render()?,
+                templates::VoteCreated::new(&event, &cfg).render()?,
             )
             .await?;
 
         // Store vote information in database
-        //
-        // Metadata will be stored as well as we want the vote to be processed
-        // with the configuration available at the moment the vote was created
         let db = self.db.get().await?;
         db.execute(
             "
             insert into vote (
                 vote_comment_id,
                 event,
-                metadata,
+                config,
                 ends_at
             ) values (
                 $1::bigint,
@@ -248,8 +245,8 @@ impl Processor {
             &[
                 &(vote_comment.id.0 as i64),
                 &Json(&event),
-                &Json(&metadata),
-                &(metadata.duration.as_secs() as i64),
+                &Json(&cfg),
+                &(cfg.duration.as_secs() as i64),
             ],
         )
         .await?;
@@ -265,7 +262,7 @@ impl Processor {
         let row = tx
             .query_one(
                 "
-                select vote_comment_id, event, metadata
+                select vote_comment_id, event, config
                 from vote
                 where vote_id = $1::uuid
                 for update
@@ -275,7 +272,7 @@ impl Processor {
             .await?;
         let vote_comment_id: i64 = row.get("vote_comment_id");
         let Json(event): Json<IssueCommentEvent> = row.get("event");
-        let Json(metadata): Json<Metadata> = row.get("metadata");
+        let Json(cfg): Json<RepoConfig> = row.get("config");
 
         // Calculate results
         let installation_id = InstallationId(event.installation.id);
@@ -284,7 +281,7 @@ impl Processor {
         let results = self
             .calculate_vote_results(
                 &installation_github_client,
-                &metadata,
+                &cfg,
                 owner,
                 repo,
                 vote_comment_id,
@@ -321,7 +318,7 @@ impl Processor {
     async fn calculate_vote_results(
         &self,
         installation_github_client: &Octocrab,
-        metadata: &Metadata,
+        cfg: &RepoConfig,
         owner: &str,
         repo: &str,
         vote_comment_id: i64,
@@ -336,13 +333,13 @@ impl Processor {
 
         // Count votes
         let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
-        let mut voters: HashMap<String, String> = HashMap::with_capacity(metadata.voters.len());
+        let mut voters: HashMap<String, String> = HashMap::with_capacity(cfg.voters.len());
         let mut multiple_options_voters: Vec<String> = Vec::new();
         for reaction in reactions {
             let user = reaction.user.login;
 
             // We only count the votes of users with a binding vote
-            if !metadata.voters.contains(&user) {
+            if !cfg.voters.contains(&user) {
                 continue;
             }
 
@@ -378,7 +375,7 @@ impl Processor {
 
         // Add users with a binding vote who did not vote to the list of voters
         let mut not_voted = 0;
-        for user in &metadata.voters {
+        for user in &cfg.voters {
             if !voters.contains_key(user) {
                 not_voted += 1;
                 voters.insert(user.clone(), NOT_VOTED.to_string());
@@ -386,13 +383,13 @@ impl Processor {
         }
 
         // Prepare results and return them
-        let in_favor_percentage = in_favor as f64 / metadata.voters.len() as f64 * 100.0;
-        let passed = in_favor_percentage >= metadata.pass_threshold;
+        let in_favor_percentage = in_favor as f64 / cfg.voters.len() as f64 * 100.0;
+        let passed = in_favor_percentage >= cfg.pass_threshold;
 
         Ok(Results {
             passed,
             in_favor_percentage,
-            pass_threshold: metadata.pass_threshold,
+            pass_threshold: cfg.pass_threshold,
             in_favor,
             against,
             abstain,

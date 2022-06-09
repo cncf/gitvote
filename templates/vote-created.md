@@ -2,7 +2,7 @@
 
 **@{{ creator }}** has called for a vote on `{{ issue_title }}` (#{{ issue_number }}).
 
-The following users have binding votes as defined in the repository's [git-vote metadata file]({{ metadata_url }}):
+The following users have binding votes as defined in the repository's [git-vote configuration file]({{ config_url }}):
 
 | User |
 | ---- |

@@ -8,6 +8,6 @@ create table if not exists vote (
     closed boolean not null default false,
     closed_at timestamptz,
     event jsonb not null,
-    metadata jsonb not null,
+    config jsonb not null,
     results jsonb
 );

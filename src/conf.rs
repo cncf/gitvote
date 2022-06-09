@@ -3,21 +3,21 @@ use octocrab::Octocrab;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// Metadata file name.
-pub const METADATA_FILE: &str = ".gitvote.yml";
+/// GitVote repository configuration file name.
+pub const REPO_CONFIG_FILE: &str = ".gitvote.yml";
 
-/// GitVote metadata.
+/// GitVote repository configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct Metadata {
+pub(crate) struct RepoConfig {
     pub voters: Vec<String>,
     pub pass_threshold: f64,
     #[serde(with = "humantime_serde")]
     pub duration: Duration,
 }
 
-impl Metadata {
-    /// Create a new metadata instance from the metadata file in the GitHub repo.
-    pub(crate) async fn from_repo(
+impl RepoConfig {
+    /// Create a new repo config instance from the config file in GitHub.
+    pub(crate) async fn new(
         installation_github_client: &Octocrab,
         owner: &str,
         repo: &str,
@@ -25,7 +25,7 @@ impl Metadata {
         let response = installation_github_client
             .repos(owner, repo)
             .get_content()
-            .path(METADATA_FILE)
+            .path(REPO_CONFIG_FILE)
             .send()
             .await?;
         if response.items.len() != 1 {

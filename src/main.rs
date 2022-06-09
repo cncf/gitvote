@@ -11,9 +11,9 @@ use tokio::{
 };
 use tracing::info;
 
+mod conf;
 mod github;
 mod handlers;
-mod metadata;
 mod templates;
 mod votes;
 

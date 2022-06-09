@@ -1,6 +1,6 @@
 use crate::{
+    conf::{RepoConfig, REPO_CONFIG_FILE},
     github::IssueCommentEvent,
-    metadata::{Metadata, METADATA_FILE},
     votes::Results,
 };
 use askama::Template;
@@ -17,7 +17,7 @@ pub(crate) struct VoteCreated<'a> {
     creator: &'a str,
     issue_title: &'a str,
     issue_number: u64,
-    metadata_url: String,
+    config_url: String,
     voters: &'a Vec<String>,
     duration: String,
     pass_threshold: f64,
@@ -25,18 +25,18 @@ pub(crate) struct VoteCreated<'a> {
 
 impl<'a> VoteCreated<'a> {
     /// Create a new VoteCreated template.
-    pub(crate) fn new(event: &'a IssueCommentEvent, metadata: &'a Metadata) -> Self {
+    pub(crate) fn new(event: &'a IssueCommentEvent, cfg: &'a RepoConfig) -> Self {
         Self {
             creator: &event.comment.user.login,
             issue_title: &event.issue.title,
             issue_number: event.issue.number,
-            metadata_url: format!(
+            config_url: format!(
                 "https://github.com/{}/blob/HEAD/{}",
-                &event.repository.full_name, METADATA_FILE
+                &event.repository.full_name, REPO_CONFIG_FILE
             ),
-            voters: &metadata.voters,
-            duration: humantime::format_duration(metadata.duration).to_string(),
-            pass_threshold: metadata.pass_threshold,
+            voters: &cfg.voters,
+            duration: humantime::format_duration(cfg.duration).to_string(),
+            pass_threshold: cfg.pass_threshold,
         }
     }
 }

@@ -9,7 +9,7 @@ voters:
 
 # Pass threshold (required)
 # Percentage of votes required to pass the vote
-pass_threshold: 67
+pass_threshold: 50
 
 # Voting duration (required)
 # How long the vote will be open
@@ -21,4 +21,4 @@ pass_threshold: 67
 #   days    | day    | d
 #   weeks   | week   | w
 #
-duration: 5m
+duration: 15m
