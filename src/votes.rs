@@ -8,7 +8,9 @@ use askama::Template;
 use config::Config;
 use deadpool_postgres::Pool as DbPool;
 use futures::future::{self, JoinAll};
+use lazy_static::lazy_static;
 use octocrab::{models::InstallationId, Octocrab};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, sync::Arc};
 use tokio::{
@@ -19,6 +21,11 @@ use tokio::{
 use tokio_postgres::types::Json;
 use tracing::error;
 use uuid::Uuid;
+
+lazy_static! {
+    /// Regex used to detect commands in issues/prs comments.
+    pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(?P<cmd>vote)\s*$"#).expect("invalid CMD regexp");
+}
 
 /// How often do we check the database for votes that should be closed.
 const VOTES_CLOSER_FREQUENCY: Duration = Duration::from_secs(30);
@@ -56,16 +63,22 @@ pub(crate) enum Command {
 impl Command {
     /// Try to create a new command from an issue comment event.
     pub(crate) fn from_event(event: IssueCommentEvent) -> Option<Self> {
+        // Only events with action created are supported at the moment
         if event.action != IssueCommentEventAction::Created {
             return None;
         }
-        match &event.comment.body {
-            Some(content) => match content.as_str() {
-                "/vote" => Some(Command::CreateVote { event }),
-                _ => None,
-            },
-            None => None,
+
+        // Extract command from comment body
+        if let Some(content) = &event.comment.body {
+            if let Some(captures) = CMD.captures(content) {
+                let cmd = captures.get(1).unwrap().as_str();
+                match cmd {
+                    "vote" => return Some(Command::CreateVote { event }),
+                    _ => return None,
+                }
+            }
         }
+        None
     }
 }
 
@@ -372,7 +385,7 @@ impl Processor {
         }
 
         // Prepare results and return them
-        let in_favor_percentage = in_favor as f64 / metadata.voters.len() as f64;
+        let in_favor_percentage = in_favor as f64 / metadata.voters.len() as f64 * 100.0;
         let passed = in_favor_percentage >= metadata.pass_threshold;
 
         Ok(Results {
