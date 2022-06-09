@@ -51,51 +51,45 @@ checksum = "c5d78ce20460b82d3fa150275ed9d55e21064fc7951177baacf86a145c4a4b1f"
 
 [[package]]
 name = "askama"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb98f10f371286b177db5eeb9a6e5396609555686a35e1d4f7b9a9c6d8af0139"
+version = "0.11.2"
+source = "git+https://github.com/djc/askama?rev=6cce13f076bdd3e8d9b0bf888c0464a1af9df25f#6cce13f076bdd3e8d9b0bf888c0464a1af9df25f"
 dependencies = [
  "askama_derive",
  "askama_escape",
- "askama_shared",
+ "humansize",
+ "num-traits",
+ "percent-encoding",
+]
+
+[[package]]
+name = "askama_axum"
+version = "0.1.0"
+source = "git+https://github.com/djc/askama?rev=6cce13f076bdd3e8d9b0bf888c0464a1af9df25f#6cce13f076bdd3e8d9b0bf888c0464a1af9df25f"
+dependencies = [
+ "askama",
+ "axum-core",
+ "http",
 ]
 
 [[package]]
 name = "askama_derive"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87bf87e6e8b47264efa9bde63d6225c6276a52e05e91bf37eaa8afd0032d6b71"
+version = "0.12.0"
+source = "git+https://github.com/djc/askama?rev=6cce13f076bdd3e8d9b0bf888c0464a1af9df25f#6cce13f076bdd3e8d9b0bf888c0464a1af9df25f"
 dependencies = [
- "askama_shared",
- "proc-macro2",
- "syn",
-]
-
-[[package]]
-name = "askama_escape"
-version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "619743e34b5ba4e9703bba34deac3427c72507c7159f5fd030aea8cac0cfe341"
-
-[[package]]
-name = "askama_shared"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf722b94118a07fcbc6640190f247334027685d4e218b794dbfe17c32bf38ed0"
-dependencies = [
- "askama_escape",
- "humansize",
  "mime",
  "mime_guess",
  "nom",
- "num-traits",
- "percent-encoding",
  "proc-macro2",
  "quote",
  "serde",
  "syn",
  "toml",
 ]
+
+[[package]]
+name = "askama_escape"
+version = "0.10.3"
+source = "git+https://github.com/djc/askama?rev=6cce13f076bdd3e8d9b0bf888c0464a1af9df25f#6cce13f076bdd3e8d9b0bf888c0464a1af9df25f"
 
 [[package]]
 name = "async-trait"
@@ -630,6 +624,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "askama",
+ "askama_axum",
  "axum",
  "clap",
  "config",

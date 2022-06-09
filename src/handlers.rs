@@ -1,5 +1,6 @@
 use crate::{
     events::{Event, EventError, IssueCommentEvent},
+    templates,
     votes::Command,
 };
 use anyhow::{format_err, Error, Result};
@@ -51,7 +52,7 @@ pub(crate) async fn setup_router(cmds_tx: Sender<Command>) -> Result<Router> {
 
 /// Handler that returns the index document.
 async fn index() -> impl IntoResponse {
-    "Welcome to GitVote!"
+    templates::Index {}
 }
 
 /// Handler that processes webhook events from GitHub.

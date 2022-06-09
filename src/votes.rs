@@ -1,5 +1,5 @@
 use crate::{
-    events::{IssueCommentEvent, IssueCommentEventAction, Reaction},
+    events::{IssueCommentEvent, IssueCommentEventAction, User},
     metadata::Metadata,
     templates,
 };
@@ -73,6 +73,14 @@ pub(crate) struct VoteResults {
     pub abstain: u64,
     pub not_voted: u64,
     pub voters: HashMap<String, String>,
+}
+
+/// Represents a reaction on an issue or pull request comment, which is the way
+/// of casting a vote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Reaction {
+    pub user: User,
+    pub content: String,
 }
 
 /// A votes processor is in charge of creating the votes requested, stopping

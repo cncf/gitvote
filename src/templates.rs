@@ -5,6 +5,11 @@ use crate::{
 };
 use askama::Template;
 
+/// Template for the index document.
+#[derive(Debug, Clone, Template)]
+#[template(path = "index.html")]
+pub(crate) struct Index {}
+
 /// Template for the vote created comment.
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-created.md")]

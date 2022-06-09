@@ -74,6 +74,8 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Return a future that will complete when the program is asked to stop via a
+/// ctrl+c or terminate signal.
 async fn shutdown_signal() {
     // Setup signal handlers
     let ctrl_c = async {
