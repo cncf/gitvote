@@ -9,7 +9,7 @@ use tokio::{
     signal,
     sync::{broadcast, mpsc},
 };
-use tracing::info;
+use tracing::{debug, info};
 
 mod conf;
 mod github;
@@ -55,6 +55,7 @@ async fn main() -> Result<()> {
     let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
     let votes_processor = votes::Processor::new(cfg.clone(), db)?;
     let votes_processor_done = votes_processor.start(cmds_rx, stop_tx.clone());
+    debug!("[votes processor] started");
 
     // Setup and launch HTTP server
     let router = handlers::setup_router(cfg.clone(), cmds_tx).await?;
@@ -65,11 +66,12 @@ async fn main() -> Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
-    info!("gitvote service stopped");
 
     // Ask votes processor to stop and wait for it to finish
     drop(stop_tx);
     votes_processor_done.await;
+    debug!("[votes processor] stopped");
+    info!("gitvote service stopped");
 
     Ok(())
 }

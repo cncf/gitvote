@@ -12,23 +12,18 @@ use lazy_static::lazy_static;
 use octocrab::{models::InstallationId, Octocrab, Page};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
-    sync::{broadcast, mpsc},
+    sync::{
+        broadcast::{self, error::TryRecvError},
+        mpsc,
+    },
     task::JoinHandle,
-    time::{self, Duration},
+    time::sleep,
 };
 use tokio_postgres::types::Json;
-use tracing::error;
+use tracing::{debug, error};
 use uuid::Uuid;
-
-lazy_static! {
-    /// Regex used to detect commands in issues/prs comments.
-    pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(?P<cmd>vote)\s*$"#).expect("invalid CMD regexp");
-}
-
-/// How often do we check the database for votes that should be closed.
-const VOTES_CLOSER_FREQUENCY: Duration = Duration::from_secs(30);
 
 /// Vote options.
 const IN_FAVOR: &str = "In favor";
@@ -40,6 +35,18 @@ const NOT_VOTED: &str = "Not voted";
 const IN_FAVOR_REACTION: &str = "+1";
 const AGAINST_REACTION: &str = "-1";
 const ABSTAIN_REACTION: &str = "eyes";
+
+/// Amount of time the votes closer will sleep when there are no pending votes
+/// to close.
+const VOTES_CLOSER_PAUSE_ON_NONE: Duration = Duration::from_secs(15);
+
+/// Amount of time the votes closer will sleep when something goes wrong.
+const VOTES_CLOSER_PAUSE_ON_ERROR: Duration = Duration::from_secs(30);
+
+lazy_static! {
+    /// Regex used to detect commands in issues/prs comments.
+    pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(?P<cmd>vote)\s*$"#).expect("invalid CMD regexp");
+}
 
 /// Represents the results of a vote.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +139,7 @@ impl Processor {
         mut stop_rx: broadcast::Receiver<()>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
+            debug!("[commands handler] started");
             loop {
                 tokio::select! {
                     // Pick next command from the queue and process it
@@ -151,53 +159,8 @@ impl Processor {
                     }
                 }
             }
+            debug!("[commands handler] stopped");
         })
-    }
-
-    /// Worker that periodically checks the database for votes that should be
-    /// closed and closes them.
-    fn votes_closer(self: Arc<Self>, mut stop_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let mut interval = time::interval(VOTES_CLOSER_FREQUENCY);
-            loop {
-                tokio::select! {
-                    // Call close_finished_votes periodically.
-                    _ = interval.tick() => {
-                        if let Err(err) = self.close_finished_votes().await {
-                            error!("error closing finished votes: {:#?}", err);
-                        }
-                    },
-
-                    // Exit if the votes processor has been asked to stop
-                    _ = stop_rx.recv() => {
-                        break
-                    }
-                }
-            }
-        })
-    }
-
-    /// Close votes that have finished.
-    async fn close_finished_votes(&self) -> Result<()> {
-        let db = self.db.get().await?;
-        let rows = db
-            .query(
-                "
-                select vote_id
-                from vote
-                where current_timestamp > ends_at
-                and closed is false
-                ",
-                &[],
-            )
-            .await?;
-        for row in rows {
-            let vote_id: Uuid = row.get("vote_id");
-            if let Err(err) = self.close_vote(vote_id).await {
-                error!("error closing vote {}: {}", vote_id, err);
-            }
-        }
-        Ok(())
     }
 
     /// Create a new vote.
@@ -227,8 +190,9 @@ impl Processor {
 
         // Store vote information in database
         let db = self.db.get().await?;
-        db.execute(
-            "
+        let row = db
+            .query_one(
+                "
             insert into vote (
                 vote_comment_id,
                 event,
@@ -240,36 +204,84 @@ impl Processor {
                 $3::jsonb,
                 current_timestamp + ($4::bigint || ' seconds')::interval
             )
+            returning vote_id
             ",
-            &[
-                &(vote_comment.id.0 as i64),
-                &Json(&event),
-                &Json(&cfg),
-                &(cfg.duration.as_secs() as i64),
-            ],
-        )
-        .await?;
+                &[
+                    &(vote_comment.id.0 as i64),
+                    &Json(&event),
+                    &Json(&cfg),
+                    &(cfg.duration.as_secs() as i64),
+                ],
+            )
+            .await?;
+        let vote_id: Uuid = row.get("vote_id");
 
+        debug!("vote {} created", &vote_id);
         Ok(())
     }
 
-    /// Close the vote provided.
-    async fn close_vote(&self, vote_id: Uuid) -> Result<()> {
-        // Get vote information from database
+    /// Worker that periodically checks the database for votes that should be
+    /// closed and closes them.
+    fn votes_closer(self: Arc<Self>, mut stop_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            debug!("[votes closer] started");
+            loop {
+                // Close any pending finished votes
+                match self.close_finished_vote().await {
+                    Ok(Some(())) => {
+                        // One pending finished vote was closed
+                    }
+                    Ok(None) => tokio::select! {
+                        // No pending finished votes were found
+                        _ = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
+                        _ = stop_rx.recv() => break,
+                    },
+                    Err(err) => {
+                        error!("error closing finished vote: {:#?}", err);
+                        tokio::select! {
+                            _ = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
+                            _ = stop_rx.recv() => break,
+                        }
+                    }
+                }
+
+                // Exit if the votes processor has been asked to stop
+                match stop_rx.try_recv() {
+                    Err(TryRecvError::Empty) => continue,
+                    Err(TryRecvError::Closed) => break,
+                    _ => {}
+                }
+            }
+            debug!("[votes closer] stopped");
+        })
+    }
+
+    /// Close any pending finished vote.
+    async fn close_finished_vote(&self) -> Result<Option<()>> {
+        // Get pending finished vote (if any) information from database
         let mut db = self.db.get().await?;
         let tx = db.transaction().await?;
-        let row = tx
-            .query_one(
+        let row = match tx
+            .query_opt(
                 "
-                select vote_comment_id, event, config
+                select vote_id, vote_comment_id, event, config
                 from vote
-                where vote_id = $1::uuid
-                for update
+                where current_timestamp > ends_at and closed = false
+                for update of vote skip locked
+                limit 1
                 ",
-                &[&vote_id],
+                &[],
             )
-            .await?;
+            .await?
+        {
+            // Pending finished vote to close found, proceed and close it
+            Some(row) => row,
+
+            // No finished votes to close, return
+            None => return Ok(None),
+        };
         let vote_comment_id: i64 = row.get("vote_comment_id");
+        let vote_id: Uuid = row.get("vote_id");
         let Json(event): Json<IssueCommentEvent> = row.get("event");
         let Json(cfg): Json<RepoConfig> = row.get("config");
 
@@ -310,7 +322,8 @@ impl Processor {
             )
             .await?;
 
-        Ok(())
+        debug!("vote {} closed", &vote_id);
+        Ok(Some(()))
     }
 
     /// Calculate the results of the vote created at the comment provided.
