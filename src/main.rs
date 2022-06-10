@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
 
     // Setup logging
     if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "gitvote=debug,tower_http=debug")
+        std::env::set_var("RUST_LOG", "gitvote=debug")
     }
     tracing_subscriber::fmt::init();
 
