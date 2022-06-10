@@ -12,7 +12,7 @@ use lazy_static::lazy_static;
 use octocrab::{models::InstallationId, Octocrab, Page};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use tokio::{
     sync::{broadcast, mpsc},
     task::JoinHandle,
@@ -94,9 +94,8 @@ impl Processor {
     pub(crate) fn new(cfg: Arc<Config>, db: DbPool) -> Result<Arc<Self>> {
         // Setup application GitHub client
         let app_id = cfg.get_int("github.appID")? as u64;
-        let app_private_key_path = cfg.get_string("github.appPrivateKey")?;
-        let app_private_key = fs::read(app_private_key_path)?;
-        let app_private_key = jsonwebtoken::EncodingKey::from_rsa_pem(&app_private_key[..])?;
+        let app_private_key = cfg.get_string("github.appPrivateKey")?;
+        let app_private_key = jsonwebtoken::EncodingKey::from_rsa_pem(app_private_key.as_bytes())?;
         let app_github_client = Octocrab::builder()
             .app(app_id.into(), app_private_key)
             .build()?;
