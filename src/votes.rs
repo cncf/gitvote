@@ -49,7 +49,7 @@ lazy_static! {
     pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(?P<cmd>vote)\s*$"#).expect("invalid CMD regexp");
 }
 
-/// Represents the results of a vote.
+/// Vote results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Results {
     pub passed: bool,
@@ -179,7 +179,7 @@ impl Processor {
         let (owner, repo) = split_full_name(&event.repository.full_name);
         let url = format!(
             "https://api.github.com/repos/{}/{}/collaborators/{}",
-            owner, repo, event.sender.login,
+            owner, repo, event.comment.user.login,
         );
         let resp = installation_github_client._get(url, None::<&()>).await?;
         if resp.status() != StatusCode::NO_CONTENT {
@@ -211,22 +211,35 @@ impl Processor {
                 "
             insert into vote (
                 vote_comment_id,
-                event,
+                ends_at,
                 config,
-                ends_at
+                created_by,
+                installation_id,
+                issue_id,
+                issue_number,
+                repository_full_name
+
             ) values (
                 $1::bigint,
-                $2::jsonb,
+                current_timestamp + ($2::bigint || ' seconds')::interval,
                 $3::jsonb,
-                current_timestamp + ($4::bigint || ' seconds')::interval
+                $4::text,
+                $5::bigint,
+                $6::bigint,
+                $7::bigint,
+                $8::text
             )
             returning vote_id
             ",
                 &[
                     &(vote_comment.id.0 as i64),
-                    &Json(&event),
-                    &Json(&cfg),
                     &(cfg.duration.as_secs() as i64),
+                    &Json(&cfg),
+                    &event.comment.user.login,
+                    &(event.installation.id as i64),
+                    &(event.issue.id as i64),
+                    &(event.issue.number as i64),
+                    &event.repository.full_name,
                 ],
             )
             .await?;
@@ -280,7 +293,13 @@ impl Processor {
         let row = match tx
             .query_opt(
                 "
-                select vote_id, vote_comment_id, event, config
+                select
+                    vote_id,
+                    vote_comment_id,
+                    config,
+                    installation_id,
+                    issue_number,
+                    repository_full_name
                 from vote
                 where current_timestamp > ends_at and closed = false
                 for update of vote skip locked
@@ -296,15 +315,17 @@ impl Processor {
             // No finished votes to close, return
             None => return Ok(None),
         };
-        let vote_comment_id: i64 = row.get("vote_comment_id");
         let vote_id: Uuid = row.get("vote_id");
-        let Json(event): Json<IssueCommentEvent> = row.get("event");
+        let vote_comment_id: i64 = row.get("vote_comment_id");
         let Json(cfg): Json<RepoConfig> = row.get("config");
+        let installation_id: i64 = row.get("installation_id");
+        let issue_number: i64 = row.get("issue_number");
+        let repository_full_name: String = row.get("repository_full_name");
 
         // Calculate results
-        let installation_id = InstallationId(event.installation.id);
+        let installation_id = InstallationId(installation_id as u64);
         let installation_github_client = self.app_github_client.installation(installation_id);
-        let (owner, repo) = split_full_name(&event.repository.full_name);
+        let (owner, repo) = split_full_name(&repository_full_name);
         let results = self
             .calculate_vote_results(
                 &installation_github_client,
@@ -333,7 +354,7 @@ impl Processor {
         installation_github_client
             .issues(owner, repo)
             .create_comment(
-                event.issue.number,
+                issue_number as u64,
                 templates::VoteClosed::new(&results).render()?,
             )
             .await?;
