@@ -11,6 +11,7 @@ use futures::future::{self, JoinAll};
 use lazy_static::lazy_static;
 use octocrab::{models::InstallationId, Octocrab, Page};
 use regex::Regex;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
@@ -151,6 +152,11 @@ impl Processor {
                         } {
                             error!("{:#?}", err);
                         }
+
+                        // Exit if the votes processor has been asked to stop
+                        if let Some(TryRecvError::Closed) = stop_rx.try_recv().err() {
+                            break;
+                        }
                     }
 
                     // Exit if the votes processor has been asked to stop
@@ -169,8 +175,18 @@ impl Processor {
         let installation_id = InstallationId(event.installation.id);
         let installation_github_client = self.app_github_client.installation(installation_id);
 
-        // Get repository configuration
+        // Only repository collaborators can create votes
         let (owner, repo) = split_full_name(&event.repository.full_name);
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/collaborators/{}",
+            owner, repo, event.sender.login,
+        );
+        let resp = installation_github_client._get(url, None::<&()>).await?;
+        if resp.status() != StatusCode::NO_CONTENT {
+            return Ok(());
+        }
+
+        // Get repository configuration
         let cfg = match RepoConfig::new(&installation_github_client, owner, repo)
             .await
             .context("error getting repository configuration")?
@@ -229,10 +245,12 @@ impl Processor {
                 // Close any pending finished votes
                 match self.close_finished_vote().await {
                     Ok(Some(())) => {
-                        // One pending finished vote was closed
+                        // One pending finished vote was closed, try to close
+                        // another one immediately
                     }
                     Ok(None) => tokio::select! {
-                        // No pending finished votes were found
+                        // No pending finished votes were found, pause unless
+                        // we've been asked to stop
                         _ = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
                         _ = stop_rx.recv() => break,
                     },
@@ -246,10 +264,8 @@ impl Processor {
                 }
 
                 // Exit if the votes processor has been asked to stop
-                match stop_rx.try_recv() {
-                    Err(TryRecvError::Empty) => continue,
-                    Err(TryRecvError::Closed) => break,
-                    _ => {}
+                if let Some(TryRecvError::Closed) = stop_rx.try_recv().err() {
+                    break;
                 }
             }
             debug!("[votes closer] stopped");
@@ -258,7 +274,7 @@ impl Processor {
 
     /// Close any pending finished vote.
     async fn close_finished_vote(&self) -> Result<Option<()>> {
-        // Get pending finished vote (if any) information from database
+        // Get pending finished vote (if any) from database
         let mut db = self.db.get().await?;
         let tx = db.transaction().await?;
         let row = match tx
