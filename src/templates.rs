@@ -1,7 +1,7 @@
 use crate::{
     conf::{RepoConfig, REPO_CONFIG_FILE},
     github::IssueCommentEvent,
-    votes::Results,
+    votes,
 };
 use askama::Template;
 
@@ -45,12 +45,12 @@ impl<'a> VoteCreated<'a> {
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-closed.md")]
 pub(crate) struct VoteClosed<'a> {
-    results: &'a Results,
+    results: &'a votes::Results,
 }
 
 impl<'a> VoteClosed<'a> {
     /// Create a new VoteClosed template.
-    pub(crate) fn new(results: &'a Results) -> Self {
+    pub(crate) fn new(results: &'a votes::Results) -> Self {
         Self { results }
     }
 }

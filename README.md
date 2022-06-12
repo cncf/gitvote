@@ -47,6 +47,8 @@ Votes can be created by adding a comment to an existent *issue* or *pull request
 
 ![create-vote](docs/screenshots/create-vote.png)
 
+Only repositories collaborators can create votes. For organization-owned repositories, the list of collaborators includes outside collaborators, organization members that are direct collaborators, organization members with access through team memberships, organization members with access through default organization permissions, and organization owners.
+
 *Please note that at the moment GitVote is not able to detect commands when a comment is edited, but only when it's created.*
 
 Shortly after the comment with the `/vote` command is added, the vote will be created and the bot will post a new comment to the corresponding issue or pull request with the vote instructions.
