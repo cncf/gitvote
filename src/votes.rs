@@ -186,6 +186,34 @@ impl Processor {
             return Ok(());
         }
 
+        // Only allow one vote open at the same time per issue/pr
+        let db = self.db.get().await?;
+        let row = db
+            .query_one(
+                "
+                select exists (
+                    select 1 from vote
+                    where repository_full_name = $1::text
+                    and issue_number = $2::bigint
+                    and closed = false
+                )
+                ",
+                &[&event.repository.full_name, &(event.issue.number as i64)],
+            )
+            .await?;
+        let vote_in_progress: bool = row.get(0);
+        if vote_in_progress {
+            installation_github_client
+                .issues(owner, repo)
+                .create_comment(
+                    event.issue.number,
+                    templates::VoteInProgress::new(&event.comment.user.login).render()?,
+                )
+                .await?;
+
+            return Ok(());
+        }
+
         // Get repository configuration
         let cfg = match RepoConfig::new(&installation_github_client, owner, repo)
             .await
@@ -205,7 +233,6 @@ impl Processor {
             .await?;
 
         // Store vote information in database
-        let db = self.db.get().await?;
         let row = db
             .query_one(
                 "

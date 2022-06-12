@@ -54,3 +54,17 @@ impl<'a> VoteClosed<'a> {
         Self { results }
     }
 }
+
+/// Template for the vote in progress comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "vote-in-progress.md")]
+pub(crate) struct VoteInProgress<'a> {
+    user: &'a str,
+}
+
+impl<'a> VoteInProgress<'a> {
+    /// Create a new VoteInProgress template.
+    pub(crate) fn new(user: &'a str) -> Self {
+        Self { user }
+    }
+}
