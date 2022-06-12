@@ -35,7 +35,6 @@ pub(crate) struct IssueCommentEvent {
     pub installation: Installation,
     pub issue: Issue,
     pub repository: Repository,
-    pub sender: User,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
