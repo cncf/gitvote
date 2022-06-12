@@ -11,10 +11,9 @@ use tokio::{
 };
 use tracing::{debug, info};
 
-mod conf;
 mod github;
 mod handlers;
-mod templates;
+mod tmpl;
 mod votes;
 
 #[derive(Debug, Parser)]

@@ -8,7 +8,7 @@ create table if not exists vote (
     ends_at timestamptz not null,
     closed boolean not null default false,
     closed_at timestamptz,
-    config jsonb not null,
+    cfg jsonb not null,
     installation_id bigint not null,
     issue_id bigint not null,
     issue_number bigint not null,

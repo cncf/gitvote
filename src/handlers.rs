@@ -1,6 +1,6 @@
 use crate::{
     github::{Event, EventError, IssueCommentEvent},
-    templates,
+    tmpl,
     votes::Command,
 };
 use anyhow::{format_err, Error, Result};
@@ -47,7 +47,7 @@ pub(crate) async fn setup_router(cfg: Arc<Config>, cmds_tx: Sender<Command>) -> 
 
 /// Handler that returns the index document.
 async fn index() -> impl IntoResponse {
-    templates::Index {}
+    tmpl::Index {}
 }
 
 /// Handler that processes webhook events from GitHub.
