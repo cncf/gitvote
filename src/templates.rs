@@ -55,6 +55,20 @@ impl<'a> VoteClosed<'a> {
     }
 }
 
+/// Template for the vote restricted comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "vote-restricted.md")]
+pub(crate) struct VoteRestricted<'a> {
+    user: &'a str,
+}
+
+impl<'a> VoteRestricted<'a> {
+    /// Create a new VoteRestricted template.
+    pub(crate) fn new(user: &'a str) -> Self {
+        Self { user }
+    }
+}
+
 /// Template for the vote in progress comment.
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-in-progress.md")]
