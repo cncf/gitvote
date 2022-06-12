@@ -183,6 +183,14 @@ impl Processor {
         );
         let resp = installation_github_client._get(url, None::<&()>).await?;
         if resp.status() != StatusCode::NO_CONTENT {
+            installation_github_client
+                .issues(owner, repo)
+                .create_comment(
+                    event.issue.number,
+                    templates::VoteRestricted::new(&event.comment.user.login).render()?,
+                )
+                .await?;
+
             return Ok(());
         }
 
