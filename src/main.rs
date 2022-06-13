@@ -5,10 +5,7 @@ use deadpool_postgres::{Config as DbConfig, Runtime};
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio::{
-    signal,
-    sync::{broadcast, mpsc},
-};
+use tokio::{signal, sync::broadcast};
 use tracing::{debug, info};
 
 mod github;
@@ -50,7 +47,7 @@ async fn main() -> Result<()> {
     let db = db_cfg.create_pool(Some(Runtime::Tokio1), connector)?;
 
     // Setup and launch votes processor
-    let (cmds_tx, cmds_rx) = mpsc::channel(100);
+    let (cmds_tx, cmds_rx) = async_channel::unbounded();
     let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
     let votes_processor = votes::Processor::new(cfg.clone(), db)?;
     let votes_processor_done = votes_processor.start(cmds_rx, stop_tx.clone());

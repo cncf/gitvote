@@ -15,10 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use time::OffsetDateTime;
 use tokio::{
-    sync::{
-        broadcast::{self, error::TryRecvError},
-        mpsc,
-    },
+    sync::broadcast::{self, error::TryRecvError},
     task::JoinHandle,
     time::sleep,
 };
@@ -39,6 +36,12 @@ const ABSTAIN_REACTION: &str = "eyes";
 
 /// Vote configuration file name.
 pub const VOTE_CONFIG_FILE: &str = ".gitvote.yml";
+
+/// Number of commands handlers workers.
+const COMMANDS_HANDLERS_WORKERS: usize = 3;
+
+/// Number of votes closers workers.
+const VOTES_CLOSERS_WORKERS: usize = 1;
 
 /// Amount of time the votes closer will sleep when there are no pending votes
 /// to close.
@@ -165,16 +168,27 @@ impl Processor {
     /// Start votes processor.
     pub(crate) fn start(
         self: Arc<Self>,
-        cmds_rx: mpsc::Receiver<Command>,
+        cmds_rx: async_channel::Receiver<Command>,
         stop_tx: broadcast::Sender<()>,
     ) -> JoinAll<JoinHandle<()>> {
-        // Launch commands handler
-        let commands_handler = self.clone().commands_handler(cmds_rx, stop_tx.subscribe());
+        let num_workers = COMMANDS_HANDLERS_WORKERS + VOTES_CLOSERS_WORKERS;
+        let mut workers_handles = Vec::with_capacity(num_workers);
 
-        // Launch votes closer
-        let votes_closer = self.votes_closer(stop_tx.subscribe());
+        // Launch commands handler workers
+        for _ in 0..COMMANDS_HANDLERS_WORKERS {
+            let handle = self
+                .clone()
+                .commands_handler(cmds_rx.clone(), stop_tx.subscribe());
+            workers_handles.push(handle);
+        }
 
-        future::join_all(vec![commands_handler, votes_closer])
+        // Launch votes closer workers
+        for _ in 0..VOTES_CLOSERS_WORKERS {
+            let handle = self.clone().votes_closer(stop_tx.subscribe());
+            workers_handles.push(handle);
+        }
+
+        future::join_all(workers_handles)
     }
 
     /// Worker that receives commands from the queue and executes them.
@@ -182,15 +196,14 @@ impl Processor {
     /// received on the webhook endpoint.
     fn commands_handler(
         self: Arc<Self>,
-        mut cmds_rx: mpsc::Receiver<Command>,
+        cmds_rx: async_channel::Receiver<Command>,
         mut stop_rx: broadcast::Receiver<()>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            debug!("[commands handler] started");
             loop {
                 tokio::select! {
                     // Pick next command from the queue and process it
-                    Some(cmd) = cmds_rx.recv() => {
+                    Ok(cmd) = cmds_rx.recv() => {
                         if let Err(err) = match cmd {
                             Command::CreateVote { event } => {
                                 self.create_vote(event).await.context("error creating vote")
@@ -211,7 +224,6 @@ impl Processor {
                     }
                 }
             }
-            debug!("[commands handler] stopped");
         })
     }
 
@@ -219,7 +231,6 @@ impl Processor {
     /// closed and closes them.
     fn votes_closer(self: Arc<Self>, mut stop_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
         tokio::spawn(async move {
-            debug!("[votes closer] started");
             loop {
                 // Close any pending finished votes
                 match self.close_finished_vote().await {
@@ -247,7 +258,6 @@ impl Processor {
                     break;
                 }
             }
-            debug!("[votes closer] stopped");
         })
     }
 

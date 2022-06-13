@@ -15,7 +15,6 @@ use config::Config;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::error;
@@ -27,7 +26,10 @@ const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
 const GITHUB_SIGNATURE_HEADER: &str = "X-Hub-Signature-256";
 
 /// Setup HTTP server router.
-pub(crate) async fn setup_router(cfg: Arc<Config>, cmds_tx: Sender<Command>) -> Result<Router> {
+pub(crate) async fn setup_router(
+    cfg: Arc<Config>,
+    cmds_tx: async_channel::Sender<Command>,
+) -> Result<Router> {
     // Setup webhook secret
     let webhook_secret = cfg.get_string("github.webhookSecret")?;
 
@@ -55,7 +57,7 @@ async fn event(
     headers: HeaderMap,
     body: Bytes,
     Extension(webhook_secret): Extension<String>,
-    Extension(cmds_tx): Extension<Sender<Command>>,
+    Extension(cmds_tx): Extension<async_channel::Sender<Command>>,
 ) -> Result<(), StatusCode> {
     // Verify signature
     if verify_signature(
