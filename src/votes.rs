@@ -562,18 +562,17 @@ impl Processor {
         vote_id: Uuid,
         results: &Results,
     ) -> Result<()> {
-        _ = tx
-            .execute(
-                "
-                update vote set
-                    closed = true,
-                    closed_at = current_timestamp,
-                    results = $1::jsonb
-                where vote_id = $2::uuid;
-                ",
-                &[&Json(&results), &vote_id],
-            )
-            .await?;
+        tx.execute(
+            "
+            update vote set
+                closed = true,
+                closed_at = current_timestamp,
+                results = $1::jsonb
+            where vote_id = $2::uuid;
+            ",
+            &[&Json(&results), &vote_id],
+        )
+        .await?;
         Ok(())
     }
 
