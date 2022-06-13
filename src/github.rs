@@ -67,11 +67,17 @@ pub(crate) struct Issue {
     pub id: i64,
     pub number: i64,
     pub title: String,
+    pub pull_request: Option<PullRequest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Repository {
     pub full_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PullRequest {
+    pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
