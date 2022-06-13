@@ -18,9 +18,6 @@ fullnameOverride: ""
 # Directory path where the configuration files should be mounted
 configDir: "/home/gitvote/.config/gitvote"
 
-# Address to listen on
-addr: 0.0.0.0:9000
-
 # Database configuration
 db:
   host: ""
@@ -29,32 +26,44 @@ db:
   user: postgres
   password: postgres
 
-# GitHub configuration
-github:
-  # GitHub application ID
-  appID: null
-  # GitHub application private key path
-  appPrivateKey: null
+# Database migrator configuration
+dbmigrator:
+  job:
+    image:
+      # Database migrator image repository (without the tag)
+      repository: dbmigrator
 
-# Ingress configuration
-ingress:
-  enabled: true
-  annotations:
-    kubernetes.io/ingress.class: nginx
-  rules: []
-  tls: []
+# GitVote service configuration
+gitvote:
+  # Address to listen on
+  addr: 0.0.0.0:9000
 
-# Service configuration
-service:
-  type: NodePort
-  port: 80
+  # GitHub configuration
+  github:
+    # GitHub application ID
+    appID: null
+    # GitHub application private key path
+    appPrivateKey: null
 
-# Deployment configuration
-deploy:
-  replicaCount: 1
-  image:
-    repository: gitvote
-  resources: {}
+  # Ingress configuration
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: nginx
+    rules: []
+    tls: []
+
+  # Service configuration
+  service:
+    type: NodePort
+    port: 80
+
+  # Deployment configuration
+  deploy:
+    replicaCount: 1
+    image:
+      repository: gitvote
+    resources: {}
 
 # PostgreSQL configuration
 postgresql:
