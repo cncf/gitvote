@@ -59,12 +59,16 @@ impl<'a> VoteCreated<'a> {
 #[template(path = "vote-in-progress.md")]
 pub(crate) struct VoteInProgress<'a> {
     user: &'a str,
+    is_pull_request: bool,
 }
 
 impl<'a> VoteInProgress<'a> {
     /// Create a new VoteInProgress template.
-    pub(crate) fn new(user: &'a str) -> Self {
-        Self { user }
+    pub(crate) fn new(user: &'a str, is_pull_request: bool) -> Self {
+        Self {
+            user,
+            is_pull_request,
+        }
     }
 }
 

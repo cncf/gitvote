@@ -23,6 +23,9 @@ use tokio_postgres::types::Json;
 use tracing::{debug, error};
 use uuid::Uuid;
 
+/// GitHub API base url.
+const GITHUB_API_URL: &str = "https://api.github.com";
+
 /// Vote options.
 const IN_FAVOR: &str = "In favor";
 const AGAINST: &str = "Against";
@@ -69,6 +72,7 @@ pub(crate) struct Vote {
     installation_id: i64,
     issue_id: i64,
     issue_number: i64,
+    is_pull_request: bool,
     repository_full_name: String,
     results: Option<Results>,
 }
@@ -272,8 +276,8 @@ impl Processor {
     ) -> Result<Results> {
         // Get vote comment reactions (aka votes)
         let url = format!(
-            "https://api.github.com/repos/{}/{}/issues/comments/{}/reactions",
-            owner, repo, vote_comment_id
+            "{}/repos/{}/{}/issues/comments/{}/reactions",
+            GITHUB_API_URL, owner, repo, vote_comment_id
         );
         let first_page: Page<Reaction> = gh.get(url, None::<&()>).await?;
         let reactions = gh.all_pages(first_page).await?;
@@ -380,6 +384,7 @@ impl Processor {
     async fn create_vote(&self, event: IssueCommentEvent) -> Result<()> {
         // Extract some information from event
         let issue_number = event.issue.number;
+        let is_pull_request = event.issue.pull_request.is_some();
         let creator = &event.comment.user.login;
         let repo_full_name = &event.repository.full_name;
         let (owner, repo) = split_full_name(repo_full_name);
@@ -401,7 +406,7 @@ impl Processor {
 
         // Only allow one vote open at the same time per issue/pr
         if self.has_vote_open(repo_full_name, issue_number).await? {
-            let body = tmpl::VoteInProgress::new(creator).render()?;
+            let body = tmpl::VoteInProgress::new(creator, is_pull_request).render()?;
             self.post_comment(&gh_inst, owner, repo, issue_number, body)
                 .await?;
             return Ok(());
@@ -444,6 +449,7 @@ impl Processor {
                     installation_id,
                     issue_id,
                     issue_number,
+                    is_pull_request,
                     repository_full_name,
                     results
                 from vote
@@ -474,6 +480,7 @@ impl Processor {
             installation_id: row.get("installation_id"),
             issue_id: row.get("issue_id"),
             issue_number: row.get("issue_number"),
+            is_pull_request: row.get("is_pull_request"),
             repository_full_name: row.get("repository_full_name"),
             results: results.map(|Json(results)| results),
         };
@@ -535,6 +542,7 @@ impl Processor {
                     installation_id,
                     issue_id,
                     issue_number,
+                    is_pull_request,
                     repository_full_name
 
                 ) values (
@@ -545,7 +553,8 @@ impl Processor {
                     $5::bigint,
                     $6::bigint,
                     $7::bigint,
-                    $8::text
+                    $8::boolean,
+                    $9::text
                 )
                 returning vote_id
                 ",
@@ -557,6 +566,7 @@ impl Processor {
                     &event.installation.id,
                     &event.issue.id,
                     &event.issue.number,
+                    &event.issue.pull_request.is_some(),
                     &event.repository.full_name,
                 ],
             )
@@ -595,8 +605,8 @@ impl Processor {
         user: &str,
     ) -> Result<bool> {
         let url = format!(
-            "https://api.github.com/repos/{}/{}/collaborators/{}",
-            owner, repo, user,
+            "{}/repos/{}/{}/collaborators/{}",
+            GITHUB_API_URL, owner, repo, user,
         );
         let resp = gh._get(url, None::<&()>).await?;
         if resp.status() == StatusCode::NO_CONTENT {
