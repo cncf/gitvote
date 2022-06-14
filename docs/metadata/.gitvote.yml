@@ -8,7 +8,7 @@ voters:
   - cynthia-sg
 
 # Pass threshold (required)
-# Percentage of votes required to pass the vote
+# Percentage of votes in favor required to pass the vote
 pass_threshold: 67
 
 # Voting duration (required)

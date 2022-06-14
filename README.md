@@ -23,7 +23,7 @@ voters:
   - cynthia-sg
 
 # Pass threshold (required)
-# Percentage of votes required to pass the vote
+# Percentage of votes in favor required to pass the vote
 pass_threshold: 67
 
 # Voting duration (required)
@@ -43,21 +43,23 @@ Once a vote is created, the configuration it will use during its lifetime will b
 
 ### Creating votes
 
-Votes can be created by adding a comment to an existent *issue* or *pull request* with the `vote` command:
+Votes can be created by adding a comment to an existent *issue* or *pull request* with the `/vote` command:
 
 ![create-vote](docs/screenshots/create-vote.png)
 
 Only repositories collaborators can create votes. For organization-owned repositories, the list of collaborators includes outside collaborators, organization members that are direct collaborators, organization members with access through team memberships, organization members with access through default organization permissions, and organization owners.
 
-*Please note that at the moment GitVote is not able to detect commands when a comment is edited, but only when it's created.*
-
-Shortly after the comment with the `/vote` command is added, the vote will be created and the bot will post a new comment to the corresponding issue or pull request with the vote instructions.
+Shortly after the comment with the `/vote` command is posted, the vote will be created and the bot will post a new comment to the corresponding issue or pull request with the vote instructions.
 
 ![create-vote](docs/screenshots/vote-created.png)
 
+*Please note that GitVote only detects commands when a comment is created, not when it's edited.*
+
 ### Voting
 
-Users can cast their votes by reacting to the `git-vote` bot comment where the vote was created (screenshot above). It is possible to vote `in favor`, `against` or to `abstain`, and each of these options can be selected with the corresponding reaction:
+Users can cast their votes by reacting to the `git-vote` bot comment where the vote was created (screenshot above).
+
+It is possible to vote `in favor`, `against` or to `abstain`, and each of these options can be selected with the following reactions:
 
 | In favor | Against | Abstain |
 | :------: | :-----: | :-----: |
