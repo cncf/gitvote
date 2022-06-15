@@ -54,7 +54,7 @@ const VOTES_CLOSER_PAUSE_ON_ERROR: Duration = Duration::from_secs(30);
 
 lazy_static! {
     /// Regex used to detect commands in issues/prs comments.
-    pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(?P<cmd>vote)\s*$"#).expect("invalid CMD regexp");
+    pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(vote)-?([a-zA-Z0-9]*)\s*$"#).expect("invalid CMD regexp");
 }
 
 /// Vote information.
@@ -67,7 +67,7 @@ pub(crate) struct Vote {
     ends_at: OffsetDateTime,
     closed: bool,
     closed_at: Option<OffsetDateTime>,
-    cfg: Cfg,
+    cfg: CfgProfile,
     installation_id: i64,
     issue_id: i64,
     issue_number: i64,
@@ -78,16 +78,30 @@ pub(crate) struct Vote {
 
 /// Vote configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(transparent)]
 pub(crate) struct Cfg {
+    pub profiles: HashMap<String, CfgProfile>,
+}
+
+/// Vote configuration profile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct CfgProfile {
     #[serde(with = "humantime_serde")]
     pub duration: Duration,
     pub pass_threshold: f64,
     pub allowed_voters: Option<Vec<String>>,
 }
 
-impl Cfg {
-    /// Create a new vote config instance from the config file in GitHub.
-    pub(crate) async fn new(gh: &Octocrab, owner: &str, repo: &str) -> Result<Option<Self>> {
+impl CfgProfile {
+    /// Get the vote configuration profile requested from the config file in
+    /// the repository if available.
+    pub(crate) async fn get(
+        gh: &Octocrab,
+        owner: &str,
+        repo: &str,
+        profile: Option<String>,
+    ) -> Result<Option<Self>> {
+        // Fetch configuration file
         let response = gh
             .repos(owner, repo)
             .get_content()
@@ -97,8 +111,17 @@ impl Cfg {
         if response.items.len() != 1 {
             return Ok(None);
         }
+
+        // Return profile requested if exists
         match &response.items[0].decoded_content() {
-            Some(content) => Ok(serde_yaml::from_str(content)?),
+            Some(content) => {
+                let mut cfg: Cfg = serde_yaml::from_str(content)?;
+                let profile = profile.unwrap_or_else(|| "default".to_string());
+                match cfg.profiles.remove(&profile) {
+                    Some(profile) => Ok(Some(profile)),
+                    None => Ok(None),
+                }
+            }
             None => Ok(None),
         }
     }
@@ -120,7 +143,10 @@ pub(crate) struct Results {
 /// Represents a command to be executed, usually created from a GitHub event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Command {
-    CreateVote { event: IssueCommentEvent },
+    CreateVote {
+        profile: Option<String>,
+        event: IssueCommentEvent,
+    },
 }
 
 impl Command {
@@ -135,8 +161,12 @@ impl Command {
         if let Some(content) = &event.comment.body {
             if let Some(captures) = CMD.captures(content) {
                 let cmd = captures.get(1).unwrap().as_str();
+                let profile = match captures.get(2).unwrap().as_str() {
+                    "" => None,
+                    profile => Some(profile.to_string()),
+                };
                 match cmd {
-                    "vote" => return Some(Command::CreateVote { event }),
+                    "vote" => return Some(Command::CreateVote { profile, event }),
                     _ => return None,
                 }
             }
@@ -208,8 +238,8 @@ impl Processor {
                     // Pick next command from the queue and process it
                     Ok(cmd) = cmds_rx.recv() => {
                         if let Err(err) = match cmd {
-                            Command::CreateVote { event } => {
-                                self.create_vote(event).await.context("error creating vote")
+                            Command::CreateVote { profile, event } => {
+                                self.create_vote(profile, event).await.context("error creating vote")
                             }
                         } {
                             error!("{:#?}", err);
@@ -268,7 +298,7 @@ impl Processor {
     async fn calculate_vote_results(
         &self,
         gh: &Octocrab,
-        cfg: &Cfg,
+        cfg: &CfgProfile,
         owner: &str,
         repo: &str,
         vote_comment_id: i64,
@@ -380,7 +410,7 @@ impl Processor {
     }
 
     /// Create a new vote.
-    async fn create_vote(&self, event: IssueCommentEvent) -> Result<()> {
+    async fn create_vote(&self, profile: Option<String>, event: IssueCommentEvent) -> Result<()> {
         // Extract some information from event
         let issue_number = event.issue.number;
         let is_pull_request = event.issue.pull_request.is_some();
@@ -391,6 +421,12 @@ impl Processor {
         // Setup installation GitHub client
         let inst_id = InstallationId(event.installation.id as u64);
         let gh_inst = self.gh_app.installation(inst_id);
+
+        // Get vote configuration profile
+        let cfg = match CfgProfile::get(&gh_inst, owner, repo, profile).await? {
+            Some(md) => md,
+            None => return Ok(()),
+        };
 
         // Only repository collaborators can create votes
         if !self
@@ -410,12 +446,6 @@ impl Processor {
                 .await?;
             return Ok(());
         }
-
-        // Get repository configuration
-        let cfg = match Cfg::new(&gh_inst, owner, repo).await? {
-            Some(md) => md,
-            None => return Ok(()),
-        };
 
         // Post vote created comment on the issue/pr
         let body = tmpl::VoteCreated::new(&event, &cfg).render()?;
@@ -500,7 +530,7 @@ impl Processor {
         };
 
         // Prepare vote and return it
-        let Json(config): Json<Cfg> = row.get("cfg");
+        let Json(cfg): Json<CfgProfile> = row.get("cfg");
         let results: Option<Json<Results>> = row.get("results");
         let vote = Vote {
             vote_id: row.get("vote_id"),
@@ -510,7 +540,7 @@ impl Processor {
             ends_at: row.get("ends_at"),
             closed: row.get("closed"),
             closed_at: row.get("closed_at"),
-            cfg: config,
+            cfg,
             installation_id: row.get("installation_id"),
             issue_id: row.get("issue_id"),
             issue_number: row.get("issue_number"),
@@ -561,7 +591,7 @@ impl Processor {
     async fn store_vote(
         &self,
         vote_comment_id: i64,
-        cfg: &Cfg,
+        cfg: &CfgProfile,
         event: &IssueCommentEvent,
     ) -> Result<Uuid> {
         let db = self.db.get().await?;
