@@ -16,44 +16,58 @@ GitVote expects a configuration file named `.gitvote.yml` at the root of each re
 # GitVote configuration file
 # This file must be located at the root of the repository
 
-# Voting duration (required)
-# How long the vote will be open
-#
-# Units supported (can be combined as in 1hour 30mins):
-#
-#   minutes | minute | mins | min | m
-#   hours   | hour   | hrs  | hrs | h
-#   days    | day    | d
-#   weeks   | week   | w
-#
-duration: 5m
+# Default configuration profile
+# This profile will be used with votes created with the /vote command
+default:
+  # Voting duration (required)
+  # How long the vote will be open
+  #
+  # Units supported (can be combined as in 1hour 30mins):
+  #
+  #   minutes | minute | mins | min | m
+  #   hours   | hour   | hrs  | hrs | h
+  #   days    | day    | d
+  #   weeks   | week   | w
+  #
+  duration: 5m
 
-# Pass threshold (required)
-# Percentage of votes in favor required to pass the vote
-pass_threshold: 50
+  # Pass threshold (required)
+  # Percentage of votes in favor required to pass the vote
+  pass_threshold: 50
 
-# Allowed voters (optional)
-# List of GitHub usernames of the users who have binding votes
+  # Allowed voters (optional)
+  # List of GitHub usernames of the users who have binding votes
+  #
+  # If the list is empty, all repository collaborators will be allowed to vote.
+  # For organization-owned repositories, the list of collaborators includes
+  # outside collaborators, organization members that are direct collaborators,
+  # organization members with access through team memberships, organization
+  # members with access through default organization permissions, and
+  # organization owners.
+  #
+  # allowed_voters:
+  #   - cynthia-sg
+  #   - tegioz
+  #
+  allowed_voters: []
+
+# Additional configuration profiles
 #
-# If the list is empty, all repository collaborators will be allowed to vote.
-# For organization-owned repositories, the list of collaborators includes
-# outside collaborators, organization members that are direct collaborators,
-# organization members with access through team memberships, organization
-# members with access through default organization permissions, and
-# organization owners.
+# In addition to the default configuration profile, it is possible to add more
+# to easily create votes with different settings. To create a vote that uses a
+# different profile you can use the command /vote-PROFILE. In the case below,
+# the command would be /vote-profile1
 #
-# allowed_voters:
-#   - cynthia-sg
-#   - tegioz
-#
-allowed_voters: []
+profile1:
+  duration: 1m
+  pass_threshold: 75
 ```
 
 *Once a vote is created, the configuration it will use during its lifetime will be the one present at the vote creation moment.*
 
 ### Creating votes
 
-Votes can be created by adding a comment to an existent *issue* or *pull request* with the `/vote` command:
+Votes can be created by adding a comment to an existent *issue* or *pull request* with the `/vote` command. Alternatively, if you have setup multiple configuration profiles, you can start votes using any of them with the command `/vote-PROFILE`.
 
 ![create-vote](docs/screenshots/create-vote.png)
 
