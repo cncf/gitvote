@@ -16,16 +16,6 @@ GitVote expects a configuration file named `.gitvote.yml` at the root of each re
 # GitVote configuration file
 # This file must be located at the root of the repository
 
-# Voters (required)
-# List of GitHub usernames of the users who have binding votes
-voters:
-  - tegioz
-  - cynthia-sg
-
-# Pass threshold (required)
-# Percentage of votes in favor required to pass the vote
-pass_threshold: 67
-
 # Voting duration (required)
 # How long the vote will be open
 #
@@ -37,9 +27,29 @@ pass_threshold: 67
 #   weeks   | week   | w
 #
 duration: 5m
+
+# Pass threshold (required)
+# Percentage of votes in favor required to pass the vote
+pass_threshold: 50
+
+# Allowed voters (optional)
+# List of GitHub usernames of the users who have binding votes
+#
+# If the list is empty, all repository collaborators will be allowed to vote.
+# For organization-owned repositories, the list of collaborators includes
+# outside collaborators, organization members that are direct collaborators,
+# organization members with access through team memberships, organization
+# members with access through default organization permissions, and
+# organization owners.
+#
+# allowed_voters:
+#   - cynthia-sg
+#   - tegioz
+#
+allowed_voters: []
 ```
 
-Once a vote is created, the configuration it will use during its lifetime will be the one present at the vote creation moment. This means that if we create a vote that lasts a week and, during that week another user is added to the list of authorized voters, they won't be able to participate in the vote already in progress. The same applies for changes in pass threshold, duration, etc.
+*Once a vote is created, the configuration it will use during its lifetime will be the one present at the vote creation moment.*
 
 ### Creating votes
 

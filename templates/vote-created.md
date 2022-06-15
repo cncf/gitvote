@@ -2,13 +2,17 @@
 
 **@{{ creator }}** has called for a vote on `{{ issue_title }}` (#{{ issue_number }}).
 
+{% if !allowed_voters.is_empty() %}
 The following users have binding votes as defined in the repository's [git-vote configuration file]({{ config_url }}):
 
 | User |
 | ---- |
-{% for user in voters -%}
+{% for user in allowed_voters -%}
 | @{{ user }} |
 {% endfor %}
+{% else %}
+All repository collaborators have binding votes as defined in the repository's [git-vote configuration file]({{ config_url }}).
+{% endif %}
 
 Non-binding votes are also appreciated as a sign of support!
 

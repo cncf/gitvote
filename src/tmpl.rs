@@ -31,14 +31,18 @@ pub(crate) struct VoteCreated<'a> {
     issue_title: &'a str,
     issue_number: i64,
     config_url: String,
-    voters: &'a Vec<String>,
     duration: String,
     pass_threshold: f64,
+    allowed_voters: Vec<String>,
 }
 
 impl<'a> VoteCreated<'a> {
     /// Create a new VoteCreated template.
     pub(crate) fn new(event: &'a IssueCommentEvent, cfg: &'a votes::Cfg) -> Self {
+        let allowed_voters = match &cfg.allowed_voters {
+            Some(v) => v.clone(),
+            None => vec![],
+        };
         Self {
             creator: &event.comment.user.login,
             issue_title: &event.issue.title,
@@ -47,9 +51,9 @@ impl<'a> VoteCreated<'a> {
                 "https://github.com/{}/blob/HEAD/{}",
                 &event.repository.full_name, VOTE_CONFIG_FILE
             ),
-            voters: &cfg.voters,
             duration: humantime::format_duration(cfg.duration).to_string(),
             pass_threshold: cfg.pass_threshold,
+            allowed_voters,
         }
     }
 }

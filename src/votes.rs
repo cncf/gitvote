@@ -1,5 +1,5 @@
 use crate::{
-    github::{IssueCommentEvent, IssueCommentEventAction, Reaction},
+    github::{IssueCommentEvent, IssueCommentEventAction, Reaction, User},
     tmpl,
 };
 use anyhow::{Context, Result};
@@ -30,7 +30,6 @@ const GITHUB_API_URL: &str = "https://api.github.com";
 const IN_FAVOR: &str = "In favor";
 const AGAINST: &str = "Against";
 const ABSTAIN: &str = "Abstain";
-const NOT_VOTED: &str = "Not voted";
 
 /// Vote options reactions.
 const IN_FAVOR_REACTION: &str = "+1";
@@ -80,10 +79,10 @@ pub(crate) struct Vote {
 /// Vote configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Cfg {
-    pub voters: Vec<String>,
-    pub pass_threshold: f64,
     #[serde(with = "humantime_serde")]
     pub duration: Duration,
+    pub pass_threshold: f64,
+    pub allowed_voters: Option<Vec<String>>,
 }
 
 impl Cfg {
@@ -275,22 +274,27 @@ impl Processor {
         vote_comment_id: i64,
     ) -> Result<Results> {
         // Get vote comment reactions (aka votes)
-        let url = format!(
-            "{}/repos/{}/{}/issues/comments/{}/reactions",
-            GITHUB_API_URL, owner, repo, vote_comment_id
-        );
-        let first_page: Page<Reaction> = gh.get(url, None::<&()>).await?;
-        let reactions = gh.all_pages(first_page).await?;
+        let reactions = self
+            .get_comment_reactions(gh, owner, repo, vote_comment_id)
+            .await?;
+
+        // Prepare list of allowed voters (users with binding votes)
+        let allowed_voters =
+            if cfg.allowed_voters.is_some() && !cfg.allowed_voters.as_ref().unwrap().is_empty() {
+                cfg.allowed_voters.clone().unwrap()
+            } else {
+                self.get_collaborators(gh, owner, repo).await?
+            };
 
         // Count votes
         let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
-        let mut voters: HashMap<String, String> = HashMap::with_capacity(cfg.voters.len());
+        let mut voters: HashMap<String, String> = HashMap::with_capacity(allowed_voters.len());
         let mut multiple_options_voters: Vec<String> = Vec::new();
         for reaction in reactions {
             let user = reaction.user.login;
 
             // We only count the votes of users with a binding vote
-            if !cfg.voters.contains(&user) {
+            if !allowed_voters.contains(&user) {
                 continue;
             }
 
@@ -324,18 +328,13 @@ impl Processor {
             }
         }
 
-        // Add users with a binding vote who did not vote to the list of voters
-        let mut not_voted = 0;
-        for user in &cfg.voters {
-            if !voters.contains_key(user) {
-                not_voted += 1;
-                voters.insert(user.clone(), NOT_VOTED.to_string());
-            }
-        }
-
         // Prepare results and return them
-        let in_favor_percentage = in_favor as f64 / cfg.voters.len() as f64 * 100.0;
+        let in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
         let passed = in_favor_percentage >= cfg.pass_threshold;
+        let not_voted = allowed_voters
+            .iter()
+            .filter(|user| !voters.contains_key(*user))
+            .count() as i64;
 
         Ok(Results {
             passed,
@@ -429,6 +428,41 @@ impl Processor {
 
         debug!("vote {} created", &vote_id);
         Ok(())
+    }
+
+    /// Get all repository collaborators.
+    async fn get_collaborators(
+        &self,
+        gh: &Octocrab,
+        owner: &str,
+        repo: &str,
+    ) -> Result<Vec<String>> {
+        let url = format!("{}/repos/{}/{}/collaborators", GITHUB_API_URL, owner, repo);
+        let first_page: Page<User> = gh.get(url, None::<&()>).await?;
+        let collaborators = gh
+            .all_pages(first_page)
+            .await?
+            .into_iter()
+            .map(|u| u.login)
+            .collect();
+        Ok(collaborators)
+    }
+
+    /// Get reactions for the provided comment.
+    async fn get_comment_reactions(
+        &self,
+        gh: &Octocrab,
+        owner: &str,
+        repo: &str,
+        comment_id: i64,
+    ) -> Result<Vec<Reaction>> {
+        let url = format!(
+            "{}/repos/{}/{}/issues/comments/{}/reactions",
+            GITHUB_API_URL, owner, repo, comment_id
+        );
+        let first_page: Page<Reaction> = gh.get(url, None::<&()>).await?;
+        let reactions = gh.all_pages(first_page).await?;
+        Ok(reactions)
     }
 
     /// Get any pending finished vote.
