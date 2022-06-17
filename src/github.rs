@@ -35,6 +35,7 @@ pub(crate) struct IssueCommentEvent {
     pub installation: Installation,
     pub issue: Issue,
     pub repository: Repository,
+    pub organization: Option<Organization>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -73,6 +74,11 @@ pub(crate) struct Issue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Repository {
     pub full_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Organization {
+    pub login: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

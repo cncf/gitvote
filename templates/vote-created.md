@@ -2,14 +2,25 @@
 
 **@{{ creator }}** has called for a vote on `{{ issue_title }}` (#{{ issue_number }}).
 
-{% if !allowed_voters.is_empty() %}
+{% if !teams.is_empty() || !users.is_empty() %}
+{% if !teams.is_empty() %}
+The members of the following teams have binding votes:
+
+| Team |
+| ---- |
+{% for team in teams -%}
+| @{{ org }}/{{ team }} |
+{% endfor %}
+{% endif %}
+{% if !users.is_empty() %}
 The following users have binding votes:
 
 | User |
 | ---- |
-{% for user in allowed_voters -%}
+{% for user in users -%}
 | @{{ user }} |
 {% endfor %}
+{% endif %}
 {% else %}
 All repository collaborators have binding votes.
 {% endif %}
