@@ -1,13 +1,16 @@
+use crate::{db::PgDB, github::GHApi};
 use anyhow::{Context, Result};
 use clap::Parser;
 use config::{Config, File};
 use deadpool_postgres::{Config as DbConfig, Runtime};
+use octocrab::Octocrab;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{signal, sync::broadcast};
 use tracing::{debug, info};
 
+mod db;
 mod github;
 mod handlers;
 mod tmpl;
@@ -44,12 +47,22 @@ async fn main() -> Result<()> {
     builder.set_verify(SslVerifyMode::NONE);
     let connector = MakeTlsConnector::new(builder.build());
     let db_cfg: DbConfig = cfg.get("db")?;
-    let db = db_cfg.create_pool(Some(Runtime::Tokio1), connector)?;
+    let pool = db_cfg.create_pool(Some(Runtime::Tokio1), connector)?;
+    let db = Arc::new(PgDB::new(pool));
+
+    // Setup GitHub client
+    let app_id = cfg.get_int("github.appID")? as u64;
+    let app_private_key = cfg.get_string("github.appPrivateKey")?;
+    let app_private_key = jsonwebtoken::EncodingKey::from_rsa_pem(app_private_key.as_bytes())?;
+    let app_client = Octocrab::builder()
+        .app(app_id.into(), app_private_key)
+        .build()?;
+    let gh = Arc::new(GHApi::new(app_client));
 
     // Setup and launch votes processor
     let (cmds_tx, cmds_rx) = async_channel::unbounded();
     let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-    let votes_processor = votes::Processor::new(cfg.clone(), db)?;
+    let votes_processor = votes::Processor::new(db, gh)?;
     let votes_processor_done = votes_processor.start(cmds_rx, stop_tx.clone());
     debug!("[votes processor] started");
 
