@@ -2,7 +2,7 @@
 
 The vote {% if results.passed %}**passed**! 🎉{% else %}**did not pass**.{% endif %}
 
-`{{ results.in_favor_percentage }}%` of the users with binding vote were in favor (passing threshold: `{{ results.pass_threshold }}%`).
+`{{ "{:.2}"|format(results.in_favor_percentage) }}%` of the users with binding vote were in favor (passing threshold: `{{ results.pass_threshold }}%`).
 
 ### Summary
 

@@ -14,5 +14,6 @@ create table if not exists vote (
     issue_number bigint not null,
     is_pull_request boolean not null,
     repository_full_name text not null,
+    organization text,
     results jsonb
 );

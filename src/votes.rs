@@ -73,6 +73,7 @@ pub(crate) struct Vote {
     issue_number: i64,
     is_pull_request: bool,
     repository_full_name: String,
+    organization: Option<String>,
     results: Option<Results>,
 }
 
@@ -89,7 +90,14 @@ pub(crate) struct CfgProfile {
     #[serde(with = "humantime_serde")]
     pub duration: Duration,
     pub pass_threshold: f64,
-    pub allowed_voters: Option<Vec<String>>,
+    pub allowed_voters: Option<AllowedVoters>,
+}
+
+/// List of teams and users allowed to vote.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct AllowedVoters {
+    pub teams: Option<Vec<String>>,
+    pub users: Option<Vec<String>>,
 }
 
 impl CfgProfile {
@@ -301,20 +309,17 @@ impl Processor {
         cfg: &CfgProfile,
         owner: &str,
         repo: &str,
-        vote_comment_id: i64,
+        vote: &Vote,
     ) -> Result<Results> {
         // Get vote comment reactions (aka votes)
         let reactions = self
-            .get_comment_reactions(gh, owner, repo, vote_comment_id)
+            .get_comment_reactions(gh, owner, repo, vote.vote_comment_id)
             .await?;
 
-        // Prepare list of allowed voters (users with binding votes)
-        let allowed_voters =
-            if cfg.allowed_voters.is_some() && !cfg.allowed_voters.as_ref().unwrap().is_empty() {
-                cfg.allowed_voters.clone().unwrap()
-            } else {
-                self.get_collaborators(gh, owner, repo).await?
-            };
+        // Get list of allowed voters (users with binding votes)
+        let allowed_voters = self
+            .get_allowed_voters(cfg, gh, owner, repo, &vote.organization)
+            .await?;
 
         // Count votes
         let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
@@ -393,7 +398,7 @@ impl Processor {
         let gh_inst = self.gh_app.installation(inst_id);
         let (owner, repo) = split_full_name(&vote.repository_full_name);
         let results = self
-            .calculate_vote_results(&gh_inst, &vote.cfg, owner, repo, vote.vote_comment_id)
+            .calculate_vote_results(&gh_inst, &vote.cfg, owner, repo, &vote)
             .await?;
 
         // Store results in database
@@ -460,6 +465,56 @@ impl Processor {
         Ok(())
     }
 
+    /// Get all users allowed to vote on a given vote.
+    async fn get_allowed_voters(
+        &self,
+        cfg: &CfgProfile,
+        gh: &Octocrab,
+        owner: &str,
+        repo: &str,
+        org: &Option<String>,
+    ) -> Result<Vec<String>> {
+        let mut allowed_voters: Vec<String> = vec![];
+
+        // Get allowed voters from configuration
+        if let Some(cfg_allowed_voters) = &cfg.allowed_voters {
+            // Teams
+            if org.is_some() {
+                if let Some(teams) = &cfg_allowed_voters.teams {
+                    for team in teams {
+                        if let Ok(members) = self
+                            .get_team_members(gh, org.as_ref().unwrap().as_str(), team)
+                            .await
+                        {
+                            for user in members {
+                                if !allowed_voters.contains(&user) {
+                                    allowed_voters.push(user.to_owned());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Users
+            if let Some(users) = &cfg_allowed_voters.users {
+                for user in users {
+                    if !allowed_voters.contains(user) {
+                        allowed_voters.push(user.to_owned());
+                    }
+                }
+            }
+        }
+
+        // If no allowed voters can be found in the configuration, all
+        // repository collaborators are allowed to vote
+        if allowed_voters.is_empty() {
+            return self.get_collaborators(gh, owner, repo).await;
+        }
+
+        Ok(allowed_voters)
+    }
+
     /// Get all repository collaborators.
     async fn get_collaborators(
         &self,
@@ -515,6 +570,7 @@ impl Processor {
                     issue_number,
                     is_pull_request,
                     repository_full_name,
+                    organization,
                     results
                 from vote
                 where current_timestamp > ends_at and closed = false
@@ -546,9 +602,23 @@ impl Processor {
             issue_number: row.get("issue_number"),
             is_pull_request: row.get("is_pull_request"),
             repository_full_name: row.get("repository_full_name"),
+            organization: row.get("organization"),
             results: results.map(|Json(results)| results),
         };
         Ok(Some(vote))
+    }
+
+    /// Get all members of the provided team.
+    async fn get_team_members(&self, gh: &Octocrab, org: &str, team: &str) -> Result<Vec<String>> {
+        let url = format!("{}/orgs/{}/teams/{}/members", GITHUB_API_URL, org, team);
+        let first_page: Page<User> = gh.get(url, None::<&()>).await?;
+        let members = gh
+            .all_pages(first_page)
+            .await?
+            .into_iter()
+            .map(|u| u.login)
+            .collect();
+        Ok(members)
     }
 
     /// Check if the issue/pr provided already has a vote open.
@@ -594,6 +664,7 @@ impl Processor {
         cfg: &CfgProfile,
         event: &IssueCommentEvent,
     ) -> Result<Uuid> {
+        let organization = event.organization.as_ref().map(|org| org.login.clone());
         let db = self.db.get().await?;
         let row = db
             .query_one(
@@ -607,7 +678,8 @@ impl Processor {
                     issue_id,
                     issue_number,
                     is_pull_request,
-                    repository_full_name
+                    repository_full_name,
+                    organization
 
                 ) values (
                     $1::bigint,
@@ -618,7 +690,8 @@ impl Processor {
                     $6::bigint,
                     $7::bigint,
                     $8::boolean,
-                    $9::text
+                    $9::text,
+                    $10::text
                 )
                 returning vote_id
                 ",
@@ -632,6 +705,7 @@ impl Processor {
                     &event.issue.number,
                     &event.issue.pull_request.is_some(),
                     &event.repository.full_name,
+                    &organization,
                 ],
             )
             .await?;

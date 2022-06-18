@@ -29,23 +29,39 @@ pub(crate) struct VoteCreated<'a> {
     issue_number: i64,
     duration: String,
     pass_threshold: f64,
-    allowed_voters: Vec<String>,
+    org: &'a str,
+    teams: Vec<String>,
+    users: Vec<String>,
 }
 
 impl<'a> VoteCreated<'a> {
     /// Create a new VoteCreated template.
     pub(crate) fn new(event: &'a IssueCommentEvent, cfg: &'a votes::CfgProfile) -> Self {
-        let allowed_voters = match &cfg.allowed_voters {
-            Some(v) => v.clone(),
-            None => vec![],
+        // Prepare teams and users allowed to vote
+        let (mut teams, mut users) = (vec![], vec![]);
+        if let Some(allowed_voters) = &cfg.allowed_voters {
+            if let Some(v) = &allowed_voters.teams {
+                teams = v.clone();
+            }
+            if let Some(v) = &allowed_voters.users {
+                users = v.clone();
+            }
+        }
+
+        let org = match &event.organization {
+            Some(org) => org.login.as_ref(),
+            None => "",
         };
+
         Self {
             creator: &event.comment.user.login,
             issue_title: &event.issue.title,
             issue_number: event.issue.number,
             duration: humantime::format_duration(cfg.duration).to_string(),
             pass_threshold: cfg.pass_threshold,
-            allowed_voters,
+            org,
+            teams,
+            users,
         }
     }
 }
