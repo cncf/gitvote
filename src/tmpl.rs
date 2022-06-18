@@ -1,4 +1,7 @@
-use crate::{github::IssueCommentEvent, votes};
+use crate::{
+    github::IssueCommentEvent,
+    votes::{CfgProfile, VoteResults},
+};
 use askama::Template;
 
 /// Template for the index document.
@@ -10,12 +13,12 @@ pub(crate) struct Index {}
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-closed.md")]
 pub(crate) struct VoteClosed<'a> {
-    results: &'a votes::Results,
+    results: &'a VoteResults,
 }
 
 impl<'a> VoteClosed<'a> {
     /// Create a new VoteClosed template.
-    pub(crate) fn new(results: &'a votes::Results) -> Self {
+    pub(crate) fn new(results: &'a VoteResults) -> Self {
         Self { results }
     }
 }
@@ -36,7 +39,7 @@ pub(crate) struct VoteCreated<'a> {
 
 impl<'a> VoteCreated<'a> {
     /// Create a new VoteCreated template.
-    pub(crate) fn new(event: &'a IssueCommentEvent, cfg: &'a votes::CfgProfile) -> Self {
+    pub(crate) fn new(event: &'a IssueCommentEvent, cfg: &'a CfgProfile) -> Self {
         // Prepare teams and users allowed to vote
         let (mut teams, mut users) = (vec![], vec![]);
         if let Some(allowed_voters) = &cfg.allowed_voters {
@@ -48,6 +51,7 @@ impl<'a> VoteCreated<'a> {
             }
         }
 
+        // Get organization name if available
         let org = match &event.organization {
             Some(org) => org.login.as_ref(),
             None => "",
