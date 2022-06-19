@@ -13,6 +13,9 @@ const GITHUB_API_URL: &str = "https://api.github.com";
 /// Configuration file name.
 pub const CONFIG_FILE: &str = ".gitvote.yml";
 
+/// Repository where the organization wide config file should be located.
+pub const ORG_CONFIG_REPO: &str = ".github";
+
 /// Type alias to represent a GH trait object.
 pub(crate) type DynGH = Arc<dyn GH + Send + Sync>;
 
@@ -185,16 +188,28 @@ impl GH for GHApi {
         repo: &str,
     ) -> Result<Option<String>> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let response = client
-            .repos(owner, repo)
-            .get_content()
-            .path(CONFIG_FILE)
-            .send()
-            .await?;
-        if response.items.len() != 1 {
-            return Ok(None);
+
+        // Try to get the config file from the repository. Otherwise try
+        // getting the organization wide config file in the .github repo.
+        let mut content: Option<String> = None;
+        for repo in &[repo, ORG_CONFIG_REPO] {
+            match client
+                .repos(owner, *repo)
+                .get_content()
+                .path(CONFIG_FILE)
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    if resp.items.len() == 1 {
+                        content = resp.items[0].decoded_content();
+                        break;
+                    }
+                }
+                Err(_) => continue,
+            }
         }
-        let content = response.items[0].decoded_content();
+
         Ok(content)
     }
 

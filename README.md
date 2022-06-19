@@ -10,7 +10,12 @@ Once the application has been installed we can proceed with its configuration.
 
 ### Configuration
 
-GitVote expects a configuration file named [.gitvote.yml](https://github.com/cncf/gitvote/blob/main/docs/config/.gitvote.yml) at the root of each repository where you'd like to create votes. Please note that the configuration file is **required** and no commands will be processed if it cannot be found. Once a vote is created, the configuration it will use during its lifetime will be the one present at the vote creation moment.
+To create votes, you'll first need to add a [.gitvote.yml](https://github.com/cncf/gitvote/blob/main/docs/config/.gitvote.yml) configuration file. GitVote will look for it in the following locations (in order of precedence):
+
+- At the root of the repository where the vote was created
+- At the root of the `.github` repository, for organization wide configuration
+
+Please note that the configuration file is **required** and no commands will be processed if it cannot be found. Once a vote is created, the configuration it will use during its lifetime will be the one present at the vote creation time.
 
 For more information about the configuration file format please see the [reference documentation](https://github.com/cncf/gitvote/blob/main/docs/config/.gitvote.yml).
 
