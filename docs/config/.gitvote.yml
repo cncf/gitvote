@@ -1,5 +1,10 @@
 # GitVote configuration file
-# This file must be located at the root of the repository
+#
+# GitVote will look for it in the following locations (in order of precedence):
+#
+#   - At the root of the repository where the vote was created
+#   - At the root of the .github repository, for organization wide configuration
+#
 
 # Default configuration profile
 #
