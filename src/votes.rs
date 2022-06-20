@@ -53,6 +53,14 @@ lazy_static! {
     pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(vote)-?([a-zA-Z0-9]*)\s*$"#).expect("invalid CMD regexp");
 }
 
+/// Errors that may occur while getting the configuration profile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) enum CfgError {
+    ConfigNotFound,
+    InvalidConfig(String),
+    ProfileNotFound,
+}
+
 /// Vote configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(transparent)]
@@ -78,17 +86,18 @@ impl CfgProfile {
         owner: &'a str,
         repo: &'a str,
         profile: Option<String>,
-    ) -> Result<Option<Self>> {
-        match gh.get_config_file(inst_id, owner, repo).await? {
+    ) -> Result<Self, CfgError> {
+        match gh.get_config_file(inst_id, owner, repo).await {
             Some(content) => {
-                let mut cfg: Cfg = serde_yaml::from_str(&content)?;
+                let mut cfg: Cfg = serde_yaml::from_str(&content)
+                    .map_err(|e| CfgError::InvalidConfig(e.to_string()))?;
                 let profile = profile.unwrap_or_else(|| DEFAULT_PROFILE.to_string());
                 match cfg.profiles.remove(&profile) {
-                    Some(profile) => Ok(Some(profile)),
-                    None => Ok(None),
+                    Some(profile) => Ok(profile),
+                    None => Err(CfgError::ProfileNotFound),
                 }
             }
-            None => Ok(None),
+            None => Err(CfgError::ConfigNotFound),
         }
     }
 }
@@ -255,9 +264,19 @@ impl Processor {
         let inst_id = event.installation.id as u64;
 
         // Get vote configuration profile
-        let cfg = match CfgProfile::get(self.gh.clone(), inst_id, owner, repo, profile).await? {
-            Some(md) => md,
-            None => return Ok(()),
+        let cfg = match CfgProfile::get(self.gh.clone(), inst_id, owner, repo, profile).await {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                let body = match err {
+                    CfgError::ConfigNotFound => tmpl::ConfigNotFound {}.render()?,
+                    CfgError::ProfileNotFound => tmpl::ConfigProfileNotFound {}.render()?,
+                    CfgError::InvalidConfig(reason) => tmpl::InvalidConfig::new(reason).render()?,
+                };
+                self.gh
+                    .post_comment(inst_id, owner, repo, issue_number, &body)
+                    .await?;
+                return Ok(());
+            }
         };
 
         // Only repository collaborators can create votes

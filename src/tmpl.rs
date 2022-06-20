@@ -4,10 +4,34 @@ use crate::{
 };
 use askama::Template;
 
+/// Template for the config not found comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "config-not-found.md")]
+pub(crate) struct ConfigNotFound {}
+
+/// Template for the config profile not found comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "config-profile-not-found.md")]
+pub(crate) struct ConfigProfileNotFound {}
+
 /// Template for the index document.
 #[derive(Debug, Clone, Template)]
 #[template(path = "index.html")]
 pub(crate) struct Index {}
+
+/// Template for the invalid config comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "invalid-config.md")]
+pub(crate) struct InvalidConfig {
+    reason: String,
+}
+
+impl InvalidConfig {
+    /// Create a new InvalidConfig template.
+    pub(crate) fn new(reason: String) -> Self {
+        Self { reason }
+    }
+}
 
 /// Template for the vote closed comment.
 #[derive(Debug, Clone, Template)]
