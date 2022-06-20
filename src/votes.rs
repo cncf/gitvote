@@ -162,8 +162,8 @@ impl Command {
         // Extract command from comment body
         if let Some(content) = &event.comment.body {
             if let Some(captures) = CMD.captures(content) {
-                let cmd = captures.get(1).unwrap().as_str();
-                let profile = match captures.get(2).unwrap().as_str() {
+                let cmd = captures.get(1)?.as_str();
+                let profile = match captures.get(2)?.as_str() {
                     "" => None,
                     profile => Some(profile.to_string()),
                 };
@@ -426,7 +426,7 @@ impl Processor {
                 match voters.get(&user).unwrap().as_str() {
                     IN_FAVOR => in_favor -= 1,
                     AGAINST => against -= 1,
-                    ABSTAIN => in_favor -= 1,
+                    ABSTAIN => abstain -= 1,
                     _ => {}
                 }
                 voters.remove(&user);
