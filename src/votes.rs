@@ -3,13 +3,13 @@ use crate::{
     github::{DynGH, IssueCommentEvent, IssueCommentEventAction},
     tmpl,
 };
-use anyhow::{Context, Result};
+use anyhow::{format_err, Context, Result};
 use askama::Template;
 use futures::future::{self, JoinAll};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, fmt, sync::Arc, time::Duration};
 use time::OffsetDateTime;
 use tokio::{
     sync::broadcast::{self, error::TryRecvError},
@@ -18,16 +18,6 @@ use tokio::{
 };
 use tracing::{debug, error};
 use uuid::Uuid;
-
-/// Vote options.
-const IN_FAVOR: &str = "In favor";
-const AGAINST: &str = "Against";
-const ABSTAIN: &str = "Abstain";
-
-/// Vote options reactions.
-const IN_FAVOR_REACTION: &str = "+1";
-const AGAINST_REACTION: &str = "-1";
-const ABSTAIN_REACTION: &str = "eyes";
 
 /// Number of commands handlers workers.
 const COMMANDS_HANDLERS_WORKERS: usize = 5;
@@ -129,6 +119,38 @@ pub(crate) struct Vote {
     pub results: Option<VoteResults>,
 }
 
+/// Vote options.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) enum VoteOption {
+    InFavor,
+    Against,
+    Abstain,
+}
+
+impl fmt::Display for VoteOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::InFavor => "In favor",
+            Self::Against => "Against",
+            Self::Abstain => "Abstain",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl VoteOption {
+    /// Create a new vote option from a reaction string.
+    fn from_reaction(reaction: &str) -> Result<Self> {
+        let vote_option = match reaction {
+            "+1" => Self::InFavor,
+            "-1" => Self::Against,
+            "eyes" => Self::Abstain,
+            _ => return Err(format_err!("reaction not supported")),
+        };
+        Ok(vote_option)
+    }
+}
+
 /// Vote results information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct VoteResults {
@@ -139,7 +161,7 @@ pub(crate) struct VoteResults {
     pub against: i64,
     pub abstain: i64,
     pub not_voted: i64,
-    pub voters: HashMap<String, String>,
+    pub voters: HashMap<String, VoteOption>,
 }
 
 /// Represents a command to be executed, usually created from a GitHub event.
@@ -382,7 +404,7 @@ impl Processor {
         Ok(Some(()))
     }
 
-    /// Calculate the results of the vote created at the comment provided.
+    /// Calculate vote results.
     async fn calculate_vote_results(
         &self,
         cfg: &CfgProfile,
@@ -403,14 +425,21 @@ impl Processor {
             .get_allowed_voters(inst_id, cfg, owner, repo, &vote.organization)
             .await?;
 
-        // Count votes
-        let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
-        let mut voters: HashMap<String, String> = HashMap::with_capacity(allowed_voters.len());
+        // Track users votes
+        let mut voters: HashMap<String, VoteOption> = HashMap::new();
         let mut multiple_options_voters: Vec<String> = Vec::new();
         for reaction in reactions {
+            // Get vote option from reaction
             let user = reaction.user.login;
+            let vote_option = match VoteOption::from_reaction(reaction.content.as_str()) {
+                Ok(vote_option) => vote_option,
+                Err(_) => {
+                    // Ignore unsupported reactions
+                    continue;
+                }
+            };
 
-            // We only count the votes of users with a binding vote
+            // We only count the votes of the users with a binding vote
             if !allowed_voters.contains(&user) {
                 continue;
             }
@@ -423,36 +452,23 @@ impl Processor {
                 // User has already voted (multiple options voter), we have to
                 // remote their vote as we can't know which one to pick
                 multiple_options_voters.push(user.clone());
-                match voters.get(&user).unwrap().as_str() {
-                    IN_FAVOR => in_favor -= 1,
-                    AGAINST => against -= 1,
-                    ABSTAIN => abstain -= 1,
-                    _ => {}
-                }
                 voters.remove(&user);
+                continue;
             }
 
-            // Track binding votes
-            match reaction.content.as_str() {
-                IN_FAVOR_REACTION => {
-                    in_favor += 1;
-                    voters.insert(user.clone(), IN_FAVOR.to_string());
-                }
-                AGAINST_REACTION => {
-                    against += 1;
-                    voters.insert(user.clone(), AGAINST.to_string());
-                }
-                ABSTAIN_REACTION => {
-                    abstain += 1;
-                    voters.insert(user.clone(), ABSTAIN.to_string());
-                }
-                _ => {
-                    // Ignore other reactions
-                }
-            }
+            // Track binding vote
+            voters.insert(user, vote_option);
         }
 
         // Prepare results and return them
+        let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
+        for (_, vote_option) in voters.iter() {
+            match vote_option {
+                VoteOption::InFavor => in_favor += 1,
+                VoteOption::Against => against += 1,
+                VoteOption::Abstain => abstain += 1,
+            }
+        }
         let in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
         let passed = in_favor_percentage >= cfg.pass_threshold;
         let not_voted = allowed_voters
