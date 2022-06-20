@@ -49,12 +49,7 @@ pub(crate) trait GH {
     ) -> Result<Vec<Reaction>>;
 
     /// Get configuration file.
-    async fn get_config_file(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-    ) -> Result<Option<String>>;
+    async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String>;
 
     /// Get all members of the provided team.
     async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<String>>;
@@ -181,12 +176,7 @@ impl GH for GHApi {
     }
 
     /// Get configuration file.
-    async fn get_config_file(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-    ) -> Result<Option<String>> {
+    async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String> {
         let client = self.app_client.installation(InstallationId(inst_id));
 
         // Try to get the config file from the repository. Otherwise try
@@ -210,7 +200,7 @@ impl GH for GHApi {
             }
         }
 
-        Ok(content)
+        content
     }
 
     /// Get all members of the provided team.
