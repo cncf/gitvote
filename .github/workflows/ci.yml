@@ -25,10 +25,27 @@ jobs:
           command: fmt
           args: --all -- --check
 
+  tests-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Run backend tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+
   build-gitvote-dbmigrator-image:
     if: github.ref == 'refs/heads/main'
     needs:
       - linter-backend
+      - tests-backend
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -53,6 +70,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     needs:
       - linter-backend
+      - tests-backend
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

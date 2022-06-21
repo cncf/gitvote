@@ -2,19 +2,21 @@ use crate::votes::CfgProfile;
 use anyhow::Result;
 use async_trait::async_trait;
 use axum::http::HeaderValue;
+#[cfg(test)]
+use mockall::automock;
 use octocrab::{models::InstallationId, Octocrab, Page};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// GitHub API base url.
-const GITHUB_API_URL: &str = "https://api.github.com";
+pub(crate) const GITHUB_API_URL: &str = "https://api.github.com";
 
 /// Configuration file name.
-pub const CONFIG_FILE: &str = ".gitvote.yml";
+pub(crate) const CONFIG_FILE: &str = ".gitvote.yml";
 
 /// Repository where the organization wide config file should be located.
-pub const ORG_CONFIG_REPO: &str = ".github";
+pub(crate) const ORG_CONFIG_REPO: &str = ".github";
 
 /// Type alias to represent a GH trait object.
 pub(crate) type DynGH = Arc<dyn GH + Send + Sync>;
@@ -22,8 +24,15 @@ pub(crate) type DynGH = Arc<dyn GH + Send + Sync>;
 /// Type alias to represent a comment id.
 type CommentId = i64;
 
+/// Type alias to represent a team slug.
+pub(crate) type TeamSlug = String;
+
+/// Type alias to represent a username.
+pub(crate) type UserName = String;
+
 /// Trait that defines some operations a GH implementation must support.
 #[async_trait]
+#[cfg_attr(test, automock)]
 pub(crate) trait GH {
     /// Get all users allowed to vote on a given vote.
     async fn get_allowed_voters(
@@ -33,11 +42,15 @@ pub(crate) trait GH {
         owner: &str,
         repo: &str,
         org: &Option<String>,
-    ) -> Result<Vec<String>>;
+    ) -> Result<Vec<UserName>>;
 
     /// Get all repository collaborators.
-    async fn get_collaborators(&self, inst_id: u64, owner: &str, repo: &str)
-        -> Result<Vec<String>>;
+    async fn get_collaborators(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+    ) -> Result<Vec<UserName>>;
 
     /// Get reactions for the provided comment.
     async fn get_comment_reactions(
@@ -52,7 +65,7 @@ pub(crate) trait GH {
     async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String>;
 
     /// Get all members of the provided team.
-    async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<String>>;
+    async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>>;
 
     /// Post the comment provided in the repository's issue given.
     async fn post_comment(
@@ -96,8 +109,8 @@ impl GH for GHApi {
         owner: &str,
         repo: &str,
         org: &Option<String>,
-    ) -> Result<Vec<String>> {
-        let mut allowed_voters: Vec<String> = vec![];
+    ) -> Result<Vec<UserName>> {
+        let mut allowed_voters: Vec<UserName> = vec![];
 
         // Get allowed voters from configuration
         if let Some(cfg_allowed_voters) = &cfg.allowed_voters {
@@ -144,7 +157,7 @@ impl GH for GHApi {
         inst_id: u64,
         owner: &str,
         repo: &str,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{}/repos/{}/{}/collaborators", GITHUB_API_URL, owner, repo);
         let first_page: Page<User> = client.get(url, None::<&()>).await?;
@@ -204,7 +217,7 @@ impl GH for GHApi {
     }
 
     /// Get all members of the provided team.
-    async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<String>> {
+    async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{}/orgs/{}/teams/{}/members", GITHUB_API_URL, org, team);
         let first_page: Page<User> = client.get(url, None::<&()>).await?;
@@ -311,7 +324,7 @@ pub(crate) struct Comment {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct User {
-    pub login: String,
+    pub login: UserName,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

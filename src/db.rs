@@ -5,6 +5,8 @@ use crate::{
 use anyhow::Result;
 use async_trait::async_trait;
 use deadpool_postgres::{Pool, Transaction};
+#[cfg(test)]
+use mockall::automock;
 use std::sync::Arc;
 use tokio_postgres::types::Json;
 use uuid::Uuid;
@@ -14,6 +16,7 @@ pub(crate) type DynDB = Arc<dyn DB + Send + Sync>;
 
 /// Trait that defines some operations a DB implementation must support.
 #[async_trait]
+#[cfg_attr(test, automock)]
 pub(crate) trait DB {
     /// Get any pending finished vote.
     async fn get_pending_finished_vote(&self, tx: &Transaction<'_>) -> Result<Option<Vote>>;
