@@ -10,12 +10,12 @@ The vote {% if results.passed %}**passed**! 🎉{% else %}**did not pass**.{% en
 | :--------------------: | :-------------------: | :------------------: | :---------------------: |
 | {{ results.in_favor }} | {{ results.against }} | {{ results.abstain}} | {{ results.not_voted }} |
 
-{% if !results.voters.is_empty() %}
+{% if !results.votes.is_empty() %}
 ### Binding votes
 
 | User | Vote  |
 | ---- | :---: |
-{% for (user, vote) in results.voters -%}
+{% for (user, vote) in results.votes -%}
 | @{{ user }} | {{ vote }} |
 {% endfor %}
 {% endif %}

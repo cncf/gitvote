@@ -1,5 +1,5 @@
 use crate::{
-    github::IssueCommentEvent,
+    github::{IssueCommentEvent, TeamSlug, UserName},
     votes::{CfgProfile, VoteResults},
 };
 use askama::Template;
@@ -57,8 +57,8 @@ pub(crate) struct VoteCreated<'a> {
     duration: String,
     pass_threshold: f64,
     org: &'a str,
-    teams: Vec<String>,
-    users: Vec<String>,
+    teams: Vec<TeamSlug>,
+    users: Vec<UserName>,
 }
 
 impl<'a> VoteCreated<'a> {
