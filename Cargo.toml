@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.57"
+anyhow = "1.0.58"
 askama = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9b0bf888c0464a1af9df25f" }
 askama_axum = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9b0bf888c0464a1af9df25f" }
 async-channel = "1.6.1"
 async-trait = "0.1.56"
-axum = "0.5.7"
-clap = { version = "3.2.5", features = ["derive"] }
+axum = "0.5.9"
+clap = { version = "3.2.6", features = ["derive"] }
 config = "0.13.1"
 deadpool-postgres = { version = "0.10.2", features = ["serde"] }
 futures = "0.3.21"
@@ -29,7 +29,7 @@ serde = { version = "1.0.137", features = ["derive"] }
 serde_json = "1.0.81"
 serde_yaml = "0.8.24"
 sha2 = "0.10.2"
-time = { version = "0.3.9", features = ["serde"] }
+time = { version = "0.3.11", features = ["serde"] }
 tokio = {version = "1.19.2", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tokio-postgres = { version = "0.7.6", features = ["with-uuid-1", "with-serde_json-1", "with-time-0_3"] }
 tower = "0.4.13"
