@@ -268,34 +268,81 @@ impl GH for GHApi {
     }
 }
 
-/// Errors that may occur while creating a new event.
+/// Errors that may occur while creating a new event instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum EventError {
-    HeaderMissing,
+    MissingHeader,
     UnsupportedEvent,
+    InvalidBody(String),
 }
 
-/// Represents the kind of a GitHub webhook event.
+/// Represents a GitHub webhook event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Event {
-    IssueComment,
+    Issue(IssueEvent),
+    IssueComment(IssueCommentEvent),
+    PullRequest(PullRequestEvent),
 }
 
-impl TryFrom<Option<&HeaderValue>> for Event {
+impl TryFrom<(Option<&HeaderValue>, &[u8])> for Event {
     type Error = EventError;
 
-    fn try_from(value: Option<&HeaderValue>) -> Result<Self, Self::Error> {
-        match value {
-            Some(value) => match value.as_bytes() {
-                b"issue_comment" => Ok(Event::IssueComment),
+    fn try_from((header, body): (Option<&HeaderValue>, &[u8])) -> Result<Self, Self::Error> {
+        match header {
+            Some(header) => match header.as_bytes() {
+                b"issues" => {
+                    let event: IssueEvent = serde_json::from_slice(body)
+                        .map_err(|err| EventError::InvalidBody(err.to_string()))?;
+                    Ok(Event::Issue(event))
+                }
+                b"issue_comment" => {
+                    let event: IssueCommentEvent = serde_json::from_slice(body)
+                        .map_err(|err| EventError::InvalidBody(err.to_string()))?;
+                    Ok(Event::IssueComment(event))
+                }
+                b"pull_request" => {
+                    let event: PullRequestEvent = serde_json::from_slice(body)
+                        .map_err(|err| EventError::InvalidBody(err.to_string()))?;
+                    Ok(Event::PullRequest(event))
+                }
                 _ => Err(EventError::UnsupportedEvent),
             },
-            None => Err(EventError::HeaderMissing),
+            None => Err(EventError::MissingHeader),
         }
     }
 }
 
-/// Event triggered with activity related to an issue or pull request comment.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct IssueEvent {
+    pub action: IssueEventAction,
+    pub installation: Installation,
+    pub issue: Issue,
+    pub repository: Repository,
+    pub organization: Option<Organization>,
+    pub sender: User,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum IssueEventAction {
+    Opened,
+    Edited,
+    Deleted,
+    Pinned,
+    Unpinned,
+    Closed,
+    Reopened,
+    Assigned,
+    Unassigned,
+    Labeled,
+    Unlabeled,
+    Locked,
+    Unlocked,
+    Transferred,
+    Milestoned,
+    Demilestoned,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct IssueCommentEvent {
     pub action: IssueCommentEventAction,
@@ -304,9 +351,9 @@ pub(crate) struct IssueCommentEvent {
     pub issue: Issue,
     pub repository: Repository,
     pub organization: Option<Organization>,
+    pub sender: User,
 }
 
-/// Action performed on the comment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum IssueCommentEventAction {
@@ -316,10 +363,41 @@ pub(crate) enum IssueCommentEventAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PullRequestEvent {
+    pub action: PullRequestEventAction,
+    pub installation: Installation,
+    pub pull_request: PullRequest,
+    pub repository: Repository,
+    pub organization: Option<Organization>,
+    pub sender: User,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum PullRequestEventAction {
+    Assigned,
+    AutoMergeDisabled,
+    AutoMergeEnabled,
+    Closed,
+    ConvertedToDraft,
+    Edited,
+    Labeled,
+    Locked,
+    Opened,
+    ReadyForReview,
+    Reopened,
+    ReviewRequestRemoved,
+    ReviewRequested,
+    Synchronize,
+    Unassigned,
+    Unlabeled,
+    Unlocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Comment {
     pub id: i64,
     pub body: Option<String>,
-    pub user: User,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -337,7 +415,8 @@ pub(crate) struct Issue {
     pub id: i64,
     pub number: i64,
     pub title: String,
-    pub pull_request: Option<PullRequest>,
+    pub body: Option<String>,
+    pub pull_request: Option<PullRequestInIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -352,6 +431,14 @@ pub(crate) struct Organization {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PullRequest {
+    pub id: i64,
+    pub number: i64,
+    pub title: String,
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PullRequestInIssue {
     pub url: String,
 }
 

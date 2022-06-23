@@ -1,6 +1,9 @@
 use crate::{
     db::DynDB,
-    github::{DynGH, IssueCommentEvent, IssueCommentEventAction, TeamSlug, UserName},
+    github::{
+        DynGH, Event, IssueCommentEventAction, IssueEventAction, PullRequestEventAction, TeamSlug,
+        UserName,
+    },
     tmpl,
 };
 use anyhow::{format_err, Context, Result};
@@ -41,14 +44,6 @@ const VOTES_CLOSER_PAUSE_ON_ERROR: Duration = Duration::from_secs(30);
 lazy_static! {
     /// Regex used to detect commands in issues/prs comments.
     pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(vote)-?([a-zA-Z0-9]*)\s*$"#).expect("invalid CMD regexp");
-}
-
-/// Errors that may occur while getting the configuration profile.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) enum CfgError {
-    ConfigNotFound,
-    InvalidConfig(String),
-    ProfileNotFound,
 }
 
 /// Vote configuration.
@@ -92,6 +87,14 @@ impl CfgProfile {
     }
 }
 
+/// Errors that may occur while getting the configuration profile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) enum CfgError {
+    ConfigNotFound,
+    InvalidConfig(String),
+    ProfileNotFound,
+}
+
 /// Represents the teams and users allowed to vote.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AllowedVoters {
@@ -100,7 +103,7 @@ pub(crate) struct AllowedVoters {
 }
 
 /// Vote information.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Vote {
     pub vote_id: Uuid,
     pub vote_comment_id: i64,
@@ -167,22 +170,36 @@ pub(crate) struct VoteResults {
 /// Represents a command to be executed, usually created from a GitHub event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Command {
-    CreateVote {
-        profile: Option<String>,
-        event: IssueCommentEvent,
-    },
+    CreateVote(CreateVoteInput),
 }
 
 impl Command {
-    /// Try to create a new command from an issue comment event.
-    pub(crate) fn from_event(event: IssueCommentEvent) -> Option<Self> {
-        // Only events with action created are supported at the moment
-        if event.action != IssueCommentEventAction::Created {
-            return None;
-        }
+    /// Try to create a new command from an event.
+    pub(crate) fn from_event(event: Event) -> Option<Self> {
+        // Get the content where we'll try to extract the command from
+        let body = match event {
+            Event::Issue(ref event) => {
+                if event.action != IssueEventAction::Opened {
+                    return None;
+                }
+                &event.issue.body
+            }
+            Event::IssueComment(ref event) => {
+                if event.action != IssueCommentEventAction::Created {
+                    return None;
+                }
+                &event.comment.body
+            }
+            Event::PullRequest(ref event) => {
+                if event.action != PullRequestEventAction::Opened {
+                    return None;
+                }
+                &event.pull_request.body
+            }
+        };
 
-        // Extract command from comment body
-        if let Some(content) = &event.comment.body {
+        // Create a new command from the content (if possible)
+        if let Some(content) = body {
             if let Some(captures) = CMD.captures(content) {
                 let cmd = captures.get(1)?.as_str();
                 let profile = match captures.get(2)?.as_str() {
@@ -190,12 +207,70 @@ impl Command {
                     profile => Some(profile.to_string()),
                 };
                 match cmd {
-                    VOTE_CMD => return Some(Command::CreateVote { profile, event }),
+                    VOTE_CMD => {
+                        return Some(Command::CreateVote(CreateVoteInput::new(profile, event)))
+                    }
                     _ => return None,
                 }
             }
         }
+
         None
+    }
+}
+
+/// Information required to create a new vote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct CreateVoteInput {
+    pub profile: Option<String>,
+    pub created_by: String,
+    pub installation_id: i64,
+    pub issue_id: i64,
+    pub issue_number: i64,
+    pub issue_title: String,
+    pub is_pull_request: bool,
+    pub repository_full_name: String,
+    pub organization: Option<String>,
+}
+
+impl CreateVoteInput {
+    /// Try to create a new CreateVoteInput instance from an event.
+    pub(crate) fn new(profile: Option<String>, event: Event) -> Self {
+        match event {
+            Event::Issue(event) => Self {
+                profile,
+                created_by: event.sender.login,
+                installation_id: event.installation.id,
+                issue_id: event.issue.id,
+                issue_number: event.issue.number,
+                issue_title: event.issue.title,
+                is_pull_request: event.issue.pull_request.is_some(),
+                repository_full_name: event.repository.full_name,
+                organization: event.organization.map(|o| o.login),
+            },
+            Event::IssueComment(event) => Self {
+                profile,
+                created_by: event.sender.login,
+                installation_id: event.installation.id,
+                issue_id: event.issue.id,
+                issue_number: event.issue.number,
+                issue_title: event.issue.title,
+                is_pull_request: event.issue.pull_request.is_some(),
+                repository_full_name: event.repository.full_name,
+                organization: event.organization.map(|o| o.login),
+            },
+            Event::PullRequest(event) => Self {
+                profile,
+                created_by: event.sender.login,
+                installation_id: event.installation.id,
+                issue_id: event.pull_request.id,
+                issue_number: event.pull_request.number,
+                issue_title: event.pull_request.title,
+                is_pull_request: true,
+                repository_full_name: event.repository.full_name,
+                organization: event.organization.map(|o| o.login),
+            },
+        }
     }
 }
 
@@ -252,8 +327,8 @@ impl Processor {
                     // Pick next command from the queue and process it
                     Ok(cmd) = cmds_rx.recv() => {
                         if let Err(err) = match cmd {
-                            Command::CreateVote { profile, event } => {
-                                self.create_vote(profile, event).await.context("error creating vote")
+                            Command::CreateVote(input) => {
+                                self.create_vote(input).await.context("error creating vote")
                             }
                         } {
                             error!("{:#?}", err);
@@ -275,14 +350,15 @@ impl Processor {
     }
 
     /// Create a new vote.
-    async fn create_vote(&self, profile: Option<String>, event: IssueCommentEvent) -> Result<()> {
-        // Extract some information from event
-        let issue_number = event.issue.number;
-        let is_pull_request = event.issue.pull_request.is_some();
-        let creator = &event.comment.user.login;
-        let repo_full_name = &event.repository.full_name;
+    async fn create_vote(&self, input: CreateVoteInput) -> Result<()> {
+        // Extract some information from input
+        let profile = input.profile.clone();
+        let creator = &input.created_by;
+        let inst_id = input.installation_id as u64;
+        let issue_number = input.issue_number;
+        let is_pull_request = input.is_pull_request;
+        let repo_full_name = &input.repository_full_name;
         let (owner, repo) = split_full_name(repo_full_name);
-        let inst_id = event.installation.id as u64;
 
         // Get vote configuration profile
         let cfg = match CfgProfile::get(self.gh.clone(), inst_id, owner, repo, profile).await {
@@ -323,14 +399,14 @@ impl Processor {
         }
 
         // Post vote created comment on the issue/pr
-        let body = tmpl::VoteCreated::new(&event, &cfg).render()?;
+        let body = tmpl::VoteCreated::new(&input, &cfg).render()?;
         let vote_comment_id = self
             .gh
             .post_comment(inst_id, owner, repo, issue_number, &body)
             .await?;
 
         // Store vote information in database
-        let vote_id = self.db.store_vote(vote_comment_id, &cfg, &event).await?;
+        let vote_id = self.db.store_vote(vote_comment_id, &input, &cfg).await?;
 
         debug!("vote {} created", &vote_id);
         Ok(())

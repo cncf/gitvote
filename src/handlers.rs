@@ -1,5 +1,5 @@
 use crate::{
-    github::{Event, EventError, IssueCommentEvent},
+    github::{Event, EventError},
     tmpl,
     votes::Command,
 };
@@ -17,7 +17,6 @@ use sha2::Sha256;
 use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::error;
 
 /// Header representing the kind of the event received.
 const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
@@ -59,7 +58,7 @@ async fn event(
     Extension(webhook_secret): Extension<String>,
     Extension(cmds_tx): Extension<async_channel::Sender<Command>>,
 ) -> Result<(), StatusCode> {
-    // Verify signature
+    // Verify payload signature
     if verify_signature(
         headers.get(GITHUB_SIGNATURE_HEADER),
         webhook_secret.as_bytes(),
@@ -70,27 +69,18 @@ async fn event(
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    // Parse event kind
-    let event = match Event::try_from(headers.get(GITHUB_EVENT_HEADER)) {
+    // Parse event
+    let event = match Event::try_from((headers.get(GITHUB_EVENT_HEADER), &body[..])) {
         Ok(event) => event,
-        Err(EventError::HeaderMissing) => return Err(StatusCode::BAD_REQUEST),
+        Err(EventError::MissingHeader) => return Err(StatusCode::BAD_REQUEST),
+        Err(EventError::InvalidBody(_)) => return Err(StatusCode::BAD_REQUEST),
         Err(EventError::UnsupportedEvent) => return Ok(()),
     };
 
-    // Take action based on the kind of event received
-    match event {
-        // Extract command from comment (if available) and queue it
-        Event::IssueComment => {
-            let event: IssueCommentEvent = serde_json::from_slice(&body[..]).map_err(|err| {
-                error!("error deserializing event: {}", err);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-            match Command::from_event(event) {
-                Some(cmd) => cmds_tx.send(cmd).await.unwrap(),
-                None => return Ok(()),
-            };
-        }
-    }
+    // Try to extract command from event (if available) and queue it
+    if let Some(cmd) = Command::from_event(event) {
+        cmds_tx.send(cmd).await.unwrap();
+    };
 
     Ok(())
 }

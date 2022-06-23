@@ -1,6 +1,6 @@
 use crate::{
-    github::{IssueCommentEvent, TeamSlug, UserName},
-    votes::{CfgProfile, VoteResults},
+    github::{TeamSlug, UserName},
+    votes::{CfgProfile, CreateVoteInput, VoteResults},
 };
 use askama::Template;
 
@@ -63,7 +63,7 @@ pub(crate) struct VoteCreated<'a> {
 
 impl<'a> VoteCreated<'a> {
     /// Create a new VoteCreated template.
-    pub(crate) fn new(event: &'a IssueCommentEvent, cfg: &'a CfgProfile) -> Self {
+    pub(crate) fn new(input: &'a CreateVoteInput, cfg: &'a CfgProfile) -> Self {
         // Prepare teams and users allowed to vote
         let (mut teams, mut users) = (vec![], vec![]);
         if let Some(allowed_voters) = &cfg.allowed_voters {
@@ -76,15 +76,15 @@ impl<'a> VoteCreated<'a> {
         }
 
         // Get organization name if available
-        let org = match &event.organization {
-            Some(org) => org.login.as_ref(),
+        let org = match &input.organization {
+            Some(org) => org.as_ref(),
             None => "",
         };
 
         Self {
-            creator: &event.comment.user.login,
-            issue_title: &event.issue.title,
-            issue_number: event.issue.number,
+            creator: &input.created_by,
+            issue_title: &input.issue_title,
+            issue_number: input.issue_number,
             duration: humantime::format_duration(cfg.duration).to_string(),
             pass_threshold: cfg.pass_threshold,
             org,

@@ -1,7 +1,4 @@
-use crate::{
-    github::IssueCommentEvent,
-    votes::{CfgProfile, Vote, VoteResults},
-};
+use crate::votes::{CfgProfile, CreateVoteInput, Vote, VoteResults};
 use anyhow::Result;
 use async_trait::async_trait;
 use deadpool_postgres::{Pool, Transaction};
@@ -31,8 +28,8 @@ pub(crate) trait DB {
     async fn store_vote(
         &self,
         vote_comment_id: i64,
+        input: &CreateVoteInput,
         cfg: &CfgProfile,
-        event: &IssueCommentEvent,
     ) -> Result<Uuid>;
 
     /// Store the vote results provided in the database.
@@ -145,10 +142,9 @@ impl DB for PgDB {
     async fn store_vote(
         &self,
         vote_comment_id: i64,
+        input: &CreateVoteInput,
         cfg: &CfgProfile,
-        event: &IssueCommentEvent,
     ) -> Result<Uuid> {
-        let organization = event.organization.as_ref().map(|org| org.login.clone());
         let db = self.pool.get().await?;
         let row = db
             .query_one(
@@ -183,13 +179,13 @@ impl DB for PgDB {
                     &vote_comment_id,
                     &(cfg.duration.as_secs() as i64),
                     &Json(&cfg),
-                    &event.comment.user.login,
-                    &event.installation.id,
-                    &event.issue.id,
-                    &event.issue.number,
-                    &event.issue.pull_request.is_some(),
-                    &event.repository.full_name,
-                    &organization,
+                    &input.created_by,
+                    &input.installation_id,
+                    &input.issue_id,
+                    &input.issue_number,
+                    &input.is_pull_request,
+                    &input.repository_full_name,
+                    &input.organization,
                 ],
             )
             .await?;
