@@ -7,16 +7,20 @@ use mockall::automock;
 use octocrab::{models::InstallationId, Octocrab, Page};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::sync::Arc;
 
 /// GitHub API base url.
-pub(crate) const GITHUB_API_URL: &str = "https://api.github.com";
+const GITHUB_API_URL: &str = "https://api.github.com";
 
 /// Configuration file name.
-pub(crate) const CONFIG_FILE: &str = ".gitvote.yml";
+const CONFIG_FILE: &str = ".gitvote.yml";
 
 /// Repository where the organization wide config file should be located.
-pub(crate) const ORG_CONFIG_REPO: &str = ".github";
+const ORG_CONFIG_REPO: &str = ".github";
+
+/// Name used for the check run in GitHub.
+const GITVOTE_CHECK_NAME: &str = "GitVote";
 
 /// Type alias to represent a GH trait object.
 pub(crate) type DynGH = Arc<dyn GH + Send + Sync>;
@@ -34,6 +38,17 @@ pub(crate) type UserName = String;
 #[async_trait]
 #[cfg_attr(test, automock)]
 pub(crate) trait GH {
+    /// Create a check run for the head commit in the provided pull request.
+    async fn create_check_run(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+        status: &str,
+        conclusion: Option<&str>,
+    ) -> Result<()>;
+
     /// Get all users allowed to vote on a given vote.
     async fn get_allowed_voters(
         &self,
@@ -66,6 +81,16 @@ pub(crate) trait GH {
 
     /// Get all members of the provided team.
     async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>>;
+
+    /// Verify if the GitVote check is required via branch protection in the
+    /// repository's branch provided.
+    async fn is_check_required(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        branch: &str,
+    ) -> Result<bool>;
 
     /// Post the comment provided in the repository's issue given.
     async fn post_comment(
@@ -101,6 +126,31 @@ impl GHApi {
 
 #[async_trait]
 impl GH for GHApi {
+    /// Create a check run for the head commit in the provided pull request.
+    async fn create_check_run(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+        status: &str,
+        conclusion: Option<&str>,
+    ) -> Result<()> {
+        let client = self.app_client.installation(InstallationId(inst_id));
+        let pr = client.pulls(owner, repo).get(issue_number as u64).await?;
+        let url = format!("{}/repos/{}/{}/check-runs", GITHUB_API_URL, owner, repo);
+        let mut body = json!({
+            "name": GITVOTE_CHECK_NAME,
+            "head_sha": pr.head.sha,
+            "status": status,
+        });
+        if let Some(conclusion) = conclusion {
+            body["conclusion"] = json!(conclusion);
+        };
+        let _: Value = client.post(url, Some(&body)).await?;
+        Ok(())
+    }
+
     /// Get all users allowed to vote on a given vote.
     async fn get_allowed_voters(
         &self,
@@ -228,6 +278,35 @@ impl GH for GHApi {
             .map(|u| u.login)
             .collect();
         Ok(members)
+    }
+
+    /// Verify if the GitVote check is required via branch protection in the
+    /// repository's branch provided.
+    async fn is_check_required(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        branch: &str,
+    ) -> Result<bool> {
+        let client = self.app_client.installation(InstallationId(inst_id));
+        let url = format!(
+            "{}/repos/{}/{}/branches/{}",
+            GITHUB_API_URL, owner, repo, branch
+        );
+        let branch: Branch = client.get(url, None::<&()>).await?;
+        let is_check_required = if let Some(required_checks) = branch
+            .protection
+            .and_then(|protection| protection.required_status_checks)
+        {
+            required_checks
+                .contexts
+                .iter()
+                .any(|context| context == GITVOTE_CHECK_NAME)
+        } else {
+            false
+        };
+        Ok(is_check_required)
     }
 
     /// Post the comment provided in the repository's issue/pr given.
@@ -435,6 +514,13 @@ pub(crate) struct PullRequest {
     pub number: i64,
     pub title: String,
     pub body: Option<String>,
+    pub base: PullRequestBase,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PullRequestBase {
+    #[serde(rename = "ref")]
+    pub reference: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -446,4 +532,20 @@ pub(crate) struct PullRequestInIssue {
 pub(crate) struct Reaction {
     pub user: User,
     pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Branch {
+    pub name: String,
+    pub protection: Option<Protection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Protection {
+    pub required_status_checks: Option<RequiredStatusCheck>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct RequiredStatusCheck {
+    pub contexts: Vec<String>,
 }

@@ -408,6 +408,13 @@ impl Processor {
         // Store vote information in database
         let vote_id = self.db.store_vote(vote_comment_id, &input, &cfg).await?;
 
+        // Create check run if the vote is on a pull request
+        if input.is_pull_request {
+            self.gh
+                .create_check_run(inst_id, owner, repo, issue_number, "in_progress", None)
+                .await?;
+        }
+
         debug!("vote {} created", &vote_id);
         Ok(())
     }
@@ -472,6 +479,24 @@ impl Processor {
         self.gh
             .post_comment(inst_id, owner, repo, vote.issue_number, &body)
             .await?;
+
+        // Create check run if the vote is on a pull request
+        if vote.is_pull_request {
+            let conclusion = match results.passed {
+                true => "success",
+                false => "failure",
+            };
+            self.gh
+                .create_check_run(
+                    inst_id,
+                    owner,
+                    repo,
+                    vote.issue_number,
+                    "completed",
+                    Some(conclusion),
+                )
+                .await?;
+        }
 
         debug!("vote {} closed", &vote.vote_id);
         Ok(Some(()))
@@ -563,7 +588,7 @@ impl Processor {
 
 /// Helper function that splits a repository's full name and returns the owner
 /// and the repo name as a tuple.
-fn split_full_name(full_name: &str) -> (&str, &str) {
+pub(crate) fn split_full_name(full_name: &str) -> (&str, &str) {
     let mut parts = full_name.split('/');
     (parts.next().unwrap(), parts.next().unwrap())
 }

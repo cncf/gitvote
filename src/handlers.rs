@@ -1,7 +1,8 @@
 use crate::{
-    github::{Event, EventError},
+    db::DynDB,
+    github::{DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction},
     tmpl,
-    votes::Command,
+    votes::{split_full_name, Command},
 };
 use anyhow::{format_err, Error, Result};
 use axum::{
@@ -17,6 +18,7 @@ use sha2::Sha256;
 use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
+use tracing::{error, trace};
 
 /// Header representing the kind of the event received.
 const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
@@ -27,6 +29,8 @@ const GITHUB_SIGNATURE_HEADER: &str = "X-Hub-Signature-256";
 /// Setup HTTP server router.
 pub(crate) async fn setup_router(
     cfg: Arc<Config>,
+    db: DynDB,
+    gh: DynGH,
     cmds_tx: async_channel::Sender<Command>,
 ) -> Result<Router> {
     // Setup webhook secret
@@ -40,6 +44,8 @@ pub(crate) async fn setup_router(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
                 .layer(Extension(webhook_secret))
+                .layer(Extension(db))
+                .layer(Extension(gh))
                 .layer(Extension(cmds_tx)),
         );
 
@@ -56,6 +62,8 @@ async fn event(
     headers: HeaderMap,
     body: Bytes,
     Extension(webhook_secret): Extension<String>,
+    Extension(db): Extension<DynDB>,
+    Extension(gh): Extension<DynGH>,
     Extension(cmds_tx): Extension<async_channel::Sender<Command>>,
 ) -> Result<(), StatusCode> {
     // Verify payload signature
@@ -76,10 +84,22 @@ async fn event(
         Err(EventError::InvalidBody(_)) => return Err(StatusCode::BAD_REQUEST),
         Err(EventError::UnsupportedEvent) => return Ok(()),
     };
+    trace!("event received: {:?}", event);
 
     // Try to extract command from event (if available) and queue it
-    if let Some(cmd) = Command::from_event(event) {
-        cmds_tx.send(cmd).await.unwrap();
+    match Command::from_event(event.clone()) {
+        Some(cmd) => {
+            trace!("command detected: {:?}", &cmd);
+            cmds_tx.send(cmd).await.unwrap()
+        }
+        None => {
+            if let Event::PullRequest(event) = event {
+                set_check_status(db, gh, event).await.map_err(|err| {
+                    error!("error setting pull request check status: {:#?}", err);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+            }
+        }
     };
 
     Ok(())
@@ -98,4 +118,41 @@ fn verify_signature(signature: Option<&HeaderValue>, secret: &[u8], body: &[u8])
     } else {
         Err(format_err!("no valid signature found"))
     }
+}
+
+/// Set a success check status to the pull request referenced in the event
+/// provided when it's created or synchronized if no vote has been created on
+/// it yet. This makes it possible to use the GitVote check in combination with
+/// branch protection.
+async fn set_check_status(db: DynDB, gh: DynGH, event: PullRequestEvent) -> Result<()> {
+    let (owner, repo) = split_full_name(&event.repository.full_name);
+    let inst_id = event.installation.id as u64;
+    let pr = event.pull_request.number;
+    let branch = &event.pull_request.base.reference;
+
+    match event.action {
+        PullRequestEventAction::Opened => {
+            if !gh.is_check_required(inst_id, owner, repo, branch).await? {
+                return Ok(());
+            }
+            gh.create_check_run(inst_id, owner, repo, pr, "completed", Some("success"))
+                .await?
+        }
+        PullRequestEventAction::Synchronize => {
+            if !gh.is_check_required(inst_id, owner, repo, branch).await? {
+                return Ok(());
+            }
+            if db
+                .has_vote(&event.repository.full_name, event.pull_request.number)
+                .await?
+            {
+                return Ok(());
+            }
+            gh.create_check_run(inst_id, owner, repo, pr, "completed", Some("success"))
+                .await?
+        }
+        _ => {}
+    };
+
+    Ok(())
 }
