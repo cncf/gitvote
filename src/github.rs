@@ -276,7 +276,7 @@ pub(crate) enum EventError {
     InvalidBody(String),
 }
 
-/// Represents a GitHub webhook event.
+/// Represents a GitHub event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Event {
     Issue(IssueEvent),

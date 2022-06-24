@@ -21,17 +21,22 @@ For more information about the configuration file format please see the [referen
 
 ### Creating votes
 
-Votes can be created by adding a comment to an existent *issue* or *pull request* with the `/vote` command. Alternatively, if you have setup multiple configuration profiles, you can start votes using any of them with the command `/vote-PROFILE`.
+Votes can be created by calling the `/vote` command on an *issue* or *pull request*. This can be done by:
+
+- adding the **/vote** command to the *issue* or *pull request* body at creation time
+- adding a new comment to an existing *issue* or *pull request* with the **/vote** command in it
+
+The command **must** be on a line by itself. Please note that GitVote only detects commands in issues or pull requests bodies when they are opened, or when comments are created, *not when any of them are edited*.
 
 ![create-vote](docs/screenshots/create-vote.png)
+
+Alternatively, if you have setup multiple configuration profiles, you can also start votes using any of them with the command `/vote-PROFILE`.
 
 Only repositories collaborators can create votes. For organization-owned repositories, the list of collaborators includes outside collaborators, organization members that are direct collaborators, organization members with access through team memberships, organization members with access through default organization permissions, and organization owners.
 
 Shortly after the comment with the `/vote` command is posted, the vote will be created and the bot will post a new comment to the corresponding issue or pull request with the vote instructions.
 
 ![create-vote](docs/screenshots/vote-created.png)
-
-*Please note that GitVote only detects commands when a comment is created, not when it's edited.*
 
 ### Voting
 

@@ -177,7 +177,7 @@ impl Command {
     /// Try to create a new command from an event.
     pub(crate) fn from_event(event: Event) -> Option<Self> {
         // Get the content where we'll try to extract the command from
-        let body = match event {
+        let content = match event {
             Event::Issue(ref event) => {
                 if event.action != IssueEventAction::Opened {
                     return None;
@@ -199,7 +199,7 @@ impl Command {
         };
 
         // Create a new command from the content (if possible)
-        if let Some(content) = body {
+        if let Some(content) = content {
             if let Some(captures) = CMD.captures(content) {
                 let cmd = captures.get(1)?.as_str();
                 let profile = match captures.get(2)?.as_str() {
