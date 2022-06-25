@@ -58,6 +58,14 @@ Once the vote time is up, the vote will be automatically closed and the results 
 
 ![create-vote](docs/screenshots/vote-closed.png)
 
+### Checks in pull requests (experimental)
+
+When a vote on a pull request is closed, GitVote will add a check to the head commit with its result. If the vote passes, the result of the check will be *success*, whereas if it doesn't pass, it'll be *failure*. When used in combination with `protected branch`, this feature can be used to *require* a vote in favor before a pull request can be merged.
+
+![check-passed](docs/screenshots/check-passed.png)
+
+At the moment this feature is always enabled but we'll make it configurable so that votes creators can opt-out per configuration profile.
+
 ## Contributing
 
 Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for more details.

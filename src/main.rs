@@ -62,12 +62,12 @@ async fn main() -> Result<()> {
     // Setup and launch votes processor
     let (cmds_tx, cmds_rx) = async_channel::unbounded();
     let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-    let votes_processor = votes::Processor::new(db, gh);
+    let votes_processor = votes::Processor::new(db.clone(), gh.clone());
     let votes_processor_done = votes_processor.start(cmds_rx, stop_tx.clone());
     debug!("[votes processor] started");
 
     // Setup and launch HTTP server
-    let router = handlers::setup_router(cfg.clone(), cmds_tx).await?;
+    let router = handlers::setup_router(cfg.clone(), db, gh, cmds_tx).await?;
     let addr: SocketAddr = cfg.get_string("addr")?.parse()?;
     info!("gitvote service started - listening on {}", addr);
     axum::Server::bind(&addr)

@@ -18,6 +18,9 @@ pub(crate) trait DB {
     /// Get any pending finished vote.
     async fn get_pending_finished_vote(&self, tx: &Transaction<'_>) -> Result<Option<Vote>>;
 
+    /// Check if the issue/pr provided has a vote.
+    async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
+
     /// Check if the issue/pr provided already has a vote open.
     async fn has_vote_open(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
 
@@ -113,6 +116,25 @@ impl DB for PgDB {
         Ok(Some(vote))
     }
 
+    /// Check if the issue/pr provided has a vote.
+    async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
+        let db = self.pool.get().await?;
+        let row = db
+            .query_one(
+                "
+                    select exists (
+                        select 1 from vote
+                        where repository_full_name = $1::text
+                        and issue_number = $2::bigint
+                    )
+                    ",
+                &[&repository_full_name, &issue_number],
+            )
+            .await?;
+        let has_vote: bool = row.get(0);
+        Ok(has_vote)
+    }
+
     /// Check if the issue/pr provided already has a vote open.
     async fn has_vote_open(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
@@ -129,8 +151,8 @@ impl DB for PgDB {
                 &[&repository_full_name, &issue_number],
             )
             .await?;
-        let vote_in_progress: bool = row.get(0);
-        Ok(vote_in_progress)
+        let has_vote_open: bool = row.get(0);
+        Ok(has_vote_open)
     }
 
     /// Return a reference to the internal database pool.
