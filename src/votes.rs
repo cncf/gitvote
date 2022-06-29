@@ -1,8 +1,8 @@
 use crate::{
     db::DynDB,
     github::{
-        DynGH, Event, IssueCommentEventAction, IssueEventAction, PullRequestEventAction, TeamSlug,
-        UserName,
+        CheckDetails, DynGH, Event, IssueCommentEventAction, IssueEventAction,
+        PullRequestEventAction, TeamSlug, UserName,
     },
     tmpl,
 };
@@ -164,6 +164,7 @@ pub(crate) struct VoteResults {
     pub against: i64,
     pub abstain: i64,
     pub not_voted: i64,
+    pub allowed_voters: i64,
     pub votes: HashMap<UserName, VoteOption>,
 }
 
@@ -410,8 +411,13 @@ impl Processor {
 
         // Create check run if the vote is on a pull request
         if input.is_pull_request {
+            let check_details = CheckDetails {
+                status: "in_progress".to_string(),
+                conclusion: None,
+                summary: "Vote open".to_string(),
+            };
             self.gh
-                .create_check_run(inst_id, owner, repo, issue_number, "in_progress", None)
+                .create_check_run(inst_id, owner, repo, issue_number, check_details)
                 .await?;
         }
 
@@ -482,19 +488,29 @@ impl Processor {
 
         // Create check run if the vote is on a pull request
         if vote.is_pull_request {
-            let conclusion = match results.passed {
-                true => "success",
-                false => "failure",
+            let (conclusion, summary) = match results.passed {
+                true => (
+                    "success",
+                    format!(
+                        "The vote passed! {} out of {} voted in favor.",
+                        results.in_favor, results.allowed_voters
+                    ),
+                ),
+                false => (
+                    "failure",
+                    format!(
+                        "The vote did not pass. {} out of {} voted in favor.",
+                        results.in_favor, results.allowed_voters
+                    ),
+                ),
+            };
+            let check_details = CheckDetails {
+                status: "completed".to_string(),
+                conclusion: Some(conclusion.to_string()),
+                summary,
             };
             self.gh
-                .create_check_run(
-                    inst_id,
-                    owner,
-                    repo,
-                    vote.issue_number,
-                    "completed",
-                    Some(conclusion),
-                )
+                .create_check_run(inst_id, owner, repo, vote.issue_number, check_details)
                 .await?;
         }
 
@@ -581,6 +597,7 @@ impl Processor {
             against,
             abstain,
             not_voted,
+            allowed_voters: allowed_voters.len() as i64,
             votes,
         })
     }
@@ -699,6 +716,7 @@ mod tests {
                 votes: HashMap::from([
                     ("user1".to_string(), VoteOption::Against)
                 ]),
+                allowed_voters: 1,
             }
         },
         calculate_vote_results_do_not_count_not_binding_votes:
@@ -732,6 +750,7 @@ mod tests {
                 votes: HashMap::from([
                     ("user1".to_string(), VoteOption::Against)
                 ]),
+                allowed_voters: 1,
             }
         },
         calculate_vote_results_do_not_count_votes_from_multiple_options_voters:
@@ -763,6 +782,7 @@ mod tests {
                 abstain: 0,
                 not_voted: 1,
                 votes: HashMap::new(),
+                allowed_voters: 1,
             }
         },
         calculate_vote_results_binding_votes_are_counted_correctly:
@@ -805,6 +825,7 @@ mod tests {
                     ("user2".to_string(), VoteOption::Against),
                     ("user3".to_string(), VoteOption::Abstain),
                 ]),
+                allowed_voters: 4,
             }
         },
         calculate_vote_results_vote_passes_when_in_favor_percentage_reaches_pass_threshold:
@@ -847,6 +868,7 @@ mod tests {
                     ("user2".to_string(), VoteOption::InFavor),
                     ("user3".to_string(), VoteOption::InFavor),
                 ]),
+                allowed_voters: 4,
             }
         },
     );
