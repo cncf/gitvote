@@ -45,8 +45,7 @@ pub(crate) trait GH {
         owner: &str,
         repo: &str,
         issue_number: i64,
-        status: &str,
-        conclusion: Option<&str>,
+        check_details: CheckDetails,
     ) -> Result<()>;
 
     /// Get all users allowed to vote on a given vote.
@@ -112,6 +111,13 @@ pub(crate) trait GH {
     ) -> Result<bool>;
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct CheckDetails {
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub summary: String,
+}
+
 /// GH implementation backed by the GitHub API.
 pub(crate) struct GHApi {
     app_client: Octocrab,
@@ -133,8 +139,7 @@ impl GH for GHApi {
         owner: &str,
         repo: &str,
         issue_number: i64,
-        status: &str,
-        conclusion: Option<&str>,
+        check_details: CheckDetails,
     ) -> Result<()> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let pr = client.pulls(owner, repo).get(issue_number as u64).await?;
@@ -142,9 +147,13 @@ impl GH for GHApi {
         let mut body = json!({
             "name": GITVOTE_CHECK_NAME,
             "head_sha": pr.head.sha,
-            "status": status,
+            "status": check_details.status,
+            "output": {
+                "title": check_details.summary,
+                "summary": check_details.summary,
+            }
         });
-        if let Some(conclusion) = conclusion {
+        if let Some(conclusion) = check_details.conclusion {
             body["conclusion"] = json!(conclusion);
         };
         let _: Value = client.post(url, Some(&body)).await?;

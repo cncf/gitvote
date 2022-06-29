@@ -1,6 +1,6 @@
 use crate::{
     db::DynDB,
-    github::{DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction},
+    github::{CheckDetails, DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction},
     tmpl,
     votes::{split_full_name, Command},
 };
@@ -129,13 +129,18 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: PullRequestEvent) -> Resu
     let inst_id = event.installation.id as u64;
     let pr = event.pull_request.number;
     let branch = &event.pull_request.base.reference;
+    let check_details = CheckDetails {
+        status: "completed".to_string(),
+        conclusion: Some("success".to_string()),
+        summary: "No vote found".to_string(),
+    };
 
     match event.action {
         PullRequestEventAction::Opened => {
             if !gh.is_check_required(inst_id, owner, repo, branch).await? {
                 return Ok(());
             }
-            gh.create_check_run(inst_id, owner, repo, pr, "completed", Some("success"))
+            gh.create_check_run(inst_id, owner, repo, pr, check_details)
                 .await?
         }
         PullRequestEventAction::Synchronize => {
@@ -148,7 +153,7 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: PullRequestEvent) -> Resu
             {
                 return Ok(());
             }
-            gh.create_check_run(inst_id, owner, repo, pr, "completed", Some("success"))
+            gh.create_check_run(inst_id, owner, repo, pr, check_details)
                 .await?
         }
         _ => {}
