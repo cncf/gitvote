@@ -671,7 +671,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
- "time 0.3.12",
+ "time 0.3.13",
  "tokio",
  "tokio-postgres",
  "tower",
@@ -1457,7 +1457,7 @@ dependencies = [
  "postgres-protocol",
  "serde",
  "serde_json",
- "time 0.3.12",
+ "time 0.3.13",
  "uuid",
 ]
 
@@ -1857,7 +1857,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "thiserror",
- "time 0.3.12",
+ "time 0.3.13",
 ]
 
 [[package]]
@@ -2036,12 +2036,11 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.12"
+version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74b7cc93fc23ba97fde84f7eea56c55d1ba183f495c6715defdfc7b9cb8c870f"
+checksum = "db76ff9fa4b1458b3c7f077f3ff9887394058460d21e634355b273aaf11eea45"
 dependencies = [
  "itoa",
- "js-sys",
  "libc",
  "num_threads",
  "serde",
