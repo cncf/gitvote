@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.61"
+anyhow = "1.0.62"
 askama = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9b0bf888c0464a1af9df25f" }
 askama_axum = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9b0bf888c0464a1af9df25f" }
 async-channel = "1.7.1"
 async-trait = "0.1.57"
 axum = "0.5.15"
-clap = { version = "3.2.16", features = ["derive"] }
+clap = { version = "3.2.17", features = ["derive"] }
 config = "0.13.2"
 deadpool-postgres = { version = "0.10.2", features = ["serde"] }
-futures = "0.3.21"
+futures = "0.3.23"
 hex = "0.4.3"
 hmac = "0.12.1"
 humantime = "2.1.0"
@@ -25,13 +25,13 @@ openssl = { version = "0.10.41", features = ["vendored"] }
 postgres-openssl = "0.5.0"
 regex = "1.6.0"
 reqwest = "0.11.11"
-serde = { version = "1.0.143", features = ["derive"] }
-serde_json = "1.0.83"
-serde_yaml = "0.9.4"
+serde = { version = "1.0.144", features = ["derive"] }
+serde_json = "1.0.85"
+serde_yaml = "0.9.10"
 sha2 = "0.10.2"
 time = { version = "0.3.13", features = ["serde"] }
 tokio = { version = "1.20.1", features = ["macros", "rt-multi-thread", "signal", "time"] }
-tokio-postgres = { version = "0.7.6", features = ["with-uuid-1", "with-serde_json-1", "with-time-0_3"] }
+tokio-postgres = { version = "0.7.7", features = ["with-uuid-1", "with-serde_json-1", "with-time-0_3"] }
 tower = "0.4.13"
 tower-http = { version = "0.3.4", features = ["trace"] }
 tracing = "0.1.36"
