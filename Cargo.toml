@@ -13,7 +13,7 @@ axum = "0.5.15"
 clap = { version = "3.2.17", features = ["derive"] }
 config = "0.13.2"
 deadpool-postgres = { version = "0.10.2", features = ["serde"] }
-futures = "0.3.23"
+futures = "0.3.24"
 hex = "0.4.3"
 hmac = "0.12.1"
 humantime = "2.1.0"
