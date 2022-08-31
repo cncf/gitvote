@@ -29,7 +29,7 @@ serde = { version = "1.0.144", features = ["derive"] }
 serde_json = "1.0.85"
 serde_yaml = "0.9.10"
 sha2 = "0.10.2"
-time = { version = "0.3.13", features = ["serde"] }
+time = { version = "0.3.14", features = ["serde"] }
 tokio = { version = "1.20.1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tokio-postgres = { version = "0.7.7", features = ["with-uuid-1", "with-serde_json-1", "with-time-0_3"] }
 tower = "0.4.13"
