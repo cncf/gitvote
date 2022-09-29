@@ -10,3 +10,13 @@ updates:
     schedule:
       interval: "weekly"
       day: "wednesday"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+  - package-ecosystem: "docker"
+    directory: "/database/migrations"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
