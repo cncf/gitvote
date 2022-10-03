@@ -22,13 +22,13 @@ pub(crate) struct Index {}
 /// Template for the invalid config comment.
 #[derive(Debug, Clone, Template)]
 #[template(path = "invalid-config.md")]
-pub(crate) struct InvalidConfig {
-    reason: String,
+pub(crate) struct InvalidConfig<'a> {
+    reason: &'a str,
 }
 
-impl InvalidConfig {
+impl<'a> InvalidConfig<'a> {
     /// Create a new InvalidConfig template.
-    pub(crate) fn new(reason: String) -> Self {
+    pub(crate) fn new(reason: &'a str) -> Self {
         Self { reason }
     }
 }
@@ -57,21 +57,21 @@ pub(crate) struct VoteCreated<'a> {
     duration: String,
     pass_threshold: f64,
     org: &'a str,
-    teams: Vec<TeamSlug>,
-    users: Vec<UserName>,
+    teams: &'a [TeamSlug],
+    users: &'a [UserName],
 }
 
 impl<'a> VoteCreated<'a> {
     /// Create a new VoteCreated template.
     pub(crate) fn new(input: &'a CreateVoteInput, cfg: &'a CfgProfile) -> Self {
         // Prepare teams and users allowed to vote
-        let (mut teams, mut users) = (vec![], vec![]);
+        let (mut teams, mut users): (&[TeamSlug], &[UserName]) = (&[], &[]);
         if let Some(allowed_voters) = &cfg.allowed_voters {
             if let Some(v) = &allowed_voters.teams {
-                teams = v.clone();
+                teams = v.as_slice();
             }
             if let Some(v) = &allowed_voters.users {
-                users = v.clone();
+                users = v.as_slice();
             }
         }
 

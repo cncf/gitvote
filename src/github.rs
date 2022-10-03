@@ -280,7 +280,7 @@ impl GH for GHApi {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{}/orgs/{}/teams/{}/members", GITHUB_API_URL, org, team);
         let first_page: Page<User> = client.get(url, None::<&()>).await?;
-        let members = client
+        let members: Vec<UserName> = client
             .all_pages(first_page)
             .await?
             .into_iter()
@@ -356,14 +356,6 @@ impl GH for GHApi {
     }
 }
 
-/// Errors that may occur while creating a new event instance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) enum EventError {
-    MissingHeader,
-    UnsupportedEvent,
-    InvalidBody(String),
-}
-
 /// Represents a GitHub event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Event {
@@ -375,21 +367,23 @@ pub(crate) enum Event {
 impl TryFrom<(Option<&HeaderValue>, &[u8])> for Event {
     type Error = EventError;
 
-    fn try_from((header, body): (Option<&HeaderValue>, &[u8])) -> Result<Self, Self::Error> {
-        match header {
-            Some(header) => match header.as_bytes() {
+    fn try_from(
+        (event_name, event_body): (Option<&HeaderValue>, &[u8]),
+    ) -> Result<Self, Self::Error> {
+        match event_name {
+            Some(event_name) => match event_name.as_bytes() {
                 b"issues" => {
-                    let event: IssueEvent = serde_json::from_slice(body)
+                    let event: IssueEvent = serde_json::from_slice(event_body)
                         .map_err(|err| EventError::InvalidBody(err.to_string()))?;
                     Ok(Event::Issue(event))
                 }
                 b"issue_comment" => {
-                    let event: IssueCommentEvent = serde_json::from_slice(body)
+                    let event: IssueCommentEvent = serde_json::from_slice(event_body)
                         .map_err(|err| EventError::InvalidBody(err.to_string()))?;
                     Ok(Event::IssueComment(event))
                 }
                 b"pull_request" => {
-                    let event: PullRequestEvent = serde_json::from_slice(body)
+                    let event: PullRequestEvent = serde_json::from_slice(event_body)
                         .map_err(|err| EventError::InvalidBody(err.to_string()))?;
                     Ok(Event::PullRequest(event))
                 }
@@ -398,6 +392,14 @@ impl TryFrom<(Option<&HeaderValue>, &[u8])> for Event {
             None => Err(EventError::MissingHeader),
         }
     }
+}
+
+/// Errors that may occur while creating a new event instance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) enum EventError {
+    MissingHeader,
+    UnsupportedEvent,
+    InvalidBody(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
