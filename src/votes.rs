@@ -325,6 +325,13 @@ impl Processor {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
+                    biased;
+
+                    // Exit if the votes processor has been asked to stop
+                    _ = stop_rx.recv() => {
+                        break
+                    }
+
                     // Pick next command from the queue and process it
                     Ok(cmd) = cmds_rx.recv() => {
                         if let Err(err) = match cmd {
@@ -334,17 +341,41 @@ impl Processor {
                         } {
                             error!("{:#?}", err);
                         }
+                    }
+                }
+            }
+        })
+    }
 
-                        // Exit if the votes processor has been asked to stop
-                        if let Some(TryRecvError::Closed) = stop_rx.try_recv().err() {
-                            break;
+    /// Worker that periodically checks the database for votes that should be
+    /// closed and closes them.
+    fn votes_closer(self: Arc<Self>, mut stop_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            loop {
+                // Close any pending finished votes
+                match self.close_finished_vote().await {
+                    Ok(Some(())) => {
+                        // One pending finished vote was closed, try to close
+                        // another one immediately
+                    }
+                    Ok(None) => tokio::select! {
+                        // No pending finished votes were found, pause unless
+                        // we've been asked to stop
+                        _ = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
+                        _ = stop_rx.recv() => break,
+                    },
+                    Err(err) => {
+                        error!("error closing finished vote: {:#?}", err);
+                        tokio::select! {
+                            _ = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
+                            _ = stop_rx.recv() => break,
                         }
                     }
+                }
 
-                    // Exit if the votes processor has been asked to stop
-                    _ = stop_rx.recv() => {
-                        break
-                    }
+                // Exit if the votes processor has been asked to stop
+                if let Some(TryRecvError::Closed) = stop_rx.try_recv().err() {
+                    break;
                 }
             }
         })
@@ -368,7 +399,9 @@ impl Processor {
                 let body = match err {
                     CfgError::ConfigNotFound => tmpl::ConfigNotFound {}.render()?,
                     CfgError::ProfileNotFound => tmpl::ConfigProfileNotFound {}.render()?,
-                    CfgError::InvalidConfig(reason) => tmpl::InvalidConfig::new(reason).render()?,
+                    CfgError::InvalidConfig(reason) => {
+                        tmpl::InvalidConfig::new(&reason).render()?
+                    }
                 };
                 self.gh
                     .post_comment(inst_id, owner, repo, issue_number, &body)
@@ -423,40 +456,6 @@ impl Processor {
 
         debug!("vote {} created", &vote_id);
         Ok(())
-    }
-
-    /// Worker that periodically checks the database for votes that should be
-    /// closed and closes them.
-    fn votes_closer(self: Arc<Self>, mut stop_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            loop {
-                // Close any pending finished votes
-                match self.close_finished_vote().await {
-                    Ok(Some(())) => {
-                        // One pending finished vote was closed, try to close
-                        // another one immediately
-                    }
-                    Ok(None) => tokio::select! {
-                        // No pending finished votes were found, pause unless
-                        // we've been asked to stop
-                        _ = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
-                        _ = stop_rx.recv() => break,
-                    },
-                    Err(err) => {
-                        error!("error closing finished vote: {:#?}", err);
-                        tokio::select! {
-                            _ = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
-                            _ = stop_rx.recv() => break,
-                        }
-                    }
-                }
-
-                // Exit if the votes processor has been asked to stop
-                if let Some(TryRecvError::Closed) = stop_rx.try_recv().err() {
-                    break;
-                }
-            }
-        })
     }
 
     /// Close any pending finished vote.
@@ -563,7 +562,7 @@ impl Processor {
             }
             if votes.contains_key(&username) {
                 // User has already voted (multiple options voter), we have to
-                // remote their vote as we can't know which one to pick
+                // remove their vote as we can't know which one to pick
                 multiple_options_voters.push(username.clone());
                 votes.remove(&username);
                 continue;

@@ -26,6 +26,9 @@ default:
   # Pass threshold (required)
   #
   # Percentage of votes in favor required to pass the vote
+  #
+  # The percentage is calculated based on the number of votes in favor and the
+  # number of allowed voters (see allowed_voters field below for more details).
   pass_threshold: 50
 
   # Allowed voters (optional)
