@@ -15,6 +15,13 @@ pub(crate) type DynDB = Arc<dyn DB + Send + Sync>;
 #[async_trait]
 #[cfg_attr(test, automock)]
 pub(crate) trait DB {
+    /// Cancel open vote (if exists) in the issue/pr provided.
+    async fn cancel_vote(
+        &self,
+        repository_full_name: &str,
+        issue_number: i64,
+    ) -> Result<Option<Uuid>>;
+
     /// Get any pending finished vote.
     async fn get_pending_finished_vote(&self, tx: &Transaction<'_>) -> Result<Option<Vote>>;
 
@@ -58,6 +65,35 @@ impl PgDB {
 
 #[async_trait]
 impl DB for PgDB {
+    /// Cancel open vote (if exists) in the issue/pr provided.
+    async fn cancel_vote(
+        &self,
+        repository_full_name: &str,
+        issue_number: i64,
+    ) -> Result<Option<Uuid>> {
+        let db = self.pool.get().await?;
+        let cancelled_vote_id = match db
+            .query_opt(
+                "
+                delete from vote
+                where repository_full_name = $1::text
+                and issue_number = $2::bigint
+                and closed = false
+                returning vote_id
+                ",
+                &[&repository_full_name, &issue_number],
+            )
+            .await?
+        {
+            Some(row) => {
+                let vote_id: Uuid = row.get(0);
+                Some(vote_id)
+            }
+            None => None,
+        };
+        Ok(cancelled_vote_id)
+    }
+
     /// Get any pending finished vote.
     async fn get_pending_finished_vote(&self, tx: &Transaction<'_>) -> Result<Option<Vote>> {
         // Get pending finished vote from database (if any)

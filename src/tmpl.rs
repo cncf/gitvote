@@ -33,6 +33,42 @@ impl<'a> InvalidConfig<'a> {
     }
 }
 
+/// Template for the no vote in progress comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "no-vote-in-progress.md")]
+pub(crate) struct NoVoteInProgress<'a> {
+    user: &'a str,
+    is_pull_request: bool,
+}
+
+impl<'a> NoVoteInProgress<'a> {
+    /// Create a new NoVoteInProgress template.
+    pub(crate) fn new(user: &'a str, is_pull_request: bool) -> Self {
+        Self {
+            user,
+            is_pull_request,
+        }
+    }
+}
+
+/// Template for the vote cancelled comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "vote-cancelled.md")]
+pub(crate) struct VoteCancelled<'a> {
+    user: &'a str,
+    is_pull_request: bool,
+}
+
+impl<'a> VoteCancelled<'a> {
+    /// Create a new VoteCancelled template.
+    pub(crate) fn new(user: &'a str, is_pull_request: bool) -> Self {
+        Self {
+            user,
+            is_pull_request,
+        }
+    }
+}
+
 /// Template for the vote closed comment.
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-closed.md")]

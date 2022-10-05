@@ -36,7 +36,7 @@ Only repositories collaborators can create votes. For organization-owned reposit
 
 Shortly after the comment with the `/vote` command is posted, the vote will be created and the bot will post a new comment to the corresponding issue or pull request with the vote instructions.
 
-![create-vote](docs/screenshots/vote-created.png)
+![vote-created](docs/screenshots/vote-created.png)
 
 ### Voting
 
@@ -56,7 +56,13 @@ Only votes from users with a binding vote as defined in the configuration file w
 
 Once the vote time is up, the vote will be automatically closed and the results will be published in a new comment.
 
-![create-vote](docs/screenshots/vote-closed.png)
+![vote-closed](docs/screenshots/vote-closed.png)
+
+### Cancelling votes
+
+It is possible to cancel a vote in progress by calling the `/cancel-vote` command:
+
+![vote-cancelled](docs/screenshots/vote-cancelled.png)
 
 ### Checks in pull requests (experimental)
 

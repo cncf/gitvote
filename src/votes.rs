@@ -31,8 +31,9 @@ const VOTES_CLOSERS_WORKERS: usize = 1;
 /// Default configuration profile.
 const DEFAULT_PROFILE: &str = "default";
 
-/// Vote command.
-const VOTE_CMD: &str = "vote";
+/// Available commands.
+const CMD_CREATE_VOTE: &str = "vote";
+const CMD_CANCEL_VOTE: &str = "cancel-vote";
 
 /// Amount of time the votes closer will sleep when there are no pending votes
 /// to close.
@@ -43,7 +44,8 @@ const VOTES_CLOSER_PAUSE_ON_ERROR: Duration = Duration::from_secs(30);
 
 lazy_static! {
     /// Regex used to detect commands in issues/prs comments.
-    pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(vote)-?([a-zA-Z0-9]*)\s*$"#).expect("invalid CMD regexp");
+    pub(crate) static ref CMD: Regex = Regex::new(r#"(?m)^/(vote|cancel-vote)-?([a-zA-Z0-9]*)\s*$"#)
+        .expect("invalid CMD regexp");
 }
 
 /// Vote configuration.
@@ -172,6 +174,7 @@ pub(crate) struct VoteResults {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Command {
     CreateVote(CreateVoteInput),
+    CancelVote(CancelVoteInput),
 }
 
 impl Command {
@@ -208,8 +211,11 @@ impl Command {
                     profile => Some(profile.to_string()),
                 };
                 match cmd {
-                    VOTE_CMD => {
+                    CMD_CREATE_VOTE => {
                         return Some(Command::CreateVote(CreateVoteInput::new(profile, event)))
+                    }
+                    CMD_CANCEL_VOTE => {
+                        return Some(Command::CancelVote(CancelVoteInput::new(event)))
                     }
                     _ => return None,
                 }
@@ -235,7 +241,8 @@ pub(crate) struct CreateVoteInput {
 }
 
 impl CreateVoteInput {
-    /// Try to create a new CreateVoteInput instance from an event.
+    /// Create a new CreateVoteInput instance from the profile and event
+    /// provided.
     pub(crate) fn new(profile: Option<String>, event: Event) -> Self {
         match event {
             Event::Issue(event) => Self {
@@ -270,6 +277,45 @@ impl CreateVoteInput {
                 is_pull_request: true,
                 repository_full_name: event.repository.full_name,
                 organization: event.organization.map(|o| o.login),
+            },
+        }
+    }
+}
+
+/// Information required to cancel an open vote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct CancelVoteInput {
+    pub cancelled_by: String,
+    pub installation_id: i64,
+    pub issue_number: i64,
+    pub is_pull_request: bool,
+    pub repository_full_name: String,
+}
+
+impl CancelVoteInput {
+    /// Create a new CancelVoteInput instance from the event provided.
+    pub(crate) fn new(event: Event) -> Self {
+        match event {
+            Event::Issue(event) => Self {
+                cancelled_by: event.sender.login,
+                installation_id: event.installation.id,
+                issue_number: event.issue.number,
+                is_pull_request: event.issue.pull_request.is_some(),
+                repository_full_name: event.repository.full_name,
+            },
+            Event::IssueComment(event) => Self {
+                cancelled_by: event.sender.login,
+                installation_id: event.installation.id,
+                issue_number: event.issue.number,
+                is_pull_request: event.issue.pull_request.is_some(),
+                repository_full_name: event.repository.full_name,
+            },
+            Event::PullRequest(event) => Self {
+                cancelled_by: event.sender.login,
+                installation_id: event.installation.id,
+                issue_number: event.pull_request.number,
+                is_pull_request: true,
+                repository_full_name: event.repository.full_name,
             },
         }
     }
@@ -338,6 +384,9 @@ impl Processor {
                             Command::CreateVote(input) => {
                                 self.create_vote(input).await.context("error creating vote")
                             }
+                            Command::CancelVote(input) => {
+                                self.cancel_vote(input).await.context("error cancelling vote")
+                            }
                         } {
                             error!("{:#?}", err);
                         }
@@ -382,79 +431,117 @@ impl Processor {
     }
 
     /// Create a new vote.
-    async fn create_vote(&self, input: CreateVoteInput) -> Result<()> {
-        // Extract some information from input
-        let profile = input.profile.clone();
-        let creator = &input.created_by;
-        let inst_id = input.installation_id as u64;
-        let issue_number = input.issue_number;
-        let is_pull_request = input.is_pull_request;
-        let repo_full_name = &input.repository_full_name;
-        let (owner, repo) = split_full_name(repo_full_name);
-
+    async fn create_vote(&self, i: CreateVoteInput) -> Result<()> {
         // Get vote configuration profile
-        let cfg = match CfgProfile::get(self.gh.clone(), inst_id, owner, repo, profile).await {
-            Ok(cfg) => cfg,
-            Err(err) => {
-                let body = match err {
-                    CfgError::ConfigNotFound => tmpl::ConfigNotFound {}.render()?,
-                    CfgError::ProfileNotFound => tmpl::ConfigProfileNotFound {}.render()?,
-                    CfgError::InvalidConfig(reason) => {
-                        tmpl::InvalidConfig::new(&reason).render()?
-                    }
-                };
-                self.gh
-                    .post_comment(inst_id, owner, repo, issue_number, &body)
-                    .await?;
-                return Ok(());
-            }
-        };
+        let inst_id = i.installation_id as u64;
+        let (owner, repo) = split_full_name(&i.repository_full_name);
+        let cfg =
+            match CfgProfile::get(self.gh.clone(), inst_id, owner, repo, i.profile.clone()).await {
+                Ok(cfg) => cfg,
+                Err(err) => {
+                    let body = match err {
+                        CfgError::ConfigNotFound => tmpl::ConfigNotFound {}.render()?,
+                        CfgError::ProfileNotFound => tmpl::ConfigProfileNotFound {}.render()?,
+                        CfgError::InvalidConfig(reason) => {
+                            tmpl::InvalidConfig::new(&reason).render()?
+                        }
+                    };
+                    self.gh
+                        .post_comment(inst_id, owner, repo, i.issue_number, &body)
+                        .await?;
+                    return Ok(());
+                }
+            };
 
         // Only repository collaborators can create votes
         if !self
             .gh
-            .user_is_collaborator(inst_id, owner, repo, creator)
+            .user_is_collaborator(inst_id, owner, repo, &i.created_by)
             .await?
         {
-            let body = tmpl::VoteRestricted::new(creator).render()?;
+            let body = tmpl::VoteRestricted::new(&i.created_by).render()?;
             self.gh
-                .post_comment(inst_id, owner, repo, issue_number, &body)
+                .post_comment(inst_id, owner, repo, i.issue_number, &body)
                 .await?;
             return Ok(());
         }
 
         // Only allow one vote open at the same time per issue/pr
-        if self.db.has_vote_open(repo_full_name, issue_number).await? {
-            let body = tmpl::VoteInProgress::new(creator, is_pull_request).render()?;
+        if self
+            .db
+            .has_vote_open(&i.repository_full_name, i.issue_number)
+            .await?
+        {
+            let body = tmpl::VoteInProgress::new(&i.created_by, i.is_pull_request).render()?;
             self.gh
-                .post_comment(inst_id, owner, repo, issue_number, &body)
+                .post_comment(inst_id, owner, repo, i.issue_number, &body)
                 .await?;
             return Ok(());
         }
 
         // Post vote created comment on the issue/pr
-        let body = tmpl::VoteCreated::new(&input, &cfg).render()?;
+        let body = tmpl::VoteCreated::new(&i, &cfg).render()?;
         let vote_comment_id = self
             .gh
-            .post_comment(inst_id, owner, repo, issue_number, &body)
+            .post_comment(inst_id, owner, repo, i.issue_number, &body)
             .await?;
 
         // Store vote information in database
-        let vote_id = self.db.store_vote(vote_comment_id, &input, &cfg).await?;
+        let vote_id = self.db.store_vote(vote_comment_id, &i, &cfg).await?;
 
         // Create check run if the vote is on a pull request
-        if input.is_pull_request {
+        if i.is_pull_request {
             let check_details = CheckDetails {
                 status: "in_progress".to_string(),
                 conclusion: None,
                 summary: "Vote open".to_string(),
             };
             self.gh
-                .create_check_run(inst_id, owner, repo, issue_number, check_details)
+                .create_check_run(inst_id, owner, repo, i.issue_number, check_details)
                 .await?;
         }
 
         debug!("vote {} created", &vote_id);
+        Ok(())
+    }
+
+    /// Cancel an open vote.
+    async fn cancel_vote(&self, i: CancelVoteInput) -> Result<()> {
+        // Try cancelling the vote open in the issue/pr provided
+        let cancelled_vote_id: Option<Uuid> = self
+            .db
+            .cancel_vote(&i.repository_full_name, i.issue_number)
+            .await?;
+
+        // Post the corresponding comment on the issue/pr
+        let inst_id = i.installation_id as u64;
+        let (owner, repo) = split_full_name(&i.repository_full_name);
+        let body: String;
+        match cancelled_vote_id {
+            Some(vote_id) => {
+                body = tmpl::VoteCancelled::new(&i.cancelled_by, i.is_pull_request).render()?;
+                debug!("vote {} cancelled", &vote_id);
+            }
+            None => {
+                body = tmpl::NoVoteInProgress::new(&i.cancelled_by, i.is_pull_request).render()?;
+            }
+        }
+        self.gh
+            .post_comment(inst_id, owner, repo, i.issue_number, &body)
+            .await?;
+
+        // Create check run if needed
+        if cancelled_vote_id.is_some() && i.is_pull_request {
+            let check_details = CheckDetails {
+                status: "completed".to_string(),
+                conclusion: Some("success".to_string()),
+                summary: "Vote cancelled".to_string(),
+            };
+            self.gh
+                .create_check_run(inst_id, owner, repo, i.issue_number, check_details)
+                .await?;
+        }
+
         Ok(())
     }
 
