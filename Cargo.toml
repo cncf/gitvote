@@ -1,6 +1,8 @@
 [package]
 name = "gitvote"
+description = "GitVote server"
 version = "0.1.0"
+license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
@@ -10,7 +12,7 @@ askama_axum = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9
 async-channel = "1.7.1"
 async-trait = "0.1.57"
 axum = "0.5.16"
-clap = { version = "3.2.22", features = ["derive"] }
+clap = { version = "4.0.10", features = ["derive"] }
 config = "0.13.2"
 deadpool-postgres = { version = "0.10.2", features = ["serde"] }
 futures = "0.3.24"
@@ -29,9 +31,18 @@ serde = { version = "1.0.145", features = ["derive"] }
 serde_json = "1.0.85"
 serde_yaml = "0.9.13"
 sha2 = "0.10.6"
-time = { version = "0.3.14", features = ["serde"] }
-tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread", "signal", "time"] }
-tokio-postgres = { version = "0.7.7", features = ["with-uuid-1", "with-serde_json-1", "with-time-0_3"] }
+time = { version = "0.3.15", features = ["serde"] }
+tokio = { version = "1.21.2", features = [
+    "macros",
+    "rt-multi-thread",
+    "signal",
+    "time",
+] }
+tokio-postgres = { version = "0.7.7", features = [
+    "with-uuid-1",
+    "with-serde_json-1",
+    "with-time-0_3",
+] }
 tower = "0.4.13"
 tower-http = { version = "0.3.4", features = ["trace"] }
 tracing = "0.1.36"
