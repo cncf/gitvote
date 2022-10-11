@@ -366,33 +366,52 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             cmds_rx.recv().await.unwrap(),
-            Command::CreateVote(CreateVoteInput::new(
-                None,
-                Event::IssueComment(IssueCommentEvent {
-                    action: IssueCommentEventAction::Created,
-                    comment: Comment {
-                        id: 1234,
-                        body: Some("/cmd".to_string()),
-                    },
-                    installation: Installation { id: 1234 },
-                    issue: Issue {
-                        id: 1234,
-                        number: 1,
-                        title: "Test issue".to_string(),
-                        body: None,
-                        pull_request: None,
-                    },
-                    repository: Repository {
-                        full_name: "org/repo".to_string(),
-                    },
-                    organization: Some(Organization {
-                        login: "org".to_string()
-                    }),
-                    sender: User {
-                        login: "user".to_string()
-                    }
-                })
-            ))
+            Command::CreateVote(CreateVoteInput {
+                profile: None,
+                created_by: "user".to_string(),
+                installation_id: 1234,
+                issue_id: 1234,
+                issue_number: 1,
+                issue_title: "Test issue".to_string(),
+                is_pull_request: false,
+                repository_full_name: "org/repo".to_string(),
+                organization: Some("org".to_string()),
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn event_with_cmd_with_profile() {
+        let (router, cmds_rx) = setup_test_router();
+
+        let body = fs::read(Path::new(TESTDATA_PATH).join("event-cmd-profile.json")).unwrap();
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .header(GITHUB_EVENT_HEADER, "issue_comment")
+                    .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
+                    .body(body.into())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            cmds_rx.recv().await.unwrap(),
+            Command::CreateVote(CreateVoteInput {
+                profile: Some("profile1".to_string()),
+                created_by: "user".to_string(),
+                installation_id: 1234,
+                issue_id: 1234,
+                issue_number: 1,
+                issue_title: "Test issue".to_string(),
+                is_pull_request: false,
+                repository_full_name: "org/repo".to_string(),
+                organization: Some("org".to_string()),
+            })
         );
     }
 
