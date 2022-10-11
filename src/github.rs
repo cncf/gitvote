@@ -132,7 +132,6 @@ impl GHApi {
 
 #[async_trait]
 impl GH for GHApi {
-    /// Create a check run for the head commit in the provided pull request.
     async fn create_check_run(
         &self,
         inst_id: u64,
@@ -160,7 +159,6 @@ impl GH for GHApi {
         Ok(())
     }
 
-    /// Get all users allowed to vote on a given vote.
     async fn get_allowed_voters(
         &self,
         inst_id: u64,
@@ -210,7 +208,6 @@ impl GH for GHApi {
         Ok(allowed_voters)
     }
 
-    /// Get all repository collaborators.
     async fn get_collaborators(
         &self,
         inst_id: u64,
@@ -229,7 +226,6 @@ impl GH for GHApi {
         Ok(collaborators)
     }
 
-    /// Get reactions for the provided comment.
     async fn get_comment_reactions(
         &self,
         inst_id: u64,
@@ -247,7 +243,6 @@ impl GH for GHApi {
         Ok(reactions)
     }
 
-    /// Get configuration file.
     async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String> {
         let client = self.app_client.installation(InstallationId(inst_id));
 
@@ -275,7 +270,6 @@ impl GH for GHApi {
         content
     }
 
-    /// Get all members of the provided team.
     async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{}/orgs/{}/teams/{}/members", GITHUB_API_URL, org, team);
@@ -289,8 +283,6 @@ impl GH for GHApi {
         Ok(members)
     }
 
-    /// Verify if the GitVote check is required via branch protection in the
-    /// repository's branch provided.
     async fn is_check_required(
         &self,
         inst_id: u64,
@@ -318,7 +310,6 @@ impl GH for GHApi {
         Ok(is_check_required)
     }
 
-    /// Post the comment provided in the repository's issue/pr given.
     async fn post_comment(
         &self,
         inst_id: u64,
@@ -335,7 +326,6 @@ impl GH for GHApi {
         Ok(comment.id.0 as i64)
     }
 
-    /// Check if the user given is a collaborator of the provided repository.
     async fn user_is_collaborator(
         &self,
         inst_id: u64,

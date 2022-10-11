@@ -27,7 +27,7 @@ const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
 const GITHUB_SIGNATURE_HEADER: &str = "X-Hub-Signature-256";
 
 /// Setup HTTP server router.
-pub(crate) async fn setup_router(
+pub(crate) fn setup_router(
     cfg: Arc<Config>,
     db: DynDB,
     gh: DynGH,
@@ -65,7 +65,7 @@ async fn event(
     Extension(db): Extension<DynDB>,
     Extension(gh): Extension<DynGH>,
     Extension(cmds_tx): Extension<async_channel::Sender<Command>>,
-) -> Result<(), StatusCode> {
+) -> Result<(), (StatusCode, String)> {
     // Verify payload signature
     if verify_signature(
         headers.get(GITHUB_SIGNATURE_HEADER),
@@ -74,14 +74,21 @@ async fn event(
     )
     .is_err()
     {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "no valid signature found".to_string(),
+        ));
     };
 
     // Parse event
     let event = match Event::try_from((headers.get(GITHUB_EVENT_HEADER), &body[..])) {
         Ok(event) => event,
-        Err(EventError::MissingHeader) => return Err(StatusCode::BAD_REQUEST),
-        Err(EventError::InvalidBody(_)) => return Err(StatusCode::BAD_REQUEST),
+        Err(EventError::MissingHeader) => {
+            return Err((StatusCode::BAD_REQUEST, "event header missing".to_string()))
+        }
+        Err(EventError::InvalidBody(err)) => {
+            return Err((StatusCode::BAD_REQUEST, format!("invalid body: {}", err)))
+        }
         Err(EventError::UnsupportedEvent) => return Ok(()),
     };
     trace!("event received: {:?}", event);
@@ -96,7 +103,7 @@ async fn event(
             if let Event::PullRequest(event) = event {
                 set_check_status(db, gh, event).await.map_err(|err| {
                     error!("error setting pull request check status: {:#?}", err);
-                    StatusCode::INTERNAL_SERVER_ERROR
+                    (StatusCode::INTERNAL_SERVER_ERROR, String::new())
                 })?
             }
         }
@@ -160,4 +167,461 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: PullRequestEvent) -> Resu
     };
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{db::MockDB, github::*, votes::CreateVoteInput};
+    use async_channel::Receiver;
+    use axum::{
+        body::Body,
+        http::{header::CONTENT_TYPE, Request},
+    };
+    use futures::future;
+    use http_body::combinators::UnsyncBoxBody;
+    use hyper::Response;
+    use mockall::predicate::eq;
+    use std::{fs, path::Path};
+    use tower::ServiceExt;
+
+    const TESTDATA_PATH: &str = "src/testdata";
+
+    #[tokio::test]
+    async fn index() {
+        let (router, _) = setup_test_router();
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
+        assert_eq!(
+            get_body(response).await,
+            fs::read_to_string("templates/index.html")
+                .unwrap()
+                .trim_end_matches('\n')
+        );
+    }
+
+    #[tokio::test]
+    async fn event_no_signature() {
+        let (router, _) = setup_test_router();
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(get_body(response).await, "no valid signature found",);
+    }
+
+    #[tokio::test]
+    async fn event_invalid_signature() {
+        let (router, _) = setup_test_router();
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .header(GITHUB_SIGNATURE_HEADER, "invalid-signature")
+                    .body(
+                        fs::read(Path::new(TESTDATA_PATH).join("event-cmd.json"))
+                            .unwrap()
+                            .into(),
+                    )
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(get_body(response).await, "no valid signature found",);
+    }
+
+    #[tokio::test]
+    async fn event_missing_header() {
+        let (router, _) = setup_test_router();
+
+        let body = fs::read(Path::new(TESTDATA_PATH).join("event-cmd.json")).unwrap();
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
+                    .body(body.into())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(get_body(response).await, "event header missing",);
+    }
+
+    #[tokio::test]
+    async fn event_invalid_body() {
+        let (router, _) = setup_test_router();
+
+        let body = b"{`invalid body";
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .header(GITHUB_EVENT_HEADER, "issue_comment")
+                    .header(GITHUB_SIGNATURE_HEADER, generate_signature(body))
+                    .body(body.to_vec().into())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            get_body(response).await,
+            "invalid body: key must be a string at line 1 column 2",
+        );
+    }
+
+    #[tokio::test]
+    async fn event_unsupported() {
+        let (router, cmds_rx) = setup_test_router();
+
+        let body = fs::read(Path::new(TESTDATA_PATH).join("event-cmd.json")).unwrap();
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .header(GITHUB_EVENT_HEADER, "unsupported")
+                    .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
+                    .body(body.into())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(cmds_rx.is_empty());
+    }
+
+    #[tokio::test]
+    async fn event_without_cmd() {
+        let (router, cmds_rx) = setup_test_router();
+
+        let body = fs::read(Path::new(TESTDATA_PATH).join("event-no-cmd.json")).unwrap();
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .header(GITHUB_EVENT_HEADER, "issue_comment")
+                    .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
+                    .body(body.into())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(cmds_rx.is_empty());
+    }
+
+    #[tokio::test]
+    async fn event_with_cmd() {
+        let (router, cmds_rx) = setup_test_router();
+
+        let body = fs::read(Path::new(TESTDATA_PATH).join("event-cmd.json")).unwrap();
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .header(GITHUB_EVENT_HEADER, "issue_comment")
+                    .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
+                    .body(body.into())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            cmds_rx.recv().await.unwrap(),
+            Command::CreateVote(CreateVoteInput::new(
+                None,
+                Event::IssueComment(IssueCommentEvent {
+                    action: IssueCommentEventAction::Created,
+                    comment: Comment {
+                        id: 1234,
+                        body: Some("/cmd".to_string()),
+                    },
+                    installation: Installation { id: 1234 },
+                    issue: Issue {
+                        id: 1234,
+                        number: 1,
+                        title: "Test issue".to_string(),
+                        body: None,
+                        pull_request: None,
+                    },
+                    repository: Repository {
+                        full_name: "org/repo".to_string(),
+                    },
+                    organization: Some(Organization {
+                        login: "org".to_string()
+                    }),
+                    sender: User {
+                        login: "user".to_string()
+                    }
+                })
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn event_pr_without_cmd_set_check_status_failed() {
+        let cfg = Arc::new(setup_test_config());
+        let db = Arc::new(MockDB::new());
+        let mut gh = MockGH::new();
+        gh.expect_is_check_required()
+            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: &str| {
+                Box::pin(future::ready(Err(format_err!("fake error"))))
+            });
+        let gh = Arc::new(gh);
+        let (cmds_tx, cmds_rx) = async_channel::unbounded();
+        let router = setup_router(cfg, db, gh, cmds_tx).unwrap();
+
+        let body = fs::read(Path::new(TESTDATA_PATH).join("event-pr-no-cmd.json")).unwrap();
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/events")
+                    .header(GITHUB_EVENT_HEADER, "pull_request")
+                    .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
+                    .body(body.into())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(get_body(response).await, "",);
+        assert!(cmds_rx.is_empty());
+    }
+
+    #[tokio::test]
+    async fn set_check_status_unsupported_pr_action() {
+        let db = Arc::new(MockDB::new());
+        let gh = Arc::new(MockGH::new());
+        let mut event = setup_test_pr_event();
+        event.action = PullRequestEventAction::ReadyForReview;
+
+        assert!(set_check_status(db, gh, event).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn set_check_status_pr_opened_is_check_required_failed() {
+        let db = Arc::new(MockDB::new());
+        let mut gh = MockGH::new();
+        gh.expect_is_check_required()
+            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: &str| {
+                Box::pin(future::ready(Err(format_err!("fake error"))))
+            });
+        let gh = Arc::new(gh);
+        let mut event = setup_test_pr_event();
+        event.action = PullRequestEventAction::Opened;
+
+        assert!(set_check_status(db, gh, event).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_check_status_pr_opened_no_check_required() {
+        let db = Arc::new(MockDB::new());
+        let mut gh = MockGH::new();
+        gh.expect_is_check_required()
+            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(false))));
+        let gh = Arc::new(gh);
+        let mut event = setup_test_pr_event();
+        event.action = PullRequestEventAction::Opened;
+
+        assert!(set_check_status(db, gh, event).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn set_check_status_pr_opened_check_required() {
+        let db = Arc::new(MockDB::new());
+        let mut gh = MockGH::new();
+        gh.expect_is_check_required()
+            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(true))));
+        gh.expect_create_check_run()
+            .with(
+                eq(1234),
+                eq("org"),
+                eq("repo"),
+                eq(1),
+                eq(CheckDetails {
+                    status: "completed".to_string(),
+                    conclusion: Some("success".to_string()),
+                    summary: "No vote found".to_string(),
+                }),
+            )
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: i64, _: CheckDetails| {
+                Box::pin(future::ready(Ok(())))
+            });
+        let gh = Arc::new(gh);
+        let mut event = setup_test_pr_event();
+        event.action = PullRequestEventAction::Opened;
+
+        assert!(set_check_status(db, gh, event).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn set_check_status_pr_synchronized_no_check_required() {
+        let db = Arc::new(MockDB::new());
+        let mut gh = MockGH::new();
+        gh.expect_is_check_required()
+            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(false))));
+        let gh = Arc::new(gh);
+        let mut event = setup_test_pr_event();
+        event.action = PullRequestEventAction::Synchronize;
+
+        assert!(set_check_status(db, gh, event).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn set_check_status_pr_synchronized_check_required_with_vote() {
+        let mut db = MockDB::new();
+        db.expect_has_vote()
+            .with(eq("org/repo"), eq(1))
+            .times(1)
+            .returning(|_: &str, _: i64| Box::pin(future::ready(Ok(true))));
+        let db = Arc::new(db);
+        let mut gh = MockGH::new();
+        gh.expect_is_check_required()
+            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(true))));
+        let gh = Arc::new(gh);
+        let mut event = setup_test_pr_event();
+        event.action = PullRequestEventAction::Synchronize;
+
+        assert!(set_check_status(db, gh, event).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn set_check_status_pr_synchronized_check_required_without_vote() {
+        let mut db = MockDB::new();
+        db.expect_has_vote()
+            .with(eq("org/repo"), eq(1))
+            .times(1)
+            .returning(|_: &str, _: i64| Box::pin(future::ready(Ok(false))));
+        let db = Arc::new(db);
+        let mut gh = MockGH::new();
+        gh.expect_is_check_required()
+            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(true))));
+        gh.expect_create_check_run()
+            .with(
+                eq(1234),
+                eq("org"),
+                eq("repo"),
+                eq(1),
+                eq(CheckDetails {
+                    status: "completed".to_string(),
+                    conclusion: Some("success".to_string()),
+                    summary: "No vote found".to_string(),
+                }),
+            )
+            .times(1)
+            .returning(|_: u64, _: &str, _: &str, _: i64, _: CheckDetails| {
+                Box::pin(future::ready(Ok(())))
+            });
+        let gh = Arc::new(gh);
+        let mut event = setup_test_pr_event();
+        event.action = PullRequestEventAction::Synchronize;
+
+        assert!(set_check_status(db, gh, event).await.is_ok());
+    }
+
+    fn setup_test_router() -> (Router, Receiver<Command>) {
+        let cfg = Arc::new(setup_test_config());
+        let db = Arc::new(MockDB::new());
+        let gh = Arc::new(MockGH::new());
+        let (cmds_tx, cmds_rx) = async_channel::unbounded();
+        (setup_router(cfg, db, gh, cmds_tx).unwrap(), cmds_rx)
+    }
+
+    fn setup_test_config() -> Config {
+        Config::builder()
+            .set_default("github.webhookSecret", "secret")
+            .unwrap()
+            .build()
+            .unwrap()
+    }
+
+    async fn get_body(response: Response<UnsyncBoxBody<Bytes, axum::Error>>) -> Bytes {
+        hyper::body::to_bytes(response.into_body()).await.unwrap()
+    }
+
+    fn generate_signature(body: &[u8]) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(b"secret").unwrap();
+        mac.update(body);
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    }
+
+    fn setup_test_pr_event() -> PullRequestEvent {
+        PullRequestEvent {
+            action: PullRequestEventAction::Edited,
+            installation: Installation { id: 1234 },
+            pull_request: PullRequest {
+                id: 1234,
+                number: 1,
+                title: "Test issue".to_string(),
+                body: None,
+                base: PullRequestBase {
+                    reference: "main".to_string(),
+                },
+            },
+            repository: Repository {
+                full_name: "org/repo".to_string(),
+            },
+            organization: Some(Organization {
+                login: "org".to_string(),
+            }),
+            sender: User {
+                login: "user".to_string(),
+            },
+        }
+    }
 }
