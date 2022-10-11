@@ -1,0 +1,24 @@
+{
+    "action": "created",
+    "comment": {
+        "id": 1234,
+        "body": "/vote"
+    },
+    "installation": {
+        "id": 1234
+    },
+    "issue": {
+        "id": 1234,
+        "number": 1,
+        "title": "Test issue"
+    },
+    "repository": {
+        "full_name": "org/repo"
+    },
+    "organization": {
+        "login": "org"
+    },
+    "sender": {
+        "login": "user"
+    }
+}

@@ -65,7 +65,6 @@ impl PgDB {
 
 #[async_trait]
 impl DB for PgDB {
-    /// Cancel open vote (if exists) in the issue/pr provided.
     async fn cancel_vote(
         &self,
         repository_full_name: &str,
@@ -94,7 +93,6 @@ impl DB for PgDB {
         Ok(cancelled_vote_id)
     }
 
-    /// Get any pending finished vote.
     async fn get_pending_finished_vote(&self, tx: &Transaction<'_>) -> Result<Option<Vote>> {
         // Get pending finished vote from database (if any)
         let row = match tx
@@ -152,7 +150,6 @@ impl DB for PgDB {
         Ok(Some(vote))
     }
 
-    /// Check if the issue/pr provided has a vote.
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
         let row = db
@@ -171,7 +168,6 @@ impl DB for PgDB {
         Ok(has_vote)
     }
 
-    /// Check if the issue/pr provided already has a vote open.
     async fn has_vote_open(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
         let row = db
@@ -191,12 +187,10 @@ impl DB for PgDB {
         Ok(has_vote_open)
     }
 
-    /// Return a reference to the internal database pool.
     fn pool(&self) -> &Pool {
         &self.pool
     }
 
-    /// Store the vote provided in the database.
     async fn store_vote(
         &self,
         vote_comment_id: i64,
@@ -251,7 +245,6 @@ impl DB for PgDB {
         Ok(vote_id)
     }
 
-    /// Store the vote results provided in the database.
     async fn store_vote_results(
         &self,
         tx: &Transaction<'_>,
