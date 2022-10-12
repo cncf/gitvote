@@ -12,7 +12,7 @@ askama_axum = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9
 async-channel = "1.7.1"
 async-trait = "0.1.57"
 axum = "0.5.16"
-clap = { version = "4.0.10", features = ["derive"] }
+clap = { version = "4.0.14", features = ["derive"] }
 config = "0.13.2"
 deadpool-postgres = { version = "0.10.2", features = ["serde"] }
 futures = "0.3.24"
