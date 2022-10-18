@@ -1,9 +1,4 @@
-use crate::{
-    db::DynDB,
-    github::{CheckDetails, DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction},
-    tmpl,
-    votes::{split_full_name, Command},
-};
+use crate::{cmd::Command, db::DynDB, github::*, tmpl};
 use anyhow::{format_err, Error, Result};
 use axum::{
     body::Bytes,
@@ -84,10 +79,16 @@ async fn event(
     let event = match Event::try_from((headers.get(GITHUB_EVENT_HEADER), &body[..])) {
         Ok(event) => event,
         Err(EventError::MissingHeader) => {
-            return Err((StatusCode::BAD_REQUEST, "event header missing".to_string()))
+            return Err((
+                StatusCode::BAD_REQUEST,
+                EventError::MissingHeader.to_string(),
+            ))
         }
         Err(EventError::InvalidBody(err)) => {
-            return Err((StatusCode::BAD_REQUEST, format!("invalid body: {}", err)))
+            return Err((
+                StatusCode::BAD_REQUEST,
+                EventError::InvalidBody(err).to_string(),
+            ))
         }
         Err(EventError::UnsupportedEvent) => return Ok(()),
     };
@@ -172,7 +173,8 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: PullRequestEvent) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::MockDB, github::*, votes::CreateVoteInput};
+    use crate::testutil::*;
+    use crate::{cmd::CreateVoteInput, db::MockDB};
     use async_channel::Receiver;
     use axum::{
         body::Body,
@@ -184,8 +186,6 @@ mod tests {
     use mockall::predicate::eq;
     use std::{fs, path::Path};
     use tower::ServiceExt;
-
-    const TESTDATA_PATH: &str = "src/testdata";
 
     #[tokio::test]
     async fn index() {
@@ -273,7 +273,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(get_body(response).await, "event header missing",);
+        assert_eq!(
+            get_body(response).await,
+            EventError::MissingHeader.to_string()
+        );
     }
 
     #[tokio::test]
@@ -368,14 +371,14 @@ mod tests {
             cmds_rx.recv().await.unwrap(),
             Command::CreateVote(CreateVoteInput {
                 profile: None,
-                created_by: "user".to_string(),
-                installation_id: 1234,
-                issue_id: 1234,
-                issue_number: 1,
-                issue_title: "Test issue".to_string(),
+                created_by: USER.to_string(),
+                installation_id: INST_ID as i64,
+                issue_id: ISSUE_ID,
+                issue_number: ISSUE_NUM,
+                issue_title: TITLE.to_string(),
                 is_pull_request: false,
-                repository_full_name: "org/repo".to_string(),
-                organization: Some("org".to_string()),
+                repository_full_name: REPOFN.to_string(),
+                organization: Some(ORG.to_string()),
             })
         );
     }
@@ -402,15 +405,15 @@ mod tests {
         assert_eq!(
             cmds_rx.recv().await.unwrap(),
             Command::CreateVote(CreateVoteInput {
-                profile: Some("profile1".to_string()),
-                created_by: "user".to_string(),
-                installation_id: 1234,
-                issue_id: 1234,
-                issue_number: 1,
-                issue_title: "Test issue".to_string(),
+                profile: Some(PROFILE.to_string()),
+                created_by: USER.to_string(),
+                installation_id: INST_ID as i64,
+                issue_id: ISSUE_ID,
+                issue_number: ISSUE_NUM,
+                issue_title: TITLE.to_string(),
                 is_pull_request: false,
-                repository_full_name: "org/repo".to_string(),
-                organization: Some("org".to_string()),
+                repository_full_name: REPOFN.to_string(),
+                organization: Some(ORG.to_string()),
             })
         );
     }
@@ -421,11 +424,8 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
-            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: &str| {
-                Box::pin(future::ready(Err(format_err!("fake error"))))
-            });
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = Arc::new(gh);
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
         let router = setup_router(cfg, db, gh, cmds_tx).unwrap();
@@ -464,11 +464,8 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
-            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: &str| {
-                Box::pin(future::ready(Err(format_err!("fake error"))))
-            });
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Opened;
@@ -481,9 +478,8 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
-            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(false))));
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(false))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Opened;
@@ -496,25 +492,21 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
-            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(true))));
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_create_check_run()
             .with(
-                eq(1234),
-                eq("org"),
-                eq("repo"),
-                eq(1),
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
                 eq(CheckDetails {
                     status: "completed".to_string(),
                     conclusion: Some("success".to_string()),
                     summary: "No vote found".to_string(),
                 }),
             )
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: i64, _: CheckDetails| {
-                Box::pin(future::ready(Ok(())))
-            });
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Opened;
@@ -527,9 +519,8 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
-            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(false))));
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(false))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Synchronize;
@@ -541,15 +532,13 @@ mod tests {
     async fn set_check_status_pr_synchronized_check_required_with_vote() {
         let mut db = MockDB::new();
         db.expect_has_vote()
-            .with(eq("org/repo"), eq(1))
-            .times(1)
-            .returning(|_: &str, _: i64| Box::pin(future::ready(Ok(true))));
+            .with(eq(REPOFN), eq(ISSUE_NUM))
+            .returning(|_, _| Box::pin(future::ready(Ok(true))));
         let db = Arc::new(db);
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
-            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(true))));
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Synchronize;
@@ -561,31 +550,26 @@ mod tests {
     async fn set_check_status_pr_synchronized_check_required_without_vote() {
         let mut db = MockDB::new();
         db.expect_has_vote()
-            .with(eq("org/repo"), eq(1))
-            .times(1)
-            .returning(|_: &str, _: i64| Box::pin(future::ready(Ok(false))));
+            .with(eq(REPOFN), eq(ISSUE_NUM))
+            .returning(|_, _| Box::pin(future::ready(Ok(false))));
         let db = Arc::new(db);
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
-            .with(eq(1234), eq("org"), eq("repo"), eq("main"))
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: &str| Box::pin(future::ready(Ok(true))));
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_create_check_run()
             .with(
-                eq(1234),
-                eq("org"),
-                eq("repo"),
-                eq(1),
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
                 eq(CheckDetails {
                     status: "completed".to_string(),
                     conclusion: Some("success".to_string()),
                     summary: "No vote found".to_string(),
                 }),
             )
-            .times(1)
-            .returning(|_: u64, _: &str, _: &str, _: i64, _: CheckDetails| {
-                Box::pin(future::ready(Ok(())))
-            });
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Synchronize;
@@ -617,30 +601,5 @@ mod tests {
         let mut mac = Hmac::<Sha256>::new_from_slice(b"secret").unwrap();
         mac.update(body);
         format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
-    }
-
-    fn setup_test_pr_event() -> PullRequestEvent {
-        PullRequestEvent {
-            action: PullRequestEventAction::Edited,
-            installation: Installation { id: 1234 },
-            pull_request: PullRequest {
-                id: 1234,
-                number: 1,
-                title: "Test issue".to_string(),
-                body: None,
-                base: PullRequestBase {
-                    reference: "main".to_string(),
-                },
-            },
-            repository: Repository {
-                full_name: "org/repo".to_string(),
-            },
-            organization: Some(Organization {
-                login: "org".to_string(),
-            }),
-            sender: User {
-                login: "user".to_string(),
-            },
-        }
     }
 }

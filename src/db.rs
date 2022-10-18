@@ -1,4 +1,9 @@
-use crate::votes::{CfgProfile, CreateVoteInput, Vote, VoteResults};
+use crate::{
+    cfg::CfgProfile,
+    cmd::CreateVoteInput,
+    github::{split_full_name, DynGH},
+    results::{self, Vote, VoteResults},
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use deadpool_postgres::{Pool, Transaction};
@@ -22,17 +27,14 @@ pub(crate) trait DB {
         issue_number: i64,
     ) -> Result<Option<Uuid>>;
 
-    /// Get any pending finished vote.
-    async fn get_pending_finished_vote(&self, tx: &Transaction<'_>) -> Result<Option<Vote>>;
+    /// Close any pending finished vote.
+    async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, VoteResults)>>;
 
     /// Check if the issue/pr provided has a vote.
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
 
     /// Check if the issue/pr provided already has a vote open.
     async fn has_vote_open(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
-
-    /// Return a reference to the internal database pool.
-    fn pool(&self) -> &Pool;
 
     /// Store the vote provided in the database.
     async fn store_vote(
@@ -41,14 +43,6 @@ pub(crate) trait DB {
         input: &CreateVoteInput,
         cfg: &CfgProfile,
     ) -> Result<Uuid>;
-
-    /// Store the vote results provided in the database.
-    async fn store_vote_results(
-        &self,
-        tx: &Transaction<'_>,
-        vote_id: Uuid,
-        results: &VoteResults,
-    ) -> Result<()>;
 }
 
 /// DB implementation backed by PostgreSQL.
@@ -61,39 +55,9 @@ impl PgDB {
     pub(crate) fn new(pool: Pool) -> Self {
         Self { pool }
     }
-}
 
-#[async_trait]
-impl DB for PgDB {
-    async fn cancel_vote(
-        &self,
-        repository_full_name: &str,
-        issue_number: i64,
-    ) -> Result<Option<Uuid>> {
-        let db = self.pool.get().await?;
-        let cancelled_vote_id = match db
-            .query_opt(
-                "
-                delete from vote
-                where repository_full_name = $1::text
-                and issue_number = $2::bigint
-                and closed = false
-                returning vote_id
-                ",
-                &[&repository_full_name, &issue_number],
-            )
-            .await?
-        {
-            Some(row) => {
-                let vote_id: Uuid = row.get(0);
-                Some(vote_id)
-            }
-            None => None,
-        };
-        Ok(cancelled_vote_id)
-    }
-
-    async fn get_pending_finished_vote(&self, tx: &Transaction<'_>) -> Result<Option<Vote>> {
+    /// Get any pending finished vote.
+    async fn get_pending_finished_vote(tx: &Transaction<'_>) -> Result<Option<Vote>> {
         // Get pending finished vote from database (if any)
         let row = match tx
             .query_opt(
@@ -150,17 +114,88 @@ impl DB for PgDB {
         Ok(Some(vote))
     }
 
+    /// Store the vote results provided in the database.
+    async fn store_vote_results(
+        tx: &Transaction<'_>,
+        vote_id: Uuid,
+        results: &VoteResults,
+    ) -> Result<()> {
+        tx.execute(
+            "
+            update vote set
+                closed = true,
+                closed_at = current_timestamp,
+                results = $1::jsonb
+            where vote_id = $2::uuid;
+            ",
+            &[&Json(&results), &vote_id],
+        )
+        .await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl DB for PgDB {
+    async fn cancel_vote(
+        &self,
+        repository_full_name: &str,
+        issue_number: i64,
+    ) -> Result<Option<Uuid>> {
+        let db = self.pool.get().await?;
+        let cancelled_vote_id = match db
+            .query_opt(
+                "
+                delete from vote
+                where repository_full_name = $1::text
+                and issue_number = $2::bigint
+                and closed = false
+                returning vote_id
+                ",
+                &[&repository_full_name, &issue_number],
+            )
+            .await?
+        {
+            Some(row) => {
+                let vote_id: Uuid = row.get(0);
+                Some(vote_id)
+            }
+            None => None,
+        };
+        Ok(cancelled_vote_id)
+    }
+
+    async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, VoteResults)>> {
+        // Get pending finished vote (if any) from database
+        let mut db = self.pool.get().await?;
+        let tx = db.transaction().await?;
+        let vote = match PgDB::get_pending_finished_vote(&tx).await? {
+            Some(vote) => vote,
+            None => return Ok(None),
+        };
+
+        // Calculate results
+        let (owner, repo) = split_full_name(&vote.repository_full_name);
+        let results = results::calculate(gh, owner, repo, &vote).await?;
+
+        // Store results in database
+        PgDB::store_vote_results(&tx, vote.vote_id, &results).await?;
+        tx.commit().await?;
+
+        Ok(Some((vote, results)))
+    }
+
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
         let row = db
             .query_one(
                 "
-                    select exists (
-                        select 1 from vote
-                        where repository_full_name = $1::text
-                        and issue_number = $2::bigint
-                    )
-                    ",
+                select exists (
+                    select 1 from vote
+                    where repository_full_name = $1::text
+                    and issue_number = $2::bigint
+                )
+                ",
                 &[&repository_full_name, &issue_number],
             )
             .await?;
@@ -185,10 +220,6 @@ impl DB for PgDB {
             .await?;
         let has_vote_open: bool = row.get(0);
         Ok(has_vote_open)
-    }
-
-    fn pool(&self) -> &Pool {
-        &self.pool
     }
 
     async fn store_vote(
@@ -243,25 +274,5 @@ impl DB for PgDB {
             .await?;
         let vote_id: Uuid = row.get("vote_id");
         Ok(vote_id)
-    }
-
-    async fn store_vote_results(
-        &self,
-        tx: &Transaction<'_>,
-        vote_id: Uuid,
-        results: &VoteResults,
-    ) -> Result<()> {
-        tx.execute(
-            "
-            update vote set
-                closed = true,
-                closed_at = current_timestamp,
-                results = $1::jsonb
-            where vote_id = $2::uuid;
-            ",
-            &[&Json(&results), &vote_id],
-        )
-        .await?;
-        Ok(())
     }
 }

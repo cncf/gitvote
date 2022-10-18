@@ -10,7 +10,7 @@
     "issue": {
         "id": 1234,
         "number": 1,
-        "title": "Test issue"
+        "title": "Test title"
     },
     "repository": {
         "full_name": "org/repo"

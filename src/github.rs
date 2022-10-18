@@ -1,4 +1,4 @@
-use crate::votes::CfgProfile;
+use crate::cfg::CfgProfile;
 use anyhow::Result;
 use async_trait::async_trait;
 use axum::http::HeaderValue;
@@ -9,6 +9,7 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
+use thiserror::Error;
 
 /// GitHub API base url.
 const GITHUB_API_URL: &str = "https://api.github.com";
@@ -59,6 +60,7 @@ pub(crate) trait GH {
     ) -> Result<Vec<UserName>>;
 
     /// Get all repository collaborators.
+    #[allow(dead_code)]
     async fn get_collaborators(
         &self,
         inst_id: u64,
@@ -79,6 +81,7 @@ pub(crate) trait GH {
     async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String>;
 
     /// Get all members of the provided team.
+    #[allow(dead_code)]
     async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>>;
 
     /// Verify if the GitVote check is required via branch protection in the
@@ -155,7 +158,7 @@ impl GH for GHApi {
         if let Some(conclusion) = check_details.conclusion {
             body["conclusion"] = json!(conclusion);
         };
-        let _: Value = client.post(url, Some(&body)).await?;
+        let _: Value = client.post(url, Some(&body)).await?; // Do not remove let _: Value
         Ok(())
     }
 
@@ -385,10 +388,13 @@ impl TryFrom<(Option<&HeaderValue>, &[u8])> for Event {
 }
 
 /// Errors that may occur while creating a new event instance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Error, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum EventError {
+    #[error("event header missing")]
     MissingHeader,
+    #[error("unsupported event")]
     UnsupportedEvent,
+    #[error("invalid body: {0}")]
     InvalidBody(String),
 }
 
@@ -549,4 +555,11 @@ pub(crate) struct Protection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct RequiredStatusCheck {
     pub contexts: Vec<String>,
+}
+
+/// Helper function that splits a repository's full name and returns the owner
+/// and the repo name as a tuple.
+pub(crate) fn split_full_name(full_name: &str) -> (&str, &str) {
+    let mut parts = full_name.split('/');
+    (parts.next().unwrap(), parts.next().unwrap())
 }
