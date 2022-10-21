@@ -1,0 +1,437 @@
+use crate::{
+    cfg::CfgProfile,
+    github::{DynGH, UserName},
+};
+use anyhow::{format_err, Result};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, fmt};
+use time::OffsetDateTime;
+use uuid::Uuid;
+
+/// Supported reactions.
+const REACTION_IN_FAVOR: &str = "+1";
+const REACTION_AGAINST: &str = "-1";
+const REACTION_ABSTAIN: &str = "eyes";
+
+/// Vote information.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Vote {
+    pub vote_id: Uuid,
+    pub vote_comment_id: i64,
+    pub created_at: OffsetDateTime,
+    pub created_by: String,
+    pub ends_at: OffsetDateTime,
+    pub closed: bool,
+    pub closed_at: Option<OffsetDateTime>,
+    pub cfg: CfgProfile,
+    pub installation_id: i64,
+    pub issue_id: i64,
+    pub issue_number: i64,
+    pub is_pull_request: bool,
+    pub repository_full_name: String,
+    pub organization: Option<String>,
+    pub results: Option<VoteResults>,
+}
+
+/// Vote options.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) enum VoteOption {
+    InFavor,
+    Against,
+    Abstain,
+}
+
+impl VoteOption {
+    /// Create a new vote option from a reaction string.
+    fn from_reaction(reaction: &str) -> Result<Self> {
+        let vote_option = match reaction {
+            REACTION_IN_FAVOR => Self::InFavor,
+            REACTION_AGAINST => Self::Against,
+            REACTION_ABSTAIN => Self::Abstain,
+            _ => return Err(format_err!("reaction not supported")),
+        };
+        Ok(vote_option)
+    }
+}
+
+impl fmt::Display for VoteOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::InFavor => "In favor",
+            Self::Against => "Against",
+            Self::Abstain => "Abstain",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+/// Vote results information.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct VoteResults {
+    pub passed: bool,
+    pub in_favor_percentage: f64,
+    pub pass_threshold: f64,
+    pub in_favor: i64,
+    pub against: i64,
+    pub abstain: i64,
+    pub not_voted: i64,
+    pub allowed_voters: i64,
+    pub votes: HashMap<UserName, VoteOption>,
+}
+
+/// Calculate vote results.
+pub(crate) async fn calculate<'a>(
+    gh: DynGH,
+    owner: &'a str,
+    repo: &'a str,
+    vote: &'a Vote,
+) -> Result<VoteResults> {
+    // Get vote comment reactions (aka votes)
+    let inst_id = vote.installation_id as u64;
+    let reactions = gh
+        .get_comment_reactions(inst_id, owner, repo, vote.vote_comment_id)
+        .await?;
+
+    // Get list of allowed voters (users with binding votes)
+    let allowed_voters = gh
+        .get_allowed_voters(inst_id, &vote.cfg, owner, repo, &vote.organization)
+        .await?;
+
+    // Track users votes
+    let mut votes: HashMap<UserName, VoteOption> = HashMap::new();
+    let mut multiple_options_voters: Vec<UserName> = Vec::new();
+    for reaction in reactions {
+        // Get vote option from reaction
+        let username: UserName = reaction.user.login;
+        let vote_option = match VoteOption::from_reaction(reaction.content.as_str()) {
+            Ok(vote_option) => vote_option,
+            Err(_) => {
+                // Ignore unsupported reactions
+                continue;
+            }
+        };
+
+        // We only count the votes of the users with a binding vote
+        if !allowed_voters.contains(&username) {
+            continue;
+        }
+
+        // Do not count votes of users voting for multiple options
+        if multiple_options_voters.contains(&username) {
+            continue;
+        }
+        if votes.contains_key(&username) {
+            // User has already voted (multiple options voter), we have to
+            // remove their vote as we can't know which one to pick
+            multiple_options_voters.push(username.clone());
+            votes.remove(&username);
+            continue;
+        }
+
+        // Track binding vote
+        votes.insert(username, vote_option);
+    }
+
+    // Prepare results and return them
+    let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
+    for (_, vote_option) in votes.iter() {
+        match vote_option {
+            VoteOption::InFavor => in_favor += 1,
+            VoteOption::Against => against += 1,
+            VoteOption::Abstain => abstain += 1,
+        }
+    }
+    let in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
+    let passed = in_favor_percentage >= vote.cfg.pass_threshold;
+    let not_voted = allowed_voters
+        .iter()
+        .filter(|user| !votes.contains_key(*user))
+        .count() as i64;
+
+    Ok(VoteResults {
+        passed,
+        in_favor_percentage,
+        pass_threshold: vote.cfg.pass_threshold,
+        in_favor,
+        against,
+        abstain,
+        not_voted,
+        allowed_voters: allowed_voters.len() as i64,
+        votes,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::github::{MockGH, Reaction, User};
+    use crate::testutil::*;
+    use futures::future::{self};
+    use mockall::predicate::eq;
+    use std::{sync::Arc, time::Duration};
+
+    #[test]
+    fn vote_option_from_reaction() {
+        assert_eq!(
+            VoteOption::from_reaction(REACTION_IN_FAVOR).unwrap(),
+            VoteOption::InFavor
+        );
+        assert_eq!(
+            VoteOption::from_reaction(REACTION_AGAINST).unwrap(),
+            VoteOption::Against
+        );
+        assert_eq!(
+            VoteOption::from_reaction(REACTION_ABSTAIN).unwrap(),
+            VoteOption::Abstain
+        );
+        assert!(VoteOption::from_reaction("unsupported").is_err());
+    }
+
+    macro_rules! test_calculate {
+        ($(
+            $func:ident:
+            {
+                cfg: $cfg:expr,
+                reactions: $reactions:expr,
+                allowed_voters: $allowed_voters:expr,
+                expected_results: $expected_results:expr
+            }
+        ,)*) => {
+        $(
+            #[tokio::test]
+            async fn $func() {
+                // Prepare test data
+                let vote = Vote {
+                    vote_id: Uuid::parse_str(VOTE_ID).unwrap(),
+                    vote_comment_id: COMMENT_ID,
+                    created_at: OffsetDateTime::now_utc(),
+                    created_by: USER.to_string(),
+                    ends_at: OffsetDateTime::now_utc(),
+                    closed: false,
+                    closed_at: None,
+                    cfg: $cfg.clone(),
+                    installation_id: INST_ID as i64,
+                    issue_id: ISSUE_ID,
+                    issue_number: ISSUE_NUM,
+                    is_pull_request: false,
+                    repository_full_name: REPOFN.to_string(),
+                    organization: Some(ORG.to_string()),
+                    results: None,
+                };
+
+                // Setup mocks and expectations
+                let mut gh = MockGH::new();
+                gh.expect_get_comment_reactions()
+                    .with(eq(INST_ID as u64), eq(OWNER), eq(REPO), eq(COMMENT_ID))
+                    .returning(|_, _, _, _| Box::pin(future::ready(Ok($reactions))));
+                gh.expect_get_allowed_voters()
+                    .with(eq(INST_ID as u64), eq($cfg), eq(OWNER), eq(REPO), eq(Some(ORG.to_string())))
+                    .returning(|_, _, _, _, _| Box::pin(future::ready(Ok($allowed_voters))));
+
+                // Calculate vote results and check we get what we expect
+                let results = calculate(Arc::new(gh), OWNER, REPO, &vote)
+                    .await
+                    .unwrap();
+                assert_eq!(results, $expected_results);
+            }
+        )*
+        }
+    }
+
+    test_calculate!(
+        calculate_unsupported_reactions_are_ignored:
+        {
+            cfg: CfgProfile {
+                duration: Duration::from_secs(1),
+                pass_threshold: 50.0,
+                allowed_voters: None, // It won't be used (effective value is set below)
+            },
+            reactions: vec![
+                Reaction {
+                    user: User { login: USER1.to_string() },
+                    content: "unsupported".to_string(),
+                },
+                Reaction {
+                    user: User { login: USER1.to_string() },
+                    content: REACTION_AGAINST.to_string(),
+                },
+                Reaction {
+                    user: User { login: USER1.to_string() },
+                    content: "unsupported".to_string(),
+                }
+            ],
+            allowed_voters: vec![
+                USER1.to_string()
+            ],
+            expected_results: VoteResults {
+                passed: false,
+                in_favor_percentage: 0.0,
+                pass_threshold: 50.0,
+                in_favor: 0,
+                against: 1,
+                abstain: 0,
+                not_voted: 0,
+                votes: HashMap::from([
+                    (USER1.to_string(), VoteOption::Against)
+                ]),
+                allowed_voters: 1,
+            }
+        },
+
+        calculate_do_not_count_not_binding_votes:
+        {
+            cfg: CfgProfile {
+                duration: Duration::from_secs(1),
+                pass_threshold: 50.0,
+                allowed_voters: None, // It won't be used (effective value is set below)
+            },
+            reactions: vec![
+                Reaction {
+                    user: User { login: USER1.to_string() },
+                    content: REACTION_AGAINST.to_string(),
+                },
+                Reaction {
+                    user: User { login: USER2.to_string() },
+                    content: REACTION_AGAINST.to_string(),
+                }
+            ],
+            allowed_voters: vec![
+                USER1.to_string()
+            ],
+            expected_results: VoteResults {
+                passed: false,
+                in_favor_percentage: 0.0,
+                pass_threshold: 50.0,
+                in_favor: 0,
+                against: 1,
+                abstain: 0,
+                not_voted: 0,
+                votes: HashMap::from([
+                    (USER1.to_string(), VoteOption::Against)
+                ]),
+                allowed_voters: 1,
+            }
+        },
+
+        calculate_do_not_count_votes_from_multiple_options_voters:
+        {
+            cfg: CfgProfile {
+                duration: Duration::from_secs(1),
+                pass_threshold: 50.0,
+                allowed_voters: None, // It won't be used (effective value is set below)
+            },
+            reactions: vec![
+                Reaction {
+                    user: User { login: USER1.to_string() },
+                    content: REACTION_AGAINST.to_string(),
+                },
+                Reaction {
+                    user: User { login: USER1.to_string() },
+                    content: REACTION_ABSTAIN.to_string(),
+                }
+            ],
+            allowed_voters: vec![
+                USER1.to_string()
+            ],
+            expected_results: VoteResults {
+                passed: false,
+                in_favor_percentage: 0.0,
+                pass_threshold: 50.0,
+                in_favor: 0,
+                against: 0,
+                abstain: 0,
+                not_voted: 1,
+                votes: HashMap::new(),
+                allowed_voters: 1,
+            }
+        },
+
+        calculate_binding_votes_are_counted_correctly:
+        {
+            cfg: CfgProfile {
+                duration: Duration::from_secs(1),
+                pass_threshold: 50.0,
+                allowed_voters: None, // It won't be used (effective value is set below)
+            },
+            reactions: vec![
+                Reaction {
+                    user: User { login: USER1.to_string() },
+                    content: REACTION_IN_FAVOR.to_string(),
+                },
+                Reaction {
+                    user: User { login: USER2.to_string() },
+                    content: REACTION_AGAINST.to_string(),
+                },
+                Reaction {
+                    user: User { login: USER3.to_string() },
+                    content: REACTION_ABSTAIN.to_string(),
+                }
+            ],
+            allowed_voters: vec![
+                USER1.to_string(),
+                USER2.to_string(),
+                USER3.to_string(),
+                USER4.to_string()
+            ],
+            expected_results: VoteResults {
+                passed: false,
+                in_favor_percentage: 25.0,
+                pass_threshold: 50.0,
+                in_favor: 1,
+                against: 1,
+                abstain: 1,
+                not_voted: 1,
+                votes: HashMap::from([
+                    (USER1.to_string(), VoteOption::InFavor),
+                    (USER2.to_string(), VoteOption::Against),
+                    (USER3.to_string(), VoteOption::Abstain),
+                ]),
+                allowed_voters: 4,
+            }
+        },
+
+        calculate_vote_passes_when_in_favor_percentage_reaches_pass_threshold:
+        {
+            cfg: CfgProfile {
+                duration: Duration::from_secs(1),
+                pass_threshold: 75.0,
+                allowed_voters: None, // It won't be used (effective value is set below)
+            },
+            reactions: vec![
+                Reaction {
+                    user: User { login: USER1.to_string() },
+                    content: REACTION_IN_FAVOR.to_string(),
+                },
+                Reaction {
+                    user: User { login: USER2.to_string() },
+                    content: REACTION_IN_FAVOR.to_string(),
+                },
+                Reaction {
+                    user: User { login: USER3.to_string() },
+                    content: REACTION_IN_FAVOR.to_string(),
+                }
+            ],
+            allowed_voters: vec![
+                USER1.to_string(),
+                USER2.to_string(),
+                USER3.to_string(),
+                USER4.to_string()
+            ],
+            expected_results: VoteResults {
+                passed: true,
+                in_favor_percentage: 75.0,
+                pass_threshold: 75.0,
+                in_favor: 3,
+                against: 0,
+                abstain: 0,
+                not_voted: 1,
+                votes: HashMap::from([
+                    (USER1.to_string(), VoteOption::InFavor),
+                    (USER2.to_string(), VoteOption::InFavor),
+                    (USER3.to_string(), VoteOption::InFavor),
+                ]),
+                allowed_voters: 4,
+            }
+        },
+    );
+}

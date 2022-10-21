@@ -1,6 +1,8 @@
 use crate::{
+    cfg::CfgProfile,
+    cmd::CreateVoteInput,
     github::{TeamSlug, UserName},
-    votes::{CfgProfile, CreateVoteInput, VoteResults},
+    results::VoteResults,
 };
 use askama::Template;
 

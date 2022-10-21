@@ -6,7 +6,7 @@
     "pull_request": {
         "id": 1234,
         "number": 1,
-        "title": "Test issue",
+        "title": "Test title",
         "body": "Hi!",
         "base": {
             "ref": "main"
