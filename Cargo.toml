@@ -6,16 +6,16 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.65"
+anyhow = "1.0.66"
 askama = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9b0bf888c0464a1af9df25f" }
 askama_axum = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9b0bf888c0464a1af9df25f" }
 async-channel = "1.7.1"
-async-trait = "0.1.57"
-axum = "0.5.16"
-clap = { version = "4.0.14", features = ["derive"] }
+async-trait = "0.1.58"
+axum = "0.5.17"
+clap = { version = "4.0.18", features = ["derive"] }
 config = "0.13.2"
 deadpool-postgres = { version = "0.10.2", features = ["serde"] }
-futures = "0.3.24"
+futures = "0.3.25"
 hex = "0.4.3"
 hmac = "0.12.1"
 humantime = "2.1.0"
@@ -27,8 +27,8 @@ openssl = { version = "0.10.42", features = ["vendored"] }
 postgres-openssl = "0.5.0"
 regex = "1.6.0"
 reqwest = "0.11.12"
-serde = { version = "1.0.145", features = ["derive"] }
-serde_json = "1.0.86"
+serde = { version = "1.0.146", features = ["derive"] }
+serde_json = "1.0.87"
 serde_yaml = "0.9.13"
 sha2 = "0.10.6"
 thiserror = "1.0.37"
@@ -53,4 +53,4 @@ uuid = { version = "1.2.1", features = ["serde", "v4"] }
 [dev-dependencies]
 http-body = "0.4.5"
 hyper = "0.14.20"
-mockall = "0.11.2"
+mockall = "0.11.3"
