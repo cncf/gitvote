@@ -370,7 +370,7 @@ mod tests {
         assert_eq!(
             cmds_rx.recv().await.unwrap(),
             Command::CreateVote(CreateVoteInput {
-                profile: None,
+                profile_name: None,
                 created_by: USER.to_string(),
                 installation_id: INST_ID as i64,
                 issue_id: ISSUE_ID,
@@ -405,7 +405,7 @@ mod tests {
         assert_eq!(
             cmds_rx.recv().await.unwrap(),
             Command::CreateVote(CreateVoteInput {
-                profile: Some(PROFILE.to_string()),
+                profile_name: Some(PROFILE_NAME.to_string()),
                 created_by: USER.to_string(),
                 installation_id: INST_ID as i64,
                 issue_id: ISSUE_ID,

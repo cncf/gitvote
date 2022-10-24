@@ -144,23 +144,31 @@ impl Processor {
         // Get vote configuration profile
         let inst_id = i.installation_id as u64;
         let (owner, repo) = split_full_name(&i.repository_full_name);
-        let cfg =
-            match CfgProfile::get(self.gh.clone(), inst_id, owner, repo, i.profile.clone()).await {
-                Ok(cfg) => cfg,
-                Err(err) => {
-                    let body = match err {
-                        CfgError::ConfigNotFound => tmpl::ConfigNotFound {}.render()?,
-                        CfgError::ProfileNotFound => tmpl::ConfigProfileNotFound {}.render()?,
-                        CfgError::InvalidConfig(reason) => {
-                            tmpl::InvalidConfig::new(&reason).render()?
-                        }
-                    };
-                    self.gh
-                        .post_comment(inst_id, owner, repo, i.issue_number, &body)
-                        .await?;
-                    return Ok(());
-                }
-            };
+        let cfg = match CfgProfile::get(
+            self.gh.clone(),
+            inst_id,
+            owner,
+            i.organization.is_some(),
+            repo,
+            i.profile_name.clone(),
+        )
+        .await
+        {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                let body = match err {
+                    CfgError::ConfigNotFound => tmpl::ConfigNotFound {}.render()?,
+                    CfgError::ProfileNotFound => tmpl::ConfigProfileNotFound {}.render()?,
+                    CfgError::InvalidConfig(reason) => {
+                        tmpl::InvalidConfig::new(&reason).render()?
+                    }
+                };
+                self.gh
+                    .post_comment(inst_id, owner, repo, i.issue_number, &body)
+                    .await?;
+                return Ok(());
+            }
+        };
 
         // Only repository collaborators can create votes
         if !self

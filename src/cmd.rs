@@ -72,7 +72,7 @@ impl Command {
 /// Information required to create a new vote.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct CreateVoteInput {
-    pub profile: Option<String>,
+    pub profile_name: Option<String>,
     pub created_by: String,
     pub installation_id: i64,
     pub issue_id: i64,
@@ -86,10 +86,10 @@ pub(crate) struct CreateVoteInput {
 impl CreateVoteInput {
     /// Create a new CreateVoteInput instance from the profile and event
     /// provided.
-    pub(crate) fn new(profile: Option<String>, event: Event) -> Self {
+    pub(crate) fn new(profile_name: Option<String>, event: Event) -> Self {
         match event {
             Event::Issue(event) => Self {
-                profile,
+                profile_name,
                 created_by: event.sender.login,
                 installation_id: event.installation.id,
                 issue_id: event.issue.id,
@@ -100,7 +100,7 @@ impl CreateVoteInput {
                 organization: event.organization.map(|o| o.login),
             },
             Event::IssueComment(event) => Self {
-                profile,
+                profile_name,
                 created_by: event.sender.login,
                 installation_id: event.installation.id,
                 issue_id: event.issue.id,
@@ -111,7 +111,7 @@ impl CreateVoteInput {
                 organization: event.organization.map(|o| o.login),
             },
             Event::PullRequest(event) => Self {
-                profile,
+                profile_name,
                 created_by: event.sender.login,
                 installation_id: event.installation.id,
                 issue_id: event.pull_request.id,
@@ -206,7 +206,7 @@ mod tests {
     fn command_from_issue_event_create_vote_cmd_profile1() {
         let mut event = setup_test_issue_event();
         event.action = IssueEventAction::Opened;
-        event.issue.body = Some(format!("/{}-{}", CMD_CREATE_VOTE, PROFILE));
+        event.issue.body = Some(format!("/{}-{}", CMD_CREATE_VOTE, PROFILE_NAME));
         let event = Event::Issue(event);
 
         assert_eq!(
