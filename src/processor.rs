@@ -82,11 +82,6 @@ impl Processor {
                 tokio::select! {
                     biased;
 
-                    // Exit if the votes processor has been asked to stop
-                    _ = stop_rx.recv() => {
-                        break
-                    }
-
                     // Pick next command from the queue and process it
                     Ok(cmd) = cmds_rx.recv() => {
                         if let Err(err) = match cmd {
@@ -99,6 +94,11 @@ impl Processor {
                         } {
                             error!("{:#?}", err);
                         }
+                    }
+
+                    // Exit if the votes processor has been asked to stop
+                    _ = stop_rx.recv() => {
+                        break
                     }
                 }
             }
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn commands_handler_picks_cmd_from_queue() {
+    async fn commands_handler_stops_after_processing_queued_cmd() {
         let mut db = MockDB::new();
         db.expect_cancel_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
@@ -359,16 +359,15 @@ mod tests {
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let cmds_handler = votes_processor.commands_handler(cmds_rx.clone(), stop_tx.subscribe());
-
         let event = setup_test_issue_event();
         let cmd = Command::CancelVote(CancelVoteInput::new(Event::Issue(event)));
-
         cmds_tx.send(cmd).await.unwrap();
-        sleep(Duration::from_millis(100)).await;
+        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
+
+        let cmds_handler = votes_processor.commands_handler(cmds_rx.clone(), stop_tx.subscribe());
         drop(stop_tx);
         assert!(cmds_handler.await.is_ok());
+        assert!(cmds_rx.is_empty());
     }
 
     #[tokio::test]
