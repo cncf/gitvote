@@ -12,7 +12,7 @@ askama_axum = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9
 async-channel = "1.7.1"
 async-trait = "0.1.58"
 axum = "0.5.17"
-clap = { version = "4.0.18", features = ["derive"] }
+clap = { version = "4.0.22", features = ["derive"] }
 config = "0.13.2"
 deadpool-postgres = { version = "0.10.3", features = ["serde"] }
 futures = "0.3.25"
@@ -25,14 +25,14 @@ lazy_static = "1.4.0"
 octocrab = "0.17.0"
 openssl = { version = "0.10.42", features = ["vendored"] }
 postgres-openssl = "0.5.0"
-regex = "1.6.0"
+regex = "1.7.0"
 reqwest = "0.11.12"
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.87"
 serde_yaml = "0.9.14"
 sha2 = "0.10.6"
 thiserror = "1.0.37"
-time = { version = "0.3.16", features = ["serde"] }
+time = { version = "0.3.17", features = ["serde"] }
 tokio = { version = "1.21.2", features = [
     "macros",
     "rt-multi-thread",
@@ -52,5 +52,5 @@ uuid = { version = "1.2.1", features = ["serde", "v4"] }
 
 [dev-dependencies]
 http-body = "0.4.5"
-hyper = "0.14.22"
+hyper = "0.14.23"
 mockall = "0.11.3"
