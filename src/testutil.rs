@@ -1,10 +1,10 @@
 use crate::{
     cfg::{AllowedVoters, CfgProfile},
     github::*,
-    results::{Vote, VoteOption, VoteResults},
+    results::{UserVote, Vote, VoteOption, VoteResults},
 };
 use std::{collections::HashMap, fs, path::Path, time::Duration};
-use time::OffsetDateTime;
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use uuid::Uuid;
 
 pub(crate) const BRANCH: &str = "main";
@@ -28,6 +28,7 @@ pub(crate) const USER3: &str = "user3";
 pub(crate) const USER4: &str = "user4";
 pub(crate) const TEAM1: &str = "team1";
 pub(crate) const VOTE_ID: &str = "00000000-0000-0000-0000-000000000001";
+pub(crate) const TIMESTAMP: &str = "2022-11-30T10:00:00Z";
 
 pub(crate) fn get_test_invalid_config() -> String {
     fs::read_to_string(Path::new(TESTDATA_PATH).join("config-invalid.yml")).unwrap()
@@ -148,7 +149,13 @@ pub(crate) fn setup_test_vote_results() -> VoteResults {
         against: 0,
         abstain: 0,
         not_voted: 0,
-        votes: HashMap::from([(USER1.to_string(), VoteOption::InFavor)]),
+        votes: HashMap::from([(
+            USER1.to_string(),
+            UserVote {
+                vote_option: VoteOption::InFavor,
+                timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+            },
+        )]),
         allowed_voters: 1,
     }
 }
