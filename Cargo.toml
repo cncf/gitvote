@@ -9,7 +9,7 @@ edition = "2021"
 anyhow = "1.0.66"
 askama = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9b0bf888c0464a1af9df25f" }
 askama_axum = { git = "https://github.com/djc/askama", rev = "6cce13f076bdd3e8d9b0bf888c0464a1af9df25f" }
-async-channel = "1.7.1"
+async-channel = "1.8.0"
 async-trait = "0.1.58"
 axum = "0.5.17"
 clap = { version = "4.0.26", features = ["derive"] }
