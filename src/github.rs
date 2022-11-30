@@ -539,6 +539,7 @@ pub(crate) struct PullRequestInIssue {
 pub(crate) struct Reaction {
     pub user: User,
     pub content: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

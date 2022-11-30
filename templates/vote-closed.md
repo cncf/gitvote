@@ -13,9 +13,9 @@ The vote {% if results.passed %}**passed**! 🎉{% else %}**did not pass**.{% en
 {% if !results.votes.is_empty() %}
 ### Binding votes
 
-| User | Vote  |
-| ---- | :---: |
+| User | Vote  | Timestamp |
+| ---- | :---: | :-------: |
 {% for (user, vote) in results.votes -%}
-| @{{ user }} | {{ vote }} |
+| @{{ user }} | {{ vote.vote_option }} | {{ vote.timestamp }} |
 {% endfor %}
 {% endif %}
