@@ -459,7 +459,7 @@ pub(crate) struct PullRequestEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum PullRequestEventAction {
     Assigned,
     AutoMergeDisabled,
