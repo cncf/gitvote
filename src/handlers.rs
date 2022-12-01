@@ -2,10 +2,11 @@ use crate::{cmd::Command, db::DynDB, github::*, tmpl};
 use anyhow::{format_err, Error, Result};
 use axum::{
     body::Bytes,
+    extract::{FromRef, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::{get, post},
-    Extension, Router,
+    Router,
 };
 use config::Config;
 use hmac::{Hmac, Mac};
@@ -21,6 +22,15 @@ const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
 /// Header representing the event payload signature.
 const GITHUB_SIGNATURE_HEADER: &str = "X-Hub-Signature-256";
 
+/// Router's state.
+#[derive(Clone, FromRef)]
+struct RouterState {
+    db: DynDB,
+    gh: DynGH,
+    cmds_tx: async_channel::Sender<Command>,
+    webhook_secret: String,
+}
+
 /// Setup HTTP server router.
 pub(crate) fn setup_router(
     cfg: Arc<Config>,
@@ -35,14 +45,13 @@ pub(crate) fn setup_router(
     let router = Router::new()
         .route("/", get(index))
         .route("/api/events", post(event))
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(Extension(webhook_secret))
-                .layer(Extension(db))
-                .layer(Extension(gh))
-                .layer(Extension(cmds_tx)),
-        );
+        .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()))
+        .with_state(RouterState {
+            db,
+            gh,
+            cmds_tx,
+            webhook_secret,
+        });
 
     Ok(router)
 }
@@ -54,13 +63,13 @@ async fn index() -> impl IntoResponse {
 
 /// Handler that processes webhook events from GitHub.
 async fn event(
+    State(db): State<DynDB>,
+    State(gh): State<DynGH>,
+    State(cmds_tx): State<async_channel::Sender<Command>>,
+    State(webhook_secret): State<String>,
     headers: HeaderMap,
     body: Bytes,
-    Extension(webhook_secret): Extension<String>,
-    Extension(db): Extension<DynDB>,
-    Extension(gh): Extension<DynGH>,
-    Extension(cmds_tx): Extension<async_channel::Sender<Command>>,
-) -> Result<(), (StatusCode, String)> {
+) -> impl IntoResponse {
     // Verify payload signature
     if verify_signature(
         headers.get(GITHUB_SIGNATURE_HEADER),
