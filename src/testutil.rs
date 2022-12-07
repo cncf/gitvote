@@ -26,6 +26,7 @@ pub(crate) const USER1: &str = "user1";
 pub(crate) const USER2: &str = "user2";
 pub(crate) const USER3: &str = "user3";
 pub(crate) const USER4: &str = "user4";
+pub(crate) const USER5: &str = "user5";
 pub(crate) const TEAM1: &str = "team1";
 pub(crate) const VOTE_ID: &str = "00000000-0000-0000-0000-000000000001";
 pub(crate) const TIMESTAMP: &str = "2022-11-30T10:00:00Z";
@@ -149,11 +150,14 @@ pub(crate) fn setup_test_vote_results() -> VoteResults {
         against: 0,
         abstain: 0,
         not_voted: 0,
+        binding: 1,
+        non_binding: 0,
         votes: HashMap::from([(
             USER1.to_string(),
             UserVote {
                 vote_option: VoteOption::InFavor,
                 timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                binding: true,
             },
         )]),
         allowed_voters: 1,

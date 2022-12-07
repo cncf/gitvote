@@ -75,6 +75,8 @@ pub(crate) struct VoteResults {
     pub against: i64,
     pub abstain: i64,
     pub not_voted: i64,
+    pub binding: i64,
+    pub non_binding: i64,
     pub allowed_voters: i64,
     pub votes: HashMap<UserName, UserVote>,
 }
@@ -84,6 +86,7 @@ pub(crate) struct VoteResults {
 pub(crate) struct UserVote {
     pub vote_option: VoteOption,
     pub timestamp: OffsetDateTime,
+    pub binding: bool,
 }
 
 /// Calculate vote results.
@@ -118,11 +121,6 @@ pub(crate) async fn calculate<'a>(
             }
         };
 
-        // We only count the votes of the users with a binding vote
-        if !allowed_voters.contains(&username) {
-            continue;
-        }
-
         // Do not count votes of users voting for multiple options
         if multiple_options_voters.contains(&username) {
             continue;
@@ -135,27 +133,37 @@ pub(crate) async fn calculate<'a>(
             continue;
         }
 
-        // Track binding vote
+        // Track vote
+        let binding = allowed_voters.contains(&username);
         votes.insert(
             username,
             UserVote {
                 vote_option,
                 timestamp: OffsetDateTime::parse(reaction.created_at.as_str(), &Rfc3339)
                     .expect("created_at timestamp to be valid"),
+                binding,
             },
         );
     }
 
     // Prepare results and return them
-    let (mut in_favor, mut against, mut abstain) = (0, 0, 0);
+    let (mut in_favor, mut against, mut abstain, mut binding, mut non_binding) = (0, 0, 0, 0, 0);
     for (_, user_vote) in votes.iter() {
-        match user_vote.vote_option {
-            VoteOption::InFavor => in_favor += 1,
-            VoteOption::Against => against += 1,
-            VoteOption::Abstain => abstain += 1,
+        if user_vote.binding {
+            match user_vote.vote_option {
+                VoteOption::InFavor => in_favor += 1,
+                VoteOption::Against => against += 1,
+                VoteOption::Abstain => abstain += 1,
+            }
+            binding += 1;
+        } else {
+            non_binding += 1;
         }
     }
-    let in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
+    let mut in_favor_percentage = 0.0;
+    if !allowed_voters.is_empty() {
+        in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0
+    }
     let passed = in_favor_percentage >= vote.cfg.pass_threshold;
     let not_voted = allowed_voters
         .iter()
@@ -170,6 +178,8 @@ pub(crate) async fn calculate<'a>(
         against,
         abstain,
         not_voted,
+        binding,
+        non_binding,
         allowed_voters: allowed_voters.len() as i64,
         votes,
     })
@@ -288,55 +298,15 @@ mod tests {
                 against: 1,
                 abstain: 0,
                 not_voted: 0,
+                binding: 1,
+                non_binding: 0,
                 votes: HashMap::from([
                     (
                         USER1.to_string(),
                         UserVote {
                             vote_option: VoteOption::Against,
                             timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        },
-                    )
-                ]),
-                allowed_voters: 1,
-            }
-        },
-
-        calculate_do_not_count_not_binding_votes:
-        {
-            cfg: CfgProfile {
-                duration: Duration::from_secs(1),
-                pass_threshold: 50.0,
-                allowed_voters: None, // It won't be used (effective value is set below)
-            },
-            reactions: vec![
-                Reaction {
-                    user: User { login: USER1.to_string() },
-                    content: REACTION_AGAINST.to_string(),
-                    created_at: TIMESTAMP.to_string(),
-                },
-                Reaction {
-                    user: User { login: USER2.to_string() },
-                    content: REACTION_AGAINST.to_string(),
-                    created_at: TIMESTAMP.to_string(),
-                }
-            ],
-            allowed_voters: vec![
-                USER1.to_string()
-            ],
-            expected_results: VoteResults {
-                passed: false,
-                in_favor_percentage: 0.0,
-                pass_threshold: 50.0,
-                in_favor: 0,
-                against: 1,
-                abstain: 0,
-                not_voted: 0,
-                votes: HashMap::from([
-                    (
-                        USER1.to_string(),
-                        UserVote {
-                            vote_option: VoteOption::Against,
-                            timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                            binding: true,
                         },
                     )
                 ]),
@@ -374,12 +344,14 @@ mod tests {
                 against: 0,
                 abstain: 0,
                 not_voted: 1,
+                binding: 0,
+                non_binding: 0,
                 votes: HashMap::new(),
                 allowed_voters: 1,
             }
         },
 
-        calculate_binding_votes_are_counted_correctly:
+        calculate_votes_are_counted_correctly:
         {
             cfg: CfgProfile {
                 duration: Duration::from_secs(1),
@@ -401,6 +373,11 @@ mod tests {
                     user: User { login: USER3.to_string() },
                     content: REACTION_ABSTAIN.to_string(),
                     created_at: TIMESTAMP.to_string(),
+                },
+                Reaction {
+                    user: User { login: USER5.to_string() },
+                    content: REACTION_IN_FAVOR.to_string(),
+                    created_at: TIMESTAMP.to_string(),
                 }
             ],
             allowed_voters: vec![
@@ -417,12 +394,15 @@ mod tests {
                 against: 1,
                 abstain: 1,
                 not_voted: 1,
+                binding: 3,
+                non_binding: 1,
                 votes: HashMap::from([
                     (
                         USER1.to_string(),
                         UserVote {
                             vote_option: VoteOption::InFavor,
                             timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                            binding: true,
                         },
                     ),
                     (
@@ -430,6 +410,7 @@ mod tests {
                         UserVote {
                             vote_option: VoteOption::Against,
                             timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                            binding: true,
                         },
                     ),
                     (
@@ -437,6 +418,15 @@ mod tests {
                         UserVote {
                             vote_option: VoteOption::Abstain,
                             timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                            binding: true,
+                        },
+                    ),
+                    (
+                        USER5.to_string(),
+                        UserVote {
+                            vote_option: VoteOption::InFavor,
+                            timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                            binding: false,
                         },
                     ),
                 ]),
@@ -482,12 +472,15 @@ mod tests {
                 against: 0,
                 abstain: 0,
                 not_voted: 1,
+                binding: 3,
+                non_binding: 0,
                 votes: HashMap::from([
                     (
                         USER1.to_string(),
                         UserVote {
                             vote_option: VoteOption::InFavor,
                             timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                            binding: true,
                         },
                     ),
                     (
@@ -495,6 +488,7 @@ mod tests {
                         UserVote {
                             vote_option: VoteOption::InFavor,
                             timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                            binding: true,
                         },
                     ),
                     (
@@ -502,6 +496,7 @@ mod tests {
                         UserVote {
                             vote_option: VoteOption::InFavor,
                             timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                            binding: true,
                         },
                     ),
                 ]),
