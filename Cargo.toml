@@ -23,7 +23,7 @@ humantime-serde = "1.1.1"
 jsonwebtoken = "8.1.1"
 lazy_static = "1.4.0"
 octocrab = "0.17.0"
-openssl = { version = "0.10.43", features = ["vendored"] }
+openssl = { version = "0.10.44", features = ["vendored"] }
 postgres-openssl = "0.5.0"
 regex = "1.7.0"
 reqwest = "0.11.13"
