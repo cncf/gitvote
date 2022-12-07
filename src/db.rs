@@ -58,8 +58,7 @@ impl PgDB {
 
     /// Get any pending finished vote.
     async fn get_pending_finished_vote(tx: &Transaction<'_>) -> Result<Option<Vote>> {
-        // Get pending finished vote from database (if any)
-        let row = match tx
+        let vote = tx
             .query_opt(
                 "
                 select
@@ -86,32 +85,28 @@ impl PgDB {
                 &[],
             )
             .await?
-        {
-            Some(row) => row,
-            None => return Ok(None),
-        };
-
-        // Prepare vote and return it
-        let Json(cfg): Json<CfgProfile> = row.get("cfg");
-        let results: Option<Json<VoteResults>> = row.get("results");
-        let vote = Vote {
-            vote_id: row.get("vote_id"),
-            vote_comment_id: row.get("vote_comment_id"),
-            created_at: row.get("created_at"),
-            created_by: row.get("created_by"),
-            ends_at: row.get("ends_at"),
-            closed: row.get("closed"),
-            closed_at: row.get("closed_at"),
-            cfg,
-            installation_id: row.get("installation_id"),
-            issue_id: row.get("issue_id"),
-            issue_number: row.get("issue_number"),
-            is_pull_request: row.get("is_pull_request"),
-            repository_full_name: row.get("repository_full_name"),
-            organization: row.get("organization"),
-            results: results.map(|Json(results)| results),
-        };
-        Ok(Some(vote))
+            .map(|row| {
+                let Json(cfg): Json<CfgProfile> = row.get("cfg");
+                let results: Option<Json<VoteResults>> = row.get("results");
+                Vote {
+                    vote_id: row.get("vote_id"),
+                    vote_comment_id: row.get("vote_comment_id"),
+                    created_at: row.get("created_at"),
+                    created_by: row.get("created_by"),
+                    ends_at: row.get("ends_at"),
+                    closed: row.get("closed"),
+                    closed_at: row.get("closed_at"),
+                    cfg,
+                    installation_id: row.get("installation_id"),
+                    issue_id: row.get("issue_id"),
+                    issue_number: row.get("issue_number"),
+                    is_pull_request: row.get("is_pull_request"),
+                    repository_full_name: row.get("repository_full_name"),
+                    organization: row.get("organization"),
+                    results: results.map(|Json(results)| results),
+                }
+            });
+        Ok(vote)
     }
 
     /// Store the vote results provided in the database.
@@ -143,7 +138,7 @@ impl DB for PgDB {
         issue_number: i64,
     ) -> Result<Option<Uuid>> {
         let db = self.pool.get().await?;
-        let cancelled_vote_id = match db
+        let cancelled_vote_id = db
             .query_opt(
                 "
                 delete from vote
@@ -155,13 +150,7 @@ impl DB for PgDB {
                 &[&repository_full_name, &issue_number],
             )
             .await?
-        {
-            Some(row) => {
-                let vote_id: Uuid = row.get(0);
-                Some(vote_id)
-            }
-            None => None,
-        };
+            .and_then(|row| row.get("vote_id"));
         Ok(cancelled_vote_id)
     }
 
@@ -187,7 +176,7 @@ impl DB for PgDB {
 
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
-        let row = db
+        let has_vote = db
             .query_one(
                 "
                 select exists (
@@ -198,14 +187,14 @@ impl DB for PgDB {
                 ",
                 &[&repository_full_name, &issue_number],
             )
-            .await?;
-        let has_vote: bool = row.get(0);
+            .await?
+            .get(0);
         Ok(has_vote)
     }
 
     async fn has_vote_open(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
-        let row = db
+        let has_vote_open = db
             .query_one(
                 "
                 select exists (
@@ -217,8 +206,8 @@ impl DB for PgDB {
                 ",
                 &[&repository_full_name, &issue_number],
             )
-            .await?;
-        let has_vote_open: bool = row.get(0);
+            .await?
+            .get(0);
         Ok(has_vote_open)
     }
 
@@ -229,7 +218,7 @@ impl DB for PgDB {
         cfg: &CfgProfile,
     ) -> Result<Uuid> {
         let db = self.pool.get().await?;
-        let row = db
+        let vote_id = db
             .query_one(
                 "
                 insert into vote (
@@ -271,8 +260,8 @@ impl DB for PgDB {
                     &input.organization,
                 ],
             )
-            .await?;
-        let vote_id: Uuid = row.get("vote_id");
+            .await?
+            .get("vote_id");
         Ok(vote_id)
     }
 }
