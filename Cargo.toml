@@ -20,7 +20,7 @@ hex = "0.4.3"
 hmac = "0.12.1"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
-jsonwebtoken = "8.1.1"
+jsonwebtoken = "8.2.0"
 lazy_static = "1.4.0"
 octocrab = "0.17.0"
 openssl = { version = "0.10.43", features = ["vendored"] }
