@@ -163,3 +163,24 @@ impl<'a> VoteRestricted<'a> {
         Self { user }
     }
 }
+
+mod filters {
+    use crate::{github::UserName, results::UserVote};
+    use std::collections::HashMap;
+
+    /// Template filter that returns up to the requested number of non-binding
+    /// votes from the votes collection provided sorted by timestamp (oldest
+    /// first).
+    pub(crate) fn non_binding(
+        votes: &HashMap<UserName, UserVote>,
+        max: &i64,
+    ) -> askama::Result<Vec<(UserName, UserVote)>> {
+        let mut non_binding_votes: Vec<(UserName, UserVote)> = votes
+            .iter()
+            .filter(|(_, v)| !v.binding)
+            .map(|(n, v)| (n.clone(), v.clone()))
+            .collect();
+        non_binding_votes.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
+        Ok(non_binding_votes.into_iter().take(*max as usize).collect())
+    }
+}
