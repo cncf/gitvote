@@ -1,7 +1,12 @@
-use crate::github::*;
+use crate::{
+    cfg::{Cfg, CfgError},
+    github::*,
+};
+use anyhow::Result;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 /// Available commands.
 const CMD_CREATE_VOTE: &str = "vote";
@@ -22,27 +27,43 @@ pub(crate) enum Command {
 
 impl Command {
     /// Try to create a new command from an event.
-    pub(crate) fn from_event(event: Event) -> Option<Self> {
+    ///
+    /// A command can be created from an event in two different ways:
+    ///
+    /// 1. A manual command is found in the event (e.g. `/vote` on comment).
+    /// 2. The event triggers the creation of an automatic command (e.g. a new
+    ///    PR is created and one of the affected files matches a predefined
+    ///    pattern).
+    ///
+    /// Manual commands have preference, and if one is found, automatic ones
+    /// won't be processed.
+    ///
+    pub(crate) async fn from_event(gh: DynGH, event: Event) -> Option<Self> {
+        if let Some(cmd) = Command::from_event_manual(&event) {
+            Some(cmd)
+        } else {
+            match Command::from_event_automatic(gh, &event).await {
+                Ok(cmd) => cmd,
+                Err(err) => {
+                    error!("error processing automatic command from event: {:#?}", err);
+                    None
+                }
+            }
+        }
+    }
+
+    /// Get manual command from event, if available.
+    fn from_event_manual(event: &Event) -> Option<Self> {
         // Get the content where we'll try to extract the command from
         let content = match event {
-            Event::Issue(ref event) => {
-                if event.action != IssueEventAction::Opened {
-                    return None;
-                }
-                &event.issue.body
-            }
-            Event::IssueComment(ref event) => {
-                if event.action != IssueCommentEventAction::Created {
-                    return None;
-                }
+            Event::Issue(event) if event.action == IssueEventAction::Opened => &event.issue.body,
+            Event::IssueComment(event) if event.action == IssueCommentEventAction::Created => {
                 &event.comment.body
             }
-            Event::PullRequest(ref event) => {
-                if event.action != PullRequestEventAction::Opened {
-                    return None;
-                }
+            Event::PullRequest(event) if event.action == PullRequestEventAction::Opened => {
                 &event.pull_request.body
             }
+            _ => return None,
         };
 
         // Create a new command from the content (if possible)
@@ -55,10 +76,13 @@ impl Command {
                 };
                 match cmd {
                     CMD_CREATE_VOTE => {
-                        return Some(Command::CreateVote(CreateVoteInput::new(profile, event)))
+                        return Some(Command::CreateVote(CreateVoteInput::new(
+                            profile,
+                            event.to_owned(),
+                        )))
                     }
                     CMD_CANCEL_VOTE => {
-                        return Some(Command::CancelVote(CancelVoteInput::new(event)))
+                        return Some(Command::CancelVote(CancelVoteInput::new(event.to_owned())))
                     }
                     _ => return None,
                 }
@@ -66,6 +90,46 @@ impl Command {
         }
 
         None
+    }
+
+    /// Create automatic command from event, if applicable.
+    async fn from_event_automatic(gh: DynGH, event: &Event) -> Result<Option<Self>> {
+        match event {
+            // Pull request opened
+            Event::PullRequest(event) if event.action == PullRequestEventAction::Opened => {
+                // Get configuration
+                let inst_id = event.installation.id as u64;
+                let (owner, repo) = split_full_name(&event.repository.full_name);
+                let cfg = match Cfg::get(gh.clone(), inst_id, owner, repo).await {
+                    Err(CfgError::ConfigNotFound) => return Ok(None),
+                    Err(err) => return Err(err.into()),
+                    Ok(cfg) => cfg,
+                };
+
+                // Process automation if enabled
+                if let Some(automation) = cfg.automation {
+                    if !automation.enabled || automation.rules.is_empty() {
+                        return Ok(None);
+                    }
+
+                    // Check if any of the PR files matches the automation rules
+                    let pr_number = event.pull_request.number;
+                    let pr_files = gh.get_pr_files(inst_id, owner, repo, pr_number).await?;
+                    for rule in automation.rules {
+                        if rule.matches(pr_files.as_slice())? {
+                            let cmd = Command::CreateVote(CreateVoteInput::new(
+                                Some(rule.profile),
+                                Event::PullRequest(event.to_owned()),
+                            ));
+                            return Ok(Some(cmd));
+                        }
+                    }
+                }
+
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
     }
 }
 
@@ -168,49 +232,52 @@ impl CancelVoteInput {
 mod tests {
     use super::*;
     use crate::testutil::*;
+    use futures::future;
+    use mockall::predicate::eq;
+    use std::{sync::Arc, vec};
 
     #[test]
-    fn command_from_issue_event_unsupported_action() {
+    fn manual_command_from_issue_event_unsupported_action() {
         let mut event = setup_test_issue_event();
         event.action = IssueEventAction::Assigned;
         event.issue.body = Some(format!("/{}", CMD_CREATE_VOTE));
         let event = Event::Issue(event);
 
-        assert_eq!(Command::from_event(event), None);
+        assert_eq!(Command::from_event_manual(&event), None);
     }
 
     #[test]
-    fn command_from_issue_event_no_cmd() {
+    fn manual_command_from_issue_event_no_cmd() {
         let mut event = setup_test_issue_event();
         event.action = IssueEventAction::Opened;
         event.issue.body = Some("Hi!".to_string());
         let event = Event::Issue(event);
 
-        assert_eq!(Command::from_event(event), None);
+        assert_eq!(Command::from_event_manual(&event), None);
     }
 
     #[test]
-    fn command_from_issue_event_create_vote_cmd_default_profile() {
+    fn manual_command_from_issue_event_create_vote_cmd_default_profile() {
         let mut event = setup_test_issue_event();
         event.action = IssueEventAction::Opened;
         event.issue.body = Some(format!("/{}", CMD_CREATE_VOTE));
         let event = Event::Issue(event);
 
         assert_eq!(
-            Command::from_event(event.clone()),
+            Command::from_event_manual(&event.clone()),
             Some(Command::CreateVote(CreateVoteInput::new(None, event)))
         );
     }
 
     #[test]
-    fn command_from_issue_event_create_vote_cmd_profile1() {
+    fn manual_command_from_issue_event_create_vote_cmd_profile1() {
         let mut event = setup_test_issue_event();
         event.action = IssueEventAction::Opened;
         event.issue.body = Some(format!("/{}-{}", CMD_CREATE_VOTE, PROFILE_NAME));
         let event = Event::Issue(event);
 
         assert_eq!(
-            Command::from_event(event.clone()),
+            Command::from_event_manual(&event.clone()),
             Some(Command::CreateVote(CreateVoteInput::new(
                 Some("profile1".to_string()),
                 event
@@ -219,61 +286,91 @@ mod tests {
     }
 
     #[test]
-    fn command_from_issue_comment_event_unsupported_action() {
+    fn manual_command_from_issue_comment_event_unsupported_action() {
         let mut event = setup_test_issue_comment_event();
         event.action = IssueCommentEventAction::Edited;
         event.issue.body = Some(CMD_CREATE_VOTE.to_string());
         let event = Event::IssueComment(event);
 
-        assert_eq!(Command::from_event(event), None);
+        assert_eq!(Command::from_event_manual(&event), None);
     }
 
     #[test]
-    fn command_from_issue_comment_event_create_vote_cmd_default_profile() {
+    fn manual_command_from_issue_comment_event_create_vote_cmd_default_profile() {
         let mut event = setup_test_issue_comment_event();
         event.action = IssueCommentEventAction::Created;
         event.comment.body = Some(format!("/{}", CMD_CREATE_VOTE));
         let event = Event::IssueComment(event);
 
         assert_eq!(
-            Command::from_event(event.clone()),
+            Command::from_event_manual(&event.clone()),
             Some(Command::CreateVote(CreateVoteInput::new(None, event)))
         );
     }
 
     #[test]
-    fn command_from_issue_comment_event_cancel_vote_cmd() {
+    fn manual_command_from_issue_comment_event_cancel_vote_cmd() {
         let mut event = setup_test_issue_comment_event();
         event.action = IssueCommentEventAction::Created;
         event.comment.body = Some(format!("/{}", CMD_CANCEL_VOTE));
         let event = Event::IssueComment(event);
 
         assert_eq!(
-            Command::from_event(event.clone()),
+            Command::from_event_manual(&event.clone()),
             Some(Command::CancelVote(CancelVoteInput::new(event)))
         );
     }
 
     #[test]
-    fn command_from_pr_event_unsupported_action() {
+    fn manual_command_from_pr_event_unsupported_action() {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Edited;
         event.pull_request.body = Some(CMD_CREATE_VOTE.to_string());
         let event = Event::PullRequest(event);
 
-        assert_eq!(Command::from_event(event), None);
+        assert_eq!(Command::from_event_manual(&event), None);
     }
 
     #[test]
-    fn command_from_pr_event_create_vote_cmd_default_profile() {
+    fn manual_command_from_pr_event_create_vote_cmd_default_profile() {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Opened;
         event.pull_request.body = Some(format!("/{}", CMD_CREATE_VOTE));
         let event = Event::PullRequest(event);
 
         assert_eq!(
-            Command::from_event(event.clone()),
+            Command::from_event_manual(&event.clone()),
             Some(Command::CreateVote(CreateVoteInput::new(None, event)))
+        );
+    }
+
+    #[tokio::test]
+    async fn automatic_command_from_pr_event() {
+        let mut gh = MockGH::new();
+        gh.expect_get_config_file()
+            .with(eq(INST_ID as u64), eq(ORG), eq(REPO))
+            .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
+        gh.expect_get_pr_files()
+            .with(eq(INST_ID as u64), eq(ORG), eq(REPO), eq(ISSUE_NUM))
+            .returning(|_, _, _, _| {
+                Box::pin(future::ready(Ok(vec![File {
+                    filename: "README.md".to_string(),
+                }])))
+            });
+        let gh = Arc::new(gh);
+
+        let mut event = setup_test_pr_event();
+        event.action = PullRequestEventAction::Opened;
+        let event = Event::PullRequest(event);
+
+        assert_eq!(
+            Command::from_event_automatic(gh, &event.clone())
+                .await
+                .unwrap(),
+            Some(Command::CreateVote(CreateVoteInput::new(
+                Some("default".to_string()),
+                event
+            )))
         );
     }
 }

@@ -1,14 +1,23 @@
-default:
-  duration: 5m
-  pass_threshold: 50
-  allowed_voters: {}
+automation:
+  enabled: true
+  rules:
+    - patterns:
+        - "*.md"
+        - "*.txt"
+      profile: default
 
-profile1:
-  duration: 10m
-  pass_threshold: 75
-  allowed_voters:
-    teams:
-      - team1
-    users:
-      - user1
-      - user2
+profiles:
+  default:
+    duration: 5m
+    pass_threshold: 50
+    allowed_voters: {}
+
+  profile1:
+    duration: 10m
+    pass_threshold: 75
+    allowed_voters:
+      teams:
+        - team1
+      users:
+        - user1
+        - user2

@@ -104,7 +104,7 @@ async fn event(
     trace!("event received: {:?}", event);
 
     // Try to extract command from event (if available) and queue it
-    match Command::from_event(event.clone()) {
+    match Command::from_event(gh.clone(), event.clone()).await {
         Some(cmd) => {
             trace!("command detected: {:?}", &cmd);
             cmds_tx.send(cmd).await.unwrap()
@@ -432,6 +432,9 @@ mod tests {
         let cfg = Arc::new(setup_test_config());
         let db = Arc::new(MockDB::new());
         let mut gh = MockGH::new();
+        gh.expect_get_config_file()
+            .with(eq(INST_ID as u64), eq(ORG), eq(REPO))
+            .returning(|_, _, _| Box::pin(future::ready(None)));
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
             .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));

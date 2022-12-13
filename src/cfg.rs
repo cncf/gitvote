@@ -1,5 +1,6 @@
-use crate::github::{DynGH, TeamSlug, UserName};
+use crate::github::{DynGH, File, TeamSlug, UserName};
 use anyhow::{format_err, Result};
+use ignore::gitignore::GitignoreBuilder;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use thiserror::Error;
@@ -14,11 +15,60 @@ const ERR_TEAMS_NOT_ALLOWED: &str = "teams in allowed voters can only be used in
 /// Type alias to represent a profile name.
 type ProfileName = String;
 
-/// Vote configuration.
+/// GitVote configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(transparent)]
-struct Cfg {
+pub(crate) struct Cfg {
+    pub automation: Option<Automation>,
     pub profiles: HashMap<ProfileName, CfgProfile>,
+}
+
+impl Cfg {
+    /// Get the GitVote configuration for the repository provided.
+    pub(crate) async fn get<'a>(
+        gh: DynGH,
+        inst_id: u64,
+        owner: &'a str,
+        repo: &'a str,
+    ) -> Result<Self, CfgError> {
+        match gh.get_config_file(inst_id, owner, repo).await {
+            Some(content) => {
+                let cfg: Cfg = serde_yaml::from_str(&content)
+                    .map_err(|e| CfgError::InvalidConfig(e.to_string()))?;
+                Ok(cfg)
+            }
+            None => Err(CfgError::ConfigNotFound),
+        }
+    }
+}
+
+/// Automation configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct Automation {
+    pub enabled: bool,
+    pub rules: Vec<AutomationRule>,
+}
+
+/// Automation rule.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct AutomationRule {
+    pub patterns: Vec<String>,
+    pub profile: ProfileName,
+}
+
+impl AutomationRule {
+    /// Check if any of the files provided matches any of the rule patterns.
+    /// Patterns must follow the gitignore format.
+    pub(crate) fn matches(&self, files: &[File]) -> Result<bool> {
+        let mut builder = GitignoreBuilder::new("/");
+        for pattern in &self.patterns {
+            builder.add_line(None, pattern)?;
+        }
+        let checker = builder.build()?;
+        let matches = files
+            .iter()
+            .any(|file| checker.matched(&file.filename, false).is_ignore());
+        Ok(matches)
+    }
 }
 
 /// Vote configuration profile.
@@ -41,20 +91,14 @@ impl CfgProfile {
         repo: &'a str,
         profile_name: Option<String>,
     ) -> Result<Self, CfgError> {
-        match gh.get_config_file(inst_id, owner, repo).await {
-            Some(content) => {
-                let mut cfg: Cfg = serde_yaml::from_str(&content)
-                    .map_err(|e| CfgError::InvalidConfig(e.to_string()))?;
-                let profile_name = profile_name.unwrap_or_else(|| DEFAULT_PROFILE.to_string());
-                match cfg.profiles.remove(&profile_name) {
-                    Some(profile) => match profile.validate(is_org) {
-                        Ok(()) => Ok(profile),
-                        Err(err) => Err(CfgError::InvalidConfig(err.to_string())),
-                    },
-                    None => Err(CfgError::ProfileNotFound),
-                }
-            }
-            None => Err(CfgError::ConfigNotFound),
+        let mut cfg = Cfg::get(gh, inst_id, owner, repo).await?;
+        let profile_name = profile_name.unwrap_or_else(|| DEFAULT_PROFILE.to_string());
+        match cfg.profiles.remove(&profile_name) {
+            Some(profile) => match profile.validate(is_org) {
+                Ok(()) => Ok(profile),
+                Err(err) => Err(CfgError::InvalidConfig(err.to_string())),
+            },
+            None => Err(CfgError::ProfileNotFound),
         }
     }
 
@@ -101,9 +145,45 @@ mod tests {
     use super::*;
     use crate::github::MockGH;
     use crate::testutil::*;
-    use futures::future::{self};
+    use futures::future;
     use mockall::predicate::eq;
     use std::sync::Arc;
+
+    #[test]
+    fn automation_rule_matches() {
+        let rule = AutomationRule {
+            patterns: vec!["*.md".to_string(), "file.txt".to_string()],
+            profile: "default".to_string(),
+        };
+        assert!(rule
+            .matches(&[File {
+                filename: "README.md".to_string()
+            }])
+            .unwrap());
+        assert!(rule
+            .matches(&[File {
+                filename: "path/file.txt".to_string()
+            }])
+            .unwrap());
+    }
+
+    #[test]
+    fn automation_rule_does_not_match() {
+        let rule = AutomationRule {
+            patterns: vec!["path/image.svg".to_string()],
+            profile: "default".to_string(),
+        };
+        assert!(!rule
+            .matches(&[File {
+                filename: "README.md".to_string()
+            }])
+            .unwrap());
+        assert!(!rule
+            .matches(&[File {
+                filename: "image.svg".to_string()
+            }])
+            .unwrap());
+    }
 
     #[tokio::test]
     async fn get_cfg_profile_config_not_found() {

@@ -80,6 +80,15 @@ pub(crate) trait GH {
     /// Get configuration file.
     async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String>;
 
+    /// Get pull request files.
+    async fn get_pr_files(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        pr_number: i64,
+    ) -> Result<Vec<File>>;
+
     /// Get all members of the provided team.
     #[allow(dead_code)]
     async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>>;
@@ -271,6 +280,23 @@ impl GH for GHApi {
         }
 
         content
+    }
+
+    async fn get_pr_files(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        pr_number: i64,
+    ) -> Result<Vec<File>> {
+        let client = self.app_client.installation(InstallationId(inst_id));
+        let url = format!(
+            "{}/repos/{}/{}/pulls/{}/files",
+            GITHUB_API_URL, owner, repo, pr_number
+        );
+        let first_page: Page<File> = client.get(url, None::<&()>).await?;
+        let files: Vec<File> = client.all_pages(first_page).await?;
+        Ok(files)
     }
 
     async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>> {
@@ -556,6 +582,11 @@ pub(crate) struct Protection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct RequiredStatusCheck {
     pub contexts: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct File {
+    pub filename: String,
 }
 
 /// Helper function that splits a repository's full name and returns the owner

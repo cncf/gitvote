@@ -38,6 +38,10 @@ Shortly after the comment with the `/vote` command is posted, the vote will be c
 
 ![vote-created](docs/screenshots/vote-created.png)
 
+#### Automation
+
+GitVote allows votes to be created automatically on pull requests when any of the files affected matches certain predefined patterns. For more information about how to set it up, please see the automation section in the [reference documentation](https://github.com/cncf/gitvote/blob/main/docs/config/.gitvote.yml).
+
 ### Voting
 
 Users can cast their votes by reacting to the `git-vote` bot comment where the vote was created (screenshot above).
