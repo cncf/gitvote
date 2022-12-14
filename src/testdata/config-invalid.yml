@@ -1,4 +1,5 @@
-default:
-  duration:
-    invalid: true
-  pass_threshold: 50
+profiles:
+  default:
+    duration:
+      invalid: true
+    pass_threshold: 50
