@@ -34,7 +34,7 @@ serde_yaml = "0.9.16"
 sha2 = "0.10.6"
 thiserror = "1.0.38"
 time = { version = "0.3.17", features = ["serde"] }
-tokio = { version = "1.23.0", features = [
+tokio = { version = "1.24.1", features = [
     "macros",
     "rt-multi-thread",
     "signal",
