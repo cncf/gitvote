@@ -433,7 +433,7 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
-            .with(eq(INST_ID as u64), eq(ORG), eq(REPO))
+            .with(eq(INST_ID), eq(ORG), eq(REPO))
             .returning(|_, _, _| Box::pin(future::ready(None)));
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
