@@ -154,7 +154,7 @@ impl GH for GHApi {
     ) -> Result<()> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let pr = client.pulls(owner, repo).get(issue_number as u64).await?;
-        let url = format!("{}/repos/{}/{}/check-runs", GITHUB_API_URL, owner, repo);
+        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs");
         let mut body = json!({
             "name": GITVOTE_CHECK_NAME,
             "head_sha": pr.head.sha,
@@ -227,7 +227,7 @@ impl GH for GHApi {
         repo: &str,
     ) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let url = format!("{}/repos/{}/{}/collaborators", GITHUB_API_URL, owner, repo);
+        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators");
         let first_page: Page<User> = client.get(url, None::<&()>).await?;
         let collaborators = client
             .all_pages(first_page)
@@ -247,8 +247,7 @@ impl GH for GHApi {
     ) -> Result<Vec<Reaction>> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!(
-            "{}/repos/{}/{}/issues/comments/{}/reactions",
-            GITHUB_API_URL, owner, repo, comment_id
+            "{GITHUB_API_URL}/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
         );
         let first_page: Page<Reaction> = client.get(url, None::<&()>).await?;
         let reactions = client.all_pages(first_page).await?;
@@ -290,10 +289,7 @@ impl GH for GHApi {
         pr_number: i64,
     ) -> Result<Vec<File>> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let url = format!(
-            "{}/repos/{}/{}/pulls/{}/files",
-            GITHUB_API_URL, owner, repo, pr_number
-        );
+        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}/files");
         let first_page: Page<File> = client.get(url, None::<&()>).await?;
         let files: Vec<File> = client.all_pages(first_page).await?;
         Ok(files)
@@ -301,7 +297,7 @@ impl GH for GHApi {
 
     async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let url = format!("{}/orgs/{}/teams/{}/members", GITHUB_API_URL, org, team);
+        let url = format!("{GITHUB_API_URL}/orgs/{org}/teams/{team}/members");
         let first_page: Page<User> = client.get(url, None::<&()>).await?;
         let members: Vec<UserName> = client
             .all_pages(first_page)
@@ -320,10 +316,7 @@ impl GH for GHApi {
         branch: &str,
     ) -> Result<bool> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let url = format!(
-            "{}/repos/{}/{}/branches/{}",
-            GITHUB_API_URL, owner, repo, branch
-        );
+        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/branches/{branch}");
         let branch: Branch = client.get(url, None::<&()>).await?;
         let is_check_required = if let Some(required_checks) = branch
             .protection
@@ -363,10 +356,7 @@ impl GH for GHApi {
         user: &str,
     ) -> Result<bool> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let url = format!(
-            "{}/repos/{}/{}/collaborators/{}",
-            GITHUB_API_URL, owner, repo, user,
-        );
+        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators/{user}",);
         let resp = client._get(url, None::<&()>).await?;
         if resp.status() == StatusCode::NO_CONTENT {
             return Ok(true);

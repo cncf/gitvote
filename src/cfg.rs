@@ -189,7 +189,7 @@ mod tests {
     async fn get_cfg_profile_config_not_found() {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
-            .with(eq(INST_ID as u64), eq(OWNER), eq(REPO))
+            .with(eq(INST_ID), eq(OWNER), eq(REPO))
             .returning(|_, _, _| Box::pin(future::ready(None)));
         let gh = Arc::new(gh);
 

@@ -61,7 +61,7 @@ impl fmt::Display for VoteOption {
             Self::Against => "Against",
             Self::Abstain => "Abstain",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

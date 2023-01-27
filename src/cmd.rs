@@ -240,7 +240,7 @@ mod tests {
     fn manual_command_from_issue_event_unsupported_action() {
         let mut event = setup_test_issue_event();
         event.action = IssueEventAction::Assigned;
-        event.issue.body = Some(format!("/{}", CMD_CREATE_VOTE));
+        event.issue.body = Some(format!("/{CMD_CREATE_VOTE}"));
         let event = Event::Issue(event);
 
         assert_eq!(Command::from_event_manual(&event), None);
@@ -260,7 +260,7 @@ mod tests {
     fn manual_command_from_issue_event_create_vote_cmd_default_profile() {
         let mut event = setup_test_issue_event();
         event.action = IssueEventAction::Opened;
-        event.issue.body = Some(format!("/{}", CMD_CREATE_VOTE));
+        event.issue.body = Some(format!("/{CMD_CREATE_VOTE}"));
         let event = Event::Issue(event);
 
         assert_eq!(
@@ -273,7 +273,7 @@ mod tests {
     fn manual_command_from_issue_event_create_vote_cmd_profile1() {
         let mut event = setup_test_issue_event();
         event.action = IssueEventAction::Opened;
-        event.issue.body = Some(format!("/{}-{}", CMD_CREATE_VOTE, PROFILE_NAME));
+        event.issue.body = Some(format!("/{CMD_CREATE_VOTE}-{PROFILE_NAME}"));
         let event = Event::Issue(event);
 
         assert_eq!(
@@ -299,7 +299,7 @@ mod tests {
     fn manual_command_from_issue_comment_event_create_vote_cmd_default_profile() {
         let mut event = setup_test_issue_comment_event();
         event.action = IssueCommentEventAction::Created;
-        event.comment.body = Some(format!("/{}", CMD_CREATE_VOTE));
+        event.comment.body = Some(format!("/{CMD_CREATE_VOTE}"));
         let event = Event::IssueComment(event);
 
         assert_eq!(
@@ -312,7 +312,7 @@ mod tests {
     fn manual_command_from_issue_comment_event_cancel_vote_cmd() {
         let mut event = setup_test_issue_comment_event();
         event.action = IssueCommentEventAction::Created;
-        event.comment.body = Some(format!("/{}", CMD_CANCEL_VOTE));
+        event.comment.body = Some(format!("/{CMD_CANCEL_VOTE}"));
         let event = Event::IssueComment(event);
 
         assert_eq!(
@@ -335,7 +335,7 @@ mod tests {
     fn manual_command_from_pr_event_create_vote_cmd_default_profile() {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Opened;
-        event.pull_request.body = Some(format!("/{}", CMD_CREATE_VOTE));
+        event.pull_request.body = Some(format!("/{CMD_CREATE_VOTE}"));
         let event = Event::PullRequest(event);
 
         assert_eq!(
@@ -348,10 +348,10 @@ mod tests {
     async fn automatic_command_from_pr_event() {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
-            .with(eq(INST_ID as u64), eq(ORG), eq(REPO))
+            .with(eq(INST_ID), eq(ORG), eq(REPO))
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         gh.expect_get_pr_files()
-            .with(eq(INST_ID as u64), eq(ORG), eq(REPO), eq(ISSUE_NUM))
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM))
             .returning(|_, _, _, _| {
                 Box::pin(future::ready(Ok(vec![File {
                     filename: "README.md".to_string(),
