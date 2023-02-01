@@ -15,7 +15,7 @@ axum = { version = "0.6.4", features = ["macros"] }
 clap = { version = "4.1.4", features = ["derive"] }
 config = "0.13.3"
 deadpool-postgres = { version = "0.10.5", features = ["serde"] }
-futures = "0.3.25"
+futures = "0.3.26"
 hex = "0.4.3"
 hmac = "0.12.1"
 humantime = "2.1.0"
