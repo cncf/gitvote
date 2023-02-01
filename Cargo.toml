@@ -10,7 +10,7 @@ anyhow = "1.0.68"
 askama = { git = "https://github.com/djc/askama", rev = "eeec6f0654f32270aec4e4a0d0f42e4ad39bc28e" }
 askama_axum = { git = "https://github.com/djc/askama", rev = "eeec6f0654f32270aec4e4a0d0f42e4ad39bc28e" }
 async-channel = "1.8.0"
-async-trait = "0.1.63"
+async-trait = "0.1.64"
 axum = { version = "0.6.4", features = ["macros"] }
 clap = { version = "4.1.4", features = ["derive"] }
 config = "0.13.3"
