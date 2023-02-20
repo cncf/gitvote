@@ -52,9 +52,13 @@ gitvote:
   #
   # Subscribe to events:
   # - Issue Comment
+  # - Issues
+  # - Pull Request
   #
-  # Activate webhook with URL: https://example.com/api/events
-  # Choose a random password for the webhook secret and fillup the informations
+  # GitVote can process GitHub webhooks. Enable webhook in the GitHub app and
+  # set the target URL to https://example.com/api/events
+  # Together with a random webhook secret that you define yourself.
+  # After creating the app, download the private key an fill-up the values
   # below:
   github:
     # GitHub application ID
