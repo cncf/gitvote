@@ -39,11 +39,36 @@ gitvote:
   addr: 0.0.0.0:9000
 
   # GitHub configuration
+  #
+  # The app require the following permissions:
+  # - Repository permissions:
+  #   - Checks: read/write
+  #   - Contents: read
+  #   - Issues: read/write
+  #   - Metadata: read
+  #   - Pull requests: read/write
+  # - Organization
+  #   - Members: read
+  #
+  # Subscribe to events:
+  # - Issue Comment
+  # - Issues
+  # - Pull Request
+  #
+  # GitVote can process GitHub webhooks data sent to /api/events.
+  # In the GitHub app, enable webhook and set the target URL to your exposed
+  # endpoint, ie: https://example.com/api/events
+  # Define a random webhook secret, you can use the following command to
+  # generate one: openssl rand -hex 32
+  # After creating the app, download the private key an fill-up the values
+  # below:
   github:
     # GitHub application ID
     appID: null
     # GitHub application private key path
     appPrivateKey: null
+    # GitHub application webhook secret
+    webhookSecret: null
 
   # Ingress configuration
   ingress:
