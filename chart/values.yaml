@@ -55,9 +55,11 @@ gitvote:
   # - Issues
   # - Pull Request
   #
-  # GitVote can process GitHub webhooks. Enable webhook in the GitHub app and
-  # set the target URL to https://example.com/api/events
-  # Together with a random webhook secret that you define yourself.
+  # GitVote can process GitHub webhooks data sent to /api/events.
+  # In the GitHub app, enable webhook and set the target URL to your exposed
+  # endpoint, ie: https://example.com/api/events
+  # Define a random webhook secret, you can use the following command to
+  # generate one: openssl rand -hex 32
   # After creating the app, download the private key an fill-up the values
   # below:
   github:
