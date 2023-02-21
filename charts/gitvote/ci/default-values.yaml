@@ -1,0 +1,36 @@
+imageTag: latest
+gitvote:
+  github:
+    # Sample app ID for chart testing
+    appID: 123456
+    # Sample key for chart testing
+    appPrivateKey: |-
+      -----BEGIN RSA PRIVATE KEY-----
+      MIIEowIBAAKCAQEAyJqjmieZuxZV6Uxtdf0OlFZltcC1ywrlqMLDNNpN6MBjpRYX
+      iG6mUlTgoqDDDbb2usvPmKfdO7bynemJmsmlzS9Tk1PPJTaHTAST5avjYXqSpAMR
+      4xvPUt097LD35TjGH4ZH4jCOpYvgKqrrma51HDOsucqG52OFoO+J0ZeSwtb2++Jg
+      N53Yp9uiYcEB/aafpNIktmX0ZT7/doDwk9Fz3j86CV+ctnlsObXGmZEHt5OMqREb
+      FbleFkEckha1sjio9iGcZCFHXCHZ/+/EyLnxLM/LFri+BIqAuOuLD+l29JJM+KSJ
+      nOC2ZkSYZxzKP4CW+4Z/kW6a3wTZ5uGsT7VhFwIDAQABAoIBADAmxkxzYvhAZUDJ
+      wqCGrKA4mNNmvXxOUlAO5/Jg0EClJYXz5pQuEyhCDWWb9xXsrA6sa1k2OeligZwb
+      +Za4/l5hFMuRW3CQRSufEa0YdEzqshZCUmHURBCc4IdW9zoDRbM9dTW6+BKOn7E+
+      M61A7gVl9fjmvzj9b47w0IEJxAWWTOGOsGgpeTp8RDA0zqkSHZ/huSvLvc3raexF
+      h8G3fSqseXehgVHuVnRC4ROSPFMnvR3f2F2nyvuErGPSq9aQEpik5iDzQTEMEy4v
+      Rk/D+w+M6JJ4uzra4N9e4C1pUmKhaWiHZWZ+SDlYlHNzJKyvcAT8Gtf1MAuwGbrk
+      vMjF7RECgYEA7yfjqmNMu1CkFkXZdyspy7i5D9SHNnUmlezpjpdEgQhel6XAs0EJ
+      6JhcWlw4p24tyMPLb6VahS6hu+QhkBpW3VQ5MeTPAKMF8xRJyK/n0Z7Thoa//6w1
+      1iCrKuZ6snHW+WPkG9DJ6btX5CIBADIfId4i+OkW3qBZDx06Ix83ZL8CgYEA1ruj
+      78xglZ6Z6QYIZp2NoIvqU5/2o1oyGDUGvhdREEm8Ld5S+unH+KCxZHQZzko1zXAv
+      KM14HBwT9pV2/9nbTLghKm4+gGRNjJC0P6XkUemr385svyIGImnHNbMIvEbpzaJP
+      jm12lyqHdAFJax1oipKjVmvvQj5gMciOdqlo4akCgYBR1hqHwbcOGggsPvatWq3Q
+      soNRMW6bafcsMoexbX3ZkZ2c0vFf5Y+YchqYKRqR4Jf2LVm9+J1DGbPqcaQyhXDY
+      B+wScLONCjwM9BJThC4Vgv3q+M1Wlf1OKpun8Hpn+aCQcmgqRIXzX1IyFJi3Em+o
+      zTS2bDyRLdmL3Hp6bkIsTQKBgDChSh0ykeUQiBan0Rs8LyjexvCtV3PjJ1koGSDP
+      swIXUNCqeuxsKWd7LPFtAbMgR1MBRwzci4kCKts7OjnzIqEbSheL5Ae7r3xYARow
+      /aY3Xz9ORn56vBzrC7xzkVTiUmzJh27gB21wqkBxUik5/cT0NJ2L0CGWcr6ThwAE
+      mcYRAoGBAMiyvQumxuBx07ip/YXxrAL3mKcc+2uy5rYS/pDkD70WowshWu0tQhHS
+      wH5+2oCEXWCZeeI/dXsYbQd3nudkXp8zR+D2rEGeKAlsQsG6xYW3i+8XBD0OIS6y
+      zXhNWWxXj/VC4KEom5b/QTmnzXFQ+/TjV3Pd5gPhacH5j4dvtXj1
+      -----END RSA PRIVATE KEY-----
+    # Sample webhook secret for chart testing
+    webhookSecret: "sample-secret-for-chart-testing"
