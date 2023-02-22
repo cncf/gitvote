@@ -46,7 +46,7 @@ pub(crate) trait GH {
         owner: &str,
         repo: &str,
         issue_number: i64,
-        check_details: CheckDetails,
+        check_details: &CheckDetails,
     ) -> Result<()>;
 
     /// Get all users allowed to vote on a given vote.
@@ -150,7 +150,7 @@ impl GH for GHApi {
         owner: &str,
         repo: &str,
         issue_number: i64,
-        check_details: CheckDetails,
+        check_details: &CheckDetails,
     ) -> Result<()> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let pr = client.pulls(owner, repo).get(issue_number as u64).await?;
@@ -164,7 +164,7 @@ impl GH for GHApi {
                 "summary": check_details.summary,
             }
         });
-        if let Some(conclusion) = check_details.conclusion {
+        if let Some(conclusion) = &check_details.conclusion {
             body["conclusion"] = json!(conclusion);
         };
         let _: Value = client.post(url, Some(&body)).await?; // Do not remove let _: Value

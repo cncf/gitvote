@@ -5,7 +5,7 @@ use crate::{
     github::{split_full_name, CheckDetails, DynGH},
     tmpl,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use askama::Template;
 use futures::future::{self, JoinAll};
 use std::{sync::Arc, time::Duration};
@@ -14,7 +14,7 @@ use tokio::{
     task::JoinHandle,
     time::sleep,
 };
-use tracing::{debug, error};
+use tracing::{debug, instrument};
 use uuid::Uuid;
 
 /// Number of commands handlers workers.
@@ -84,15 +84,13 @@ impl Processor {
 
                     // Pick next command from the queue and process it
                     Ok(cmd) = cmds_rx.recv() => {
-                        if let Err(err) = match cmd {
+                        match cmd {
                             Command::CreateVote(input) => {
-                                self.create_vote(input).await.context("error creating vote")
+                                _ = self.create_vote(&input).await;
                             }
                             Command::CancelVote(input) => {
-                                self.cancel_vote(input).await.context("error cancelling vote")
+                                _ = self.cancel_vote(input).await;
                             }
-                        } {
-                            error!("{:#?}", err);
                         }
                     }
 
@@ -122,8 +120,7 @@ impl Processor {
                         _ = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
                         _ = stop_rx.recv() => break,
                     },
-                    Err(err) => {
-                        error!("error closing finished vote: {:#?}", err);
+                    Err(_) => {
                         tokio::select! {
                             _ = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
                             _ = stop_rx.recv() => break,
@@ -140,7 +137,8 @@ impl Processor {
     }
 
     /// Create a new vote.
-    async fn create_vote(&self, i: CreateVoteInput) -> Result<()> {
+    #[instrument(fields(repo = i.repository_full_name, issue_number = i.issue_number), skip_all, err)]
+    async fn create_vote(&self, i: &CreateVoteInput) -> Result<()> {
         // Get vote configuration profile
         let inst_id = i.installation_id as u64;
         let (owner, repo) = split_full_name(&i.repository_full_name);
@@ -197,14 +195,14 @@ impl Processor {
         }
 
         // Post vote created comment on the issue/pr
-        let body = tmpl::VoteCreated::new(&i, &cfg).render()?;
+        let body = tmpl::VoteCreated::new(i, &cfg).render()?;
         let vote_comment_id = self
             .gh
             .post_comment(inst_id, owner, repo, i.issue_number, &body)
             .await?;
 
         // Store vote information in database
-        let vote_id = self.db.store_vote(vote_comment_id, &i, &cfg).await?;
+        let vote_id = self.db.store_vote(vote_comment_id, i, &cfg).await?;
 
         // Create check run if the vote is on a pull request
         if i.is_pull_request {
@@ -214,15 +212,16 @@ impl Processor {
                 summary: "Vote open".to_string(),
             };
             self.gh
-                .create_check_run(inst_id, owner, repo, i.issue_number, check_details)
+                .create_check_run(inst_id, owner, repo, i.issue_number, &check_details)
                 .await?;
         }
 
-        debug!("vote {} created", &vote_id);
+        debug!(?vote_id, "created");
         Ok(())
     }
 
     /// Cancel an open vote.
+    #[instrument(fields(repo = i.repository_full_name, issue_number = i.issue_number), skip_all, err)]
     async fn cancel_vote(&self, i: CancelVoteInput) -> Result<()> {
         // Try cancelling the vote open in the issue/pr provided
         let cancelled_vote_id: Option<Uuid> = self
@@ -237,7 +236,7 @@ impl Processor {
         match cancelled_vote_id {
             Some(vote_id) => {
                 body = tmpl::VoteCancelled::new(&i.cancelled_by, i.is_pull_request).render()?;
-                debug!("vote {} cancelled", &vote_id);
+                debug!(?vote_id, "cancelled");
             }
             None => {
                 body = tmpl::NoVoteInProgress::new(&i.cancelled_by, i.is_pull_request).render()?;
@@ -255,7 +254,7 @@ impl Processor {
                 summary: "Vote cancelled".to_string(),
             };
             self.gh
-                .create_check_run(inst_id, owner, repo, i.issue_number, check_details)
+                .create_check_run(inst_id, owner, repo, i.issue_number, &check_details)
                 .await?;
         }
 
@@ -263,12 +262,16 @@ impl Processor {
     }
 
     /// Close any pending finished vote.
+    #[instrument(fields(vote_id), skip_all, err)]
     async fn close_finished_vote(&self) -> Result<Option<()>> {
         // Try to close any finished vote
         let (vote, results) = match self.db.close_finished_vote(self.gh.clone()).await? {
             Some((vote, results)) => (vote, results),
             None => return Ok(None),
         };
+
+        // Record vote_id as part of the current span
+        tracing::Span::current().record("vote_id", &vote.vote_id.to_string());
 
         // Post vote closed comment on the issue/pr
         let inst_id = vote.installation_id as u64;
@@ -302,11 +305,11 @@ impl Processor {
                 summary,
             };
             self.gh
-                .create_check_run(inst_id, owner, repo, vote.issue_number, check_details)
+                .create_check_run(inst_id, owner, repo, vote.issue_number, &check_details)
                 .await?;
         }
 
-        debug!("vote {} closed", &vote.vote_id);
+        debug!("closed");
         Ok(Some(()))
     }
 }
@@ -360,7 +363,7 @@ mod tests {
 
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
         let event = setup_test_issue_event();
-        let cmd = Command::CancelVote(CancelVoteInput::new(Event::Issue(event)));
+        let cmd = Command::CancelVote(CancelVoteInput::new(&Event::Issue(event)));
         cmds_tx.send(cmd).await.unwrap();
         let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
 
@@ -421,7 +424,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .create_vote(CreateVoteInput::new(None, Event::Issue(event)))
+            .create_vote(&CreateVoteInput::new(None, &Event::Issue(event)))
             .await
             .unwrap();
     }
@@ -450,7 +453,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .create_vote(CreateVoteInput::new(None, Event::Issue(event)))
+            .create_vote(&CreateVoteInput::new(None, &Event::Issue(event)))
             .await
             .unwrap();
     }
@@ -482,7 +485,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .create_vote(CreateVoteInput::new(None, Event::Issue(event)))
+            .create_vote(&CreateVoteInput::new(None, &Event::Issue(event)))
             .await
             .unwrap();
     }
@@ -490,7 +493,7 @@ mod tests {
     #[tokio::test]
     async fn create_vote_success() {
         let event = setup_test_issue_event();
-        let create_vote_input = CreateVoteInput::new(None, Event::Issue(event));
+        let create_vote_input = CreateVoteInput::new(None, &Event::Issue(event));
         let cfg = CfgProfile {
             duration: Duration::from_secs(300),
             pass_threshold: 50.0,
@@ -536,7 +539,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .create_vote(create_vote_input)
+            .create_vote(&create_vote_input)
             .await
             .unwrap();
     }
@@ -544,7 +547,7 @@ mod tests {
     #[tokio::test]
     async fn create_vote_pr_success() {
         let event = setup_test_pr_event();
-        let create_vote_input = CreateVoteInput::new(None, Event::PullRequest(event));
+        let create_vote_input = CreateVoteInput::new(None, &Event::PullRequest(event));
         let cfg = CfgProfile {
             duration: Duration::from_secs(300),
             pass_threshold: 50.0,
@@ -603,7 +606,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .create_vote(create_vote_input)
+            .create_vote(&create_vote_input)
             .await
             .unwrap();
     }
@@ -619,7 +622,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .cancel_vote(CancelVoteInput::new(Event::IssueComment(event)))
+            .cancel_vote(CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap_err();
     }
@@ -645,7 +648,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .cancel_vote(CancelVoteInput::new(Event::IssueComment(event)))
+            .cancel_vote(CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap();
     }
@@ -671,7 +674,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .cancel_vote(CancelVoteInput::new(Event::IssueComment(event)))
+            .cancel_vote(CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap();
     }
@@ -710,7 +713,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .cancel_vote(CancelVoteInput::new(Event::PullRequest(event)))
+            .cancel_vote(CancelVoteInput::new(&Event::PullRequest(event)))
             .await
             .unwrap();
     }

@@ -101,18 +101,18 @@ async fn event(
         }
         Err(EventError::UnsupportedEvent) => return Ok(()),
     };
-    trace!("event received: {:?}", event);
+    trace!(?event, "event received");
 
     // Try to extract command from event (if available) and queue it
-    match Command::from_event(gh.clone(), event.clone()).await {
+    match Command::from_event(gh.clone(), &event).await {
         Some(cmd) => {
-            trace!("command detected: {:?}", &cmd);
+            trace!(?cmd, "command detected");
             cmds_tx.send(cmd).await.unwrap()
         }
         None => {
             if let Event::PullRequest(event) = event {
-                set_check_status(db, gh, event).await.map_err(|err| {
-                    error!("error setting pull request check status: {:#?}", err);
+                set_check_status(db, gh, &event).await.map_err(|err| {
+                    error!(?err, ?event, "error setting pull request check status");
                     (StatusCode::INTERNAL_SERVER_ERROR, String::new())
                 })?
             }
@@ -141,7 +141,7 @@ fn verify_signature(signature: Option<&HeaderValue>, secret: &[u8], body: &[u8])
 /// provided when it's created or synchronized if no vote has been created on
 /// it yet. This makes it possible to use the GitVote check in combination with
 /// branch protection.
-async fn set_check_status(db: DynDB, gh: DynGH, event: PullRequestEvent) -> Result<()> {
+async fn set_check_status(db: DynDB, gh: DynGH, event: &PullRequestEvent) -> Result<()> {
     let (owner, repo) = split_full_name(&event.repository.full_name);
     let inst_id = event.installation.id as u64;
     let pr = event.pull_request.number;
@@ -157,7 +157,7 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: PullRequestEvent) -> Resu
             if !gh.is_check_required(inst_id, owner, repo, branch).await? {
                 return Ok(());
             }
-            gh.create_check_run(inst_id, owner, repo, pr, check_details)
+            gh.create_check_run(inst_id, owner, repo, pr, &check_details)
                 .await?
         }
         PullRequestEventAction::Synchronize => {
@@ -170,7 +170,7 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: PullRequestEvent) -> Resu
             {
                 return Ok(());
             }
-            gh.create_check_run(inst_id, owner, repo, pr, check_details)
+            gh.create_check_run(inst_id, owner, repo, pr, &check_details)
                 .await?
         }
         _ => {}
@@ -468,7 +468,7 @@ mod tests {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::ReadyForReview;
 
-        assert!(set_check_status(db, gh, event).await.is_ok());
+        assert!(set_check_status(db, gh, &event).await.is_ok());
     }
 
     #[tokio::test]
@@ -482,7 +482,7 @@ mod tests {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Opened;
 
-        assert!(set_check_status(db, gh, event).await.is_err());
+        assert!(set_check_status(db, gh, &event).await.is_err());
     }
 
     #[tokio::test]
@@ -496,7 +496,7 @@ mod tests {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Opened;
 
-        assert!(set_check_status(db, gh, event).await.is_ok());
+        assert!(set_check_status(db, gh, &event).await.is_ok());
     }
 
     #[tokio::test]
@@ -523,7 +523,7 @@ mod tests {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Opened;
 
-        assert!(set_check_status(db, gh, event).await.is_ok());
+        assert!(set_check_status(db, gh, &event).await.is_ok());
     }
 
     #[tokio::test]
@@ -537,7 +537,7 @@ mod tests {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Synchronize;
 
-        assert!(set_check_status(db, gh, event).await.is_ok());
+        assert!(set_check_status(db, gh, &event).await.is_ok());
     }
 
     #[tokio::test]
@@ -555,7 +555,7 @@ mod tests {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Synchronize;
 
-        assert!(set_check_status(db, gh, event).await.is_ok());
+        assert!(set_check_status(db, gh, &event).await.is_ok());
     }
 
     #[tokio::test]
@@ -586,7 +586,7 @@ mod tests {
         let mut event = setup_test_pr_event();
         event.action = PullRequestEventAction::Synchronize;
 
-        assert!(set_check_status(db, gh, event).await.is_ok());
+        assert!(set_check_status(db, gh, &event).await.is_ok());
     }
 
     fn setup_test_router() -> (Router, Receiver<Command>) {
