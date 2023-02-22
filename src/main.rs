@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
     // Setup and launch HTTP server
     let router = handlers::setup_router(cfg.clone(), db, gh, cmds_tx)?;
     let addr: SocketAddr = cfg.get_string("addr")?.parse()?;
-    info!("gitvote service started - listening on {}", addr);
+    info!(%addr, "gitvote service started");
     axum::Server::bind(&addr)
         .serve(router.into_make_service())
         .with_graceful_shutdown(shutdown_signal())

@@ -38,14 +38,14 @@ impl Command {
     /// Manual commands have preference, and if one is found, automatic ones
     /// won't be processed.
     ///
-    pub(crate) async fn from_event(gh: DynGH, event: Event) -> Option<Self> {
-        if let Some(cmd) = Command::from_event_manual(&event) {
+    pub(crate) async fn from_event(gh: DynGH, event: &Event) -> Option<Self> {
+        if let Some(cmd) = Command::from_event_manual(event) {
             Some(cmd)
         } else {
-            match Command::from_event_automatic(gh, &event).await {
+            match Command::from_event_automatic(gh, event).await {
                 Ok(cmd) => cmd,
                 Err(err) => {
-                    error!("error processing automatic command from event: {:#?}", err);
+                    error!(?err, ?event, "error processing automatic command");
                     None
                 }
             }
@@ -72,17 +72,14 @@ impl Command {
                 let cmd = captures.get(1)?.as_str();
                 let profile = match captures.get(2)?.as_str() {
                     "" => None,
-                    profile => Some(profile.to_string()),
+                    profile => Some(profile),
                 };
                 match cmd {
                     CMD_CREATE_VOTE => {
-                        return Some(Command::CreateVote(CreateVoteInput::new(
-                            profile,
-                            event.to_owned(),
-                        )))
+                        return Some(Command::CreateVote(CreateVoteInput::new(profile, event)))
                     }
                     CMD_CANCEL_VOTE => {
-                        return Some(Command::CancelVote(CancelVoteInput::new(event.to_owned())))
+                        return Some(Command::CancelVote(CancelVoteInput::new(event)))
                     }
                     _ => return None,
                 }
@@ -118,8 +115,8 @@ impl Command {
                     for rule in automation.rules {
                         if rule.matches(pr_files.as_slice())? {
                             let cmd = Command::CreateVote(CreateVoteInput::new(
-                                Some(rule.profile),
-                                Event::PullRequest(event.to_owned()),
+                                Some(&rule.profile),
+                                &Event::PullRequest(event.to_owned()),
                             ));
                             return Ok(Some(cmd));
                         }
@@ -150,40 +147,40 @@ pub(crate) struct CreateVoteInput {
 impl CreateVoteInput {
     /// Create a new CreateVoteInput instance from the profile and event
     /// provided.
-    pub(crate) fn new(profile_name: Option<String>, event: Event) -> Self {
+    pub(crate) fn new(profile_name: Option<&str>, event: &Event) -> Self {
         match event {
             Event::Issue(event) => Self {
-                profile_name,
-                created_by: event.sender.login,
+                profile_name: profile_name.map(|s| s.to_string()),
+                created_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_id: event.issue.id,
                 issue_number: event.issue.number,
-                issue_title: event.issue.title,
+                issue_title: event.issue.title.clone(),
                 is_pull_request: event.issue.pull_request.is_some(),
-                repository_full_name: event.repository.full_name,
-                organization: event.organization.map(|o| o.login),
+                repository_full_name: event.repository.full_name.clone(),
+                organization: event.organization.as_ref().map(|o| o.login.clone()),
             },
             Event::IssueComment(event) => Self {
-                profile_name,
-                created_by: event.sender.login,
+                profile_name: profile_name.map(|s| s.to_string()),
+                created_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_id: event.issue.id,
                 issue_number: event.issue.number,
-                issue_title: event.issue.title,
+                issue_title: event.issue.title.clone(),
                 is_pull_request: event.issue.pull_request.is_some(),
-                repository_full_name: event.repository.full_name,
-                organization: event.organization.map(|o| o.login),
+                repository_full_name: event.repository.full_name.clone(),
+                organization: event.organization.as_ref().map(|o| o.login.clone()),
             },
             Event::PullRequest(event) => Self {
-                profile_name,
-                created_by: event.sender.login,
+                profile_name: profile_name.map(|s| s.to_string()),
+                created_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_id: event.pull_request.id,
                 issue_number: event.pull_request.number,
-                issue_title: event.pull_request.title,
+                issue_title: event.pull_request.title.clone(),
                 is_pull_request: true,
-                repository_full_name: event.repository.full_name,
-                organization: event.organization.map(|o| o.login),
+                repository_full_name: event.repository.full_name.clone(),
+                organization: event.organization.as_ref().map(|o| o.login.clone()),
             },
         }
     }
@@ -201,28 +198,28 @@ pub(crate) struct CancelVoteInput {
 
 impl CancelVoteInput {
     /// Create a new CancelVoteInput instance from the event provided.
-    pub(crate) fn new(event: Event) -> Self {
+    pub(crate) fn new(event: &Event) -> Self {
         match event {
             Event::Issue(event) => Self {
-                cancelled_by: event.sender.login,
+                cancelled_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_number: event.issue.number,
                 is_pull_request: event.issue.pull_request.is_some(),
-                repository_full_name: event.repository.full_name,
+                repository_full_name: event.repository.full_name.clone(),
             },
             Event::IssueComment(event) => Self {
-                cancelled_by: event.sender.login,
+                cancelled_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_number: event.issue.number,
                 is_pull_request: event.issue.pull_request.is_some(),
-                repository_full_name: event.repository.full_name,
+                repository_full_name: event.repository.full_name.clone(),
             },
             Event::PullRequest(event) => Self {
-                cancelled_by: event.sender.login,
+                cancelled_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_number: event.pull_request.number,
                 is_pull_request: true,
-                repository_full_name: event.repository.full_name,
+                repository_full_name: event.repository.full_name.clone(),
             },
         }
     }
@@ -264,8 +261,8 @@ mod tests {
         let event = Event::Issue(event);
 
         assert_eq!(
-            Command::from_event_manual(&event.clone()),
-            Some(Command::CreateVote(CreateVoteInput::new(None, event)))
+            Command::from_event_manual(&event),
+            Some(Command::CreateVote(CreateVoteInput::new(None, &event)))
         );
     }
 
@@ -277,10 +274,10 @@ mod tests {
         let event = Event::Issue(event);
 
         assert_eq!(
-            Command::from_event_manual(&event.clone()),
+            Command::from_event_manual(&event),
             Some(Command::CreateVote(CreateVoteInput::new(
-                Some("profile1".to_string()),
-                event
+                Some("profile1"),
+                &event
             )))
         );
     }
@@ -303,8 +300,8 @@ mod tests {
         let event = Event::IssueComment(event);
 
         assert_eq!(
-            Command::from_event_manual(&event.clone()),
-            Some(Command::CreateVote(CreateVoteInput::new(None, event)))
+            Command::from_event_manual(&event),
+            Some(Command::CreateVote(CreateVoteInput::new(None, &event)))
         );
     }
 
@@ -316,8 +313,8 @@ mod tests {
         let event = Event::IssueComment(event);
 
         assert_eq!(
-            Command::from_event_manual(&event.clone()),
-            Some(Command::CancelVote(CancelVoteInput::new(event)))
+            Command::from_event_manual(&event),
+            Some(Command::CancelVote(CancelVoteInput::new(&event)))
         );
     }
 
@@ -339,8 +336,8 @@ mod tests {
         let event = Event::PullRequest(event);
 
         assert_eq!(
-            Command::from_event_manual(&event.clone()),
-            Some(Command::CreateVote(CreateVoteInput::new(None, event)))
+            Command::from_event_manual(&event),
+            Some(Command::CreateVote(CreateVoteInput::new(None, &event)))
         );
     }
 
@@ -368,8 +365,8 @@ mod tests {
                 .await
                 .unwrap(),
             Some(Command::CreateVote(CreateVoteInput::new(
-                Some("default".to_string()),
-                event
+                Some("default"),
+                &event
             )))
         );
     }
