@@ -20,7 +20,7 @@ jobs:
           password: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - name: Extract tag name
         id: extract_tag_name
-        run: echo ::set-output name=tag::${GITHUB_REF#refs/tags/}
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
       - name: Build and push gitvote-dbmigrator image
         run: |
           docker build \
