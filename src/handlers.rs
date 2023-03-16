@@ -14,7 +14,7 @@ use sha2::Sha256;
 use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{error, trace};
+use tracing::{error, instrument, trace};
 
 /// Header representing the kind of the event received.
 const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
@@ -62,6 +62,7 @@ async fn index() -> impl IntoResponse {
 }
 
 /// Handler that processes webhook events from GitHub.
+#[instrument(skip_all, err(Debug))]
 async fn event(
     State(db): State<DynDB>,
     State(gh): State<DynGH>,
