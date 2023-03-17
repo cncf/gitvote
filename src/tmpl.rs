@@ -71,6 +71,11 @@ impl<'a> VoteCancelled<'a> {
     }
 }
 
+/// Template for the vote checked recently comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "vote-checked-recently.md")]
+pub(crate) struct VoteCheckedRecently {}
+
 /// Template for the vote closed comment.
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-closed.md")]
@@ -161,6 +166,20 @@ impl<'a> VoteRestricted<'a> {
     /// Create a new VoteRestricted template.
     pub(crate) fn new(user: &'a str) -> Self {
         Self { user }
+    }
+}
+
+/// Template for the vote status comment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "vote-status.md")]
+pub(crate) struct VoteStatus<'a> {
+    results: &'a VoteResults,
+}
+
+impl<'a> VoteStatus<'a> {
+    /// Create a new VoteStatus template.
+    pub(crate) fn new(results: &'a VoteResults) -> Self {
+        Self { results }
     }
 }
 

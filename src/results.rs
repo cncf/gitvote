@@ -9,9 +9,9 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use uuid::Uuid;
 
 /// Supported reactions.
-const REACTION_IN_FAVOR: &str = "+1";
-const REACTION_AGAINST: &str = "-1";
-const REACTION_ABSTAIN: &str = "eyes";
+pub(crate) const REACTION_IN_FAVOR: &str = "+1";
+pub(crate) const REACTION_AGAINST: &str = "-1";
+pub(crate) const REACTION_ABSTAIN: &str = "eyes";
 
 /// Vote information.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,6 +23,7 @@ pub(crate) struct Vote {
     pub ends_at: OffsetDateTime,
     pub closed: bool,
     pub closed_at: Option<OffsetDateTime>,
+    pub checked_at: Option<OffsetDateTime>,
     pub cfg: CfgProfile,
     pub installation_id: i64,
     pub issue_id: i64,
@@ -233,6 +234,7 @@ mod tests {
                     ends_at: OffsetDateTime::now_utc(),
                     closed: false,
                     closed_at: None,
+                    checked_at: None,
                     cfg: $cfg.clone(),
                     installation_id: INST_ID as i64,
                     issue_id: ISSUE_ID,
@@ -246,10 +248,10 @@ mod tests {
                 // Setup mocks and expectations
                 let mut gh = MockGH::new();
                 gh.expect_get_comment_reactions()
-                    .with(eq(INST_ID as u64), eq(OWNER), eq(REPO), eq(COMMENT_ID))
+                    .with(eq(INST_ID), eq(OWNER), eq(REPO), eq(COMMENT_ID))
                     .returning(|_, _, _, _| Box::pin(future::ready(Ok($reactions))));
                 gh.expect_get_allowed_voters()
-                    .with(eq(INST_ID as u64), eq($cfg), eq(OWNER), eq(REPO), eq(Some(ORG.to_string())))
+                    .with(eq(INST_ID), eq($cfg), eq(OWNER), eq(REPO), eq(Some(ORG.to_string())))
                     .returning(|_, _, _, _, _| Box::pin(future::ready(Ok($allowed_voters))));
 
                 // Calculate vote results and check we get what we expect

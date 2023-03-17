@@ -30,6 +30,13 @@ pub(crate) trait DB {
     /// Close any pending finished vote.
     async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, VoteResults)>>;
 
+    /// Get open vote (if available) in the issue/pr provided.
+    async fn get_open_vote(
+        &self,
+        repository_full_name: &str,
+        issue_number: i64,
+    ) -> Result<Option<Vote>>;
+
     /// Check if the issue/pr provided has a vote.
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
 
@@ -43,6 +50,9 @@ pub(crate) trait DB {
         input: &CreateVoteInput,
         cfg: &CfgProfile,
     ) -> Result<Uuid>;
+
+    /// Update vote's last check ts.
+    async fn update_vote_last_check(&self, vote_id: Uuid) -> Result<()>;
 }
 
 /// DB implementation backed by PostgreSQL.
@@ -69,6 +79,7 @@ impl PgDB {
                     ends_at,
                     closed,
                     closed_at,
+                    checked_at,
                     cfg,
                     installation_id,
                     issue_id,
@@ -78,7 +89,8 @@ impl PgDB {
                     organization,
                     results
                 from vote
-                where current_timestamp > ends_at and closed = false
+                where current_timestamp > ends_at
+                and closed = false
                 for update of vote skip locked
                 limit 1
                 ",
@@ -96,6 +108,7 @@ impl PgDB {
                     ends_at: row.get("ends_at"),
                     closed: row.get("closed"),
                     closed_at: row.get("closed_at"),
+                    checked_at: row.get("checked_at"),
                     cfg,
                     installation_id: row.get("installation_id"),
                     issue_id: row.get("issue_id"),
@@ -172,6 +185,65 @@ impl DB for PgDB {
         tx.commit().await?;
 
         Ok(Some((vote, results)))
+    }
+
+    async fn get_open_vote(
+        &self,
+        repository_full_name: &str,
+        issue_number: i64,
+    ) -> Result<Option<Vote>> {
+        let db = self.pool.get().await?;
+        let vote = db
+            .query_opt(
+                "
+                select
+                    vote_id,
+                    vote_comment_id,
+                    created_at,
+                    created_by,
+                    ends_at,
+                    closed,
+                    closed_at,
+                    checked_at,
+                    cfg,
+                    installation_id,
+                    issue_id,
+                    issue_number,
+                    is_pull_request,
+                    repository_full_name,
+                    organization,
+                    results
+                from vote
+                where repository_full_name = $1::text
+                and issue_number = $2::bigint
+                and closed = false
+                ",
+                &[&repository_full_name, &issue_number],
+            )
+            .await?
+            .map(|row| {
+                let Json(cfg): Json<CfgProfile> = row.get("cfg");
+                let results: Option<Json<VoteResults>> = row.get("results");
+                Vote {
+                    vote_id: row.get("vote_id"),
+                    vote_comment_id: row.get("vote_comment_id"),
+                    created_at: row.get("created_at"),
+                    created_by: row.get("created_by"),
+                    ends_at: row.get("ends_at"),
+                    closed: row.get("closed"),
+                    closed_at: row.get("closed_at"),
+                    checked_at: row.get("checked_at"),
+                    cfg,
+                    installation_id: row.get("installation_id"),
+                    issue_id: row.get("issue_id"),
+                    issue_number: row.get("issue_number"),
+                    is_pull_request: row.get("is_pull_request"),
+                    repository_full_name: row.get("repository_full_name"),
+                    organization: row.get("organization"),
+                    results: results.map(|Json(results)| results),
+                }
+            });
+        Ok(vote)
     }
 
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
@@ -263,5 +335,19 @@ impl DB for PgDB {
             .await?
             .get("vote_id");
         Ok(vote_id)
+    }
+
+    async fn update_vote_last_check(&self, vote_id: Uuid) -> Result<()> {
+        let db = self.pool.get().await?;
+        db.execute(
+            "
+            update vote set
+                checked_at = current_timestamp
+            where vote_id = $1::uuid;
+            ",
+            &[&vote_id],
+        )
+        .await?;
+        Ok(())
     }
 }
