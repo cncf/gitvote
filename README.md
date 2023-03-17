@@ -1,4 +1,5 @@
 # GitVote
+[![CI](https://github.com/cncf/gitvote/actions/workflows/ci.yml/badge.svg)](https://github.com/cncf/gitvote/actions/workflows/ci.yml) ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/cncf/gitvote)
 
 **GitVote** is a GitHub application that allows holding a vote on *issues* and *pull requests*.
 
