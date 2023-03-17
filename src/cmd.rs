@@ -11,18 +11,21 @@ use tracing::error;
 /// Available commands.
 const CMD_CREATE_VOTE: &str = "vote";
 const CMD_CANCEL_VOTE: &str = "cancel-vote";
+const CMD_CHECK_VOTE: &str = "check-vote";
 
 lazy_static! {
     /// Regex used to detect commands in issues/prs comments.
-    static ref CMD: Regex = Regex::new(r#"(?m)^/(vote|cancel-vote)-?([a-zA-Z0-9]*)\s*$"#)
+    static ref CMD: Regex = Regex::new(r#"(?m)^/(vote|cancel-vote|check-vote)-?([a-zA-Z0-9]*)\s*$"#)
         .expect("invalid CMD regexp");
 }
 
 /// Represents a command to be executed, usually created from a GitHub event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum Command {
     CreateVote(CreateVoteInput),
     CancelVote(CancelVoteInput),
+    CheckVote(CheckVoteInput),
 }
 
 impl Command {
@@ -81,6 +84,7 @@ impl Command {
                     CMD_CANCEL_VOTE => {
                         return Some(Command::CancelVote(CancelVoteInput::new(event)))
                     }
+                    CMD_CHECK_VOTE => return Some(Command::CheckVote(CheckVoteInput::new(event))),
                     _ => return None,
                 }
             }
@@ -219,6 +223,33 @@ impl CancelVoteInput {
                 installation_id: event.installation.id,
                 issue_number: event.pull_request.number,
                 is_pull_request: true,
+                repository_full_name: event.repository.full_name.clone(),
+            },
+        }
+    }
+}
+
+/// Information required to check the status of an open vote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct CheckVoteInput {
+    pub issue_number: i64,
+    pub repository_full_name: String,
+}
+
+impl CheckVoteInput {
+    /// Create a new CheckVoteInput instance from the event provided.
+    pub(crate) fn new(event: &Event) -> Self {
+        match event {
+            Event::Issue(event) => Self {
+                issue_number: event.issue.number,
+                repository_full_name: event.repository.full_name.clone(),
+            },
+            Event::IssueComment(event) => Self {
+                issue_number: event.issue.number,
+                repository_full_name: event.repository.full_name.clone(),
+            },
+            Event::PullRequest(event) => Self {
+                issue_number: event.pull_request.number,
                 repository_full_name: event.repository.full_name.clone(),
             },
         }

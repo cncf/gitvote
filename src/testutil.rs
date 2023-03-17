@@ -123,6 +123,7 @@ pub(crate) fn setup_test_vote() -> Vote {
         ends_at: OffsetDateTime::now_utc(),
         closed: false,
         closed_at: None,
+        checked_at: None,
         cfg: CfgProfile {
             duration: Duration::from_secs(300),
             pass_threshold: 50.0,

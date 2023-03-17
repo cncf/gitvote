@@ -1,14 +1,15 @@
 use crate::{
     cfg::{CfgError, CfgProfile},
-    cmd::{CancelVoteInput, Command, CreateVoteInput},
+    cmd::{CancelVoteInput, CheckVoteInput, Command, CreateVoteInput},
     db::DynDB,
     github::{split_full_name, CheckDetails, DynGH},
-    tmpl,
+    results, tmpl,
 };
 use anyhow::Result;
 use askama::Template;
 use futures::future::{self, JoinAll};
 use std::{sync::Arc, time::Duration};
+use time::OffsetDateTime;
 use tokio::{
     sync::broadcast::{self, error::TryRecvError},
     task::JoinHandle,
@@ -29,6 +30,9 @@ const VOTES_CLOSER_PAUSE_ON_NONE: Duration = Duration::from_secs(15);
 
 /// Amount of time the votes closer will sleep when something goes wrong.
 const VOTES_CLOSER_PAUSE_ON_ERROR: Duration = Duration::from_secs(30);
+
+/// How often a vote can be checked.
+const MAX_VOTE_CHECK_FREQUENCY: Duration = Duration::from_secs(60 * 60 * 24);
 
 /// A votes processor is in charge of creating the requested votes, stopping
 /// them at the scheduled time and publishing results, etc.
@@ -89,7 +93,10 @@ impl Processor {
                                 _ = self.create_vote(&input).await;
                             }
                             Command::CancelVote(input) => {
-                                _ = self.cancel_vote(input).await;
+                                _ = self.cancel_vote(&input).await;
+                            }
+                            Command::CheckVote(input) => {
+                                _ = self.check_vote(&input).await;
                             }
                         }
                     }
@@ -137,7 +144,7 @@ impl Processor {
     }
 
     /// Create a new vote.
-    #[instrument(fields(repo = i.repository_full_name, issue_number = i.issue_number), skip_all, err)]
+    #[instrument(fields(repo = i.repository_full_name, issue_number = i.issue_number), skip_all, err(Debug))]
     async fn create_vote(&self, i: &CreateVoteInput) -> Result<()> {
         // Get vote configuration profile
         let inst_id = i.installation_id as u64;
@@ -221,8 +228,19 @@ impl Processor {
     }
 
     /// Cancel an open vote.
-    #[instrument(fields(repo = i.repository_full_name, issue_number = i.issue_number), skip_all, err)]
-    async fn cancel_vote(&self, i: CancelVoteInput) -> Result<()> {
+    #[instrument(fields(repo = i.repository_full_name, issue_number = i.issue_number), skip_all, err(Debug))]
+    async fn cancel_vote(&self, i: &CancelVoteInput) -> Result<()> {
+        // Only repository collaborators can cancel votes
+        let inst_id = i.installation_id as u64;
+        let (owner, repo) = split_full_name(&i.repository_full_name);
+        if !self
+            .gh
+            .user_is_collaborator(inst_id, owner, repo, &i.cancelled_by)
+            .await?
+        {
+            return Ok(());
+        }
+
         // Try cancelling the vote open in the issue/pr provided
         let cancelled_vote_id: Option<Uuid> = self
             .db
@@ -230,8 +248,6 @@ impl Processor {
             .await?;
 
         // Post the corresponding comment on the issue/pr
-        let inst_id = i.installation_id as u64;
-        let (owner, repo) = split_full_name(&i.repository_full_name);
         let body: String;
         match cancelled_vote_id {
             Some(vote_id) => {
@@ -261,8 +277,55 @@ impl Processor {
         Ok(())
     }
 
+    /// Check the status of a vote. The vote must be open and not have been
+    /// checked in MAX_VOTE_CHECK_FREQUENCY.
+    #[instrument(fields(vote_id), skip_all, err(Debug))]
+    async fn check_vote(&self, i: &CheckVoteInput) -> Result<()> {
+        // Get open vote (if any) from database
+        let vote = match self
+            .db
+            .get_open_vote(&i.repository_full_name, i.issue_number)
+            .await?
+        {
+            Some(vote) => vote,
+            None => return Ok(()),
+        };
+
+        // Record vote_id as part of the current span
+        tracing::Span::current().record("vote_id", &vote.vote_id.to_string());
+
+        // Check if the vote has already been checked recently
+        let inst_id = vote.installation_id as u64;
+        let (owner, repo) = split_full_name(&vote.repository_full_name);
+        if let Some(checked_at) = vote.checked_at {
+            if OffsetDateTime::now_utc() - checked_at < MAX_VOTE_CHECK_FREQUENCY {
+                // Post comment on the issue/pr and return
+                let body = tmpl::VoteCheckedRecently {}.render()?;
+                self.gh
+                    .post_comment(inst_id, owner, repo, vote.issue_number, &body)
+                    .await?;
+                return Ok(());
+            }
+        }
+
+        // Calculate results
+        let (owner, repo) = split_full_name(&vote.repository_full_name);
+        let results = results::calculate(self.gh.clone(), owner, repo, &vote).await?;
+
+        // Post vote status comment on the issue/pr
+        let body = tmpl::VoteStatus::new(&results).render()?;
+        self.gh
+            .post_comment(inst_id, owner, repo, vote.issue_number, &body)
+            .await?;
+
+        // Update vote's last check ts
+        self.db.update_vote_last_check(vote.vote_id).await?;
+
+        Ok(())
+    }
+
     /// Close any pending finished vote.
-    #[instrument(fields(vote_id), skip_all, err)]
+    #[instrument(fields(vote_id), skip_all, err(Debug))]
     async fn close_finished_vote(&self) -> Result<Option<()>> {
         // Try to close any finished vote
         let (vote, results) = match self.db.close_finished_vote(self.gh.clone()).await? {
@@ -317,10 +380,12 @@ impl Processor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::results::{Vote, REACTION_IN_FAVOR};
     use crate::testutil::*;
     use crate::{cfg::AllowedVoters, db::MockDB, github::*};
     use anyhow::format_err;
     use mockall::predicate::eq;
+    use time::ext::NumericalDuration;
 
     #[tokio::test]
     async fn votes_processor_stops_when_requested() {
@@ -358,7 +423,10 @@ mod tests {
         db.expect_cancel_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
             .returning(|_, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
-        let gh = MockGH::new();
+        let mut gh = MockGH::new();
+        gh.expect_user_is_collaborator()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
@@ -612,17 +680,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cancel_vote_error_checking_if_user_is_collaborator() {
+        let db = MockDB::new();
+        let mut gh = MockGH::new();
+        gh.expect_user_is_collaborator()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
+        let event = setup_test_issue_comment_event();
+
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+        votes_processor
+            .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
+            .await
+            .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn cancel_vote_only_collaborators_can_close_votes() {
+        let db = MockDB::new();
+        let mut gh = MockGH::new();
+        gh.expect_user_is_collaborator()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(false))));
+        let event = setup_test_issue_comment_event();
+
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+        votes_processor
+            .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
     async fn cancel_vote_error_cancelling() {
         let mut db = MockDB::new();
         db.expect_cancel_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
             .returning(|_, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
-        let gh = MockGH::new();
+        let mut gh = MockGH::new();
+        gh.expect_user_is_collaborator()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         let event = setup_test_issue_comment_event();
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .cancel_vote(CancelVoteInput::new(&Event::IssueComment(event)))
+            .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap_err();
     }
@@ -634,6 +737,9 @@ mod tests {
             .with(eq(REPOFN), eq(ISSUE_NUM))
             .returning(|_, _| Box::pin(future::ready(Ok(None))));
         let mut gh = MockGH::new();
+        gh.expect_user_is_collaborator()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
                 let expected_body = tmpl::NoVoteInProgress::new(USER, false).render().unwrap();
@@ -648,7 +754,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .cancel_vote(CancelVoteInput::new(&Event::IssueComment(event)))
+            .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap();
     }
@@ -660,6 +766,9 @@ mod tests {
             .with(eq(REPOFN), eq(ISSUE_NUM))
             .returning(|_, _| Box::pin(future::ready(Ok(Some(Uuid::parse_str(VOTE_ID).unwrap())))));
         let mut gh = MockGH::new();
+        gh.expect_user_is_collaborator()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
                 let expected_body = tmpl::VoteCancelled::new(USER, false).render().unwrap();
@@ -674,7 +783,7 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .cancel_vote(CancelVoteInput::new(&Event::IssueComment(event)))
+            .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap();
     }
@@ -686,6 +795,9 @@ mod tests {
             .with(eq(REPOFN), eq(ISSUE_NUM))
             .returning(|_, _| Box::pin(future::ready(Ok(Some(Uuid::parse_str(VOTE_ID).unwrap())))));
         let mut gh = MockGH::new();
+        gh.expect_user_is_collaborator()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
                 let expected_body = tmpl::VoteCancelled::new(USER, true).render().unwrap();
@@ -713,7 +825,120 @@ mod tests {
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
-            .cancel_vote(CancelVoteInput::new(&Event::PullRequest(event)))
+            .cancel_vote(&CancelVoteInput::new(&Event::PullRequest(event)))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_vote_error_getting_vote() {
+        let mut db = MockDB::new();
+        db.expect_get_open_vote()
+            .with(eq(REPOFN), eq(ISSUE_NUM))
+            .returning(|_, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
+        let gh = MockGH::new();
+        let event = setup_test_pr_event();
+
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+        votes_processor
+            .check_vote(&CheckVoteInput::new(&Event::PullRequest(event)))
+            .await
+            .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn check_vote_not_found() {
+        let mut db = MockDB::new();
+        db.expect_get_open_vote()
+            .with(eq(REPOFN), eq(ISSUE_NUM))
+            .returning(|_, _| Box::pin(future::ready(Ok(None))));
+        let gh = MockGH::new();
+        let event = setup_test_pr_event();
+
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+        votes_processor
+            .check_vote(&CheckVoteInput::new(&Event::PullRequest(event)))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_vote_checked_recently() {
+        let mut db = MockDB::new();
+        db.expect_get_open_vote()
+            .with(eq(REPOFN), eq(ISSUE_NUM))
+            .returning(|_, _| {
+                Box::pin(future::ready(Ok(Some(Vote {
+                    checked_at: OffsetDateTime::now_utc().checked_sub(1.hours()),
+                    ..setup_test_vote()
+                }))))
+            });
+        let mut gh = MockGH::new();
+        gh.expect_post_comment()
+            .withf(|inst_id, owner, repo, issue_number, body| {
+                let expected_body = tmpl::VoteCheckedRecently {}.render().unwrap();
+                *inst_id == INST_ID
+                    && owner == ORG
+                    && repo == REPO
+                    && *issue_number == ISSUE_NUM
+                    && body == expected_body.as_str()
+            })
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        let event = setup_test_pr_event();
+
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+        votes_processor
+            .check_vote(&CheckVoteInput::new(&Event::PullRequest(event)))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn check_vote_success() {
+        let mut db = MockDB::new();
+        db.expect_get_open_vote()
+            .with(eq(REPOFN), eq(ISSUE_NUM))
+            .returning(|_, _| Box::pin(future::ready(Ok(Some(setup_test_vote())))));
+        db.expect_update_vote_last_check()
+            .with(eq(Uuid::parse_str(VOTE_ID).unwrap()))
+            .returning(|_| Box::pin(future::ready(Ok(()))));
+        let mut gh = MockGH::new();
+        gh.expect_get_comment_reactions()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(COMMENT_ID))
+            .returning(|_, _, _, _| {
+                Box::pin(future::ready(Ok(vec![Reaction {
+                    user: User {
+                        login: USER1.to_string(),
+                    },
+                    content: REACTION_IN_FAVOR.to_string(),
+                    created_at: TIMESTAMP.to_string(),
+                }])))
+            });
+        gh.expect_get_allowed_voters()
+            .with(
+                eq(INST_ID),
+                eq(setup_test_vote().cfg),
+                eq(ORG),
+                eq(REPO),
+                eq(Some(ORG.to_string())),
+            )
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(vec![USER1.to_string()]))));
+        gh.expect_post_comment()
+            .withf(|inst_id, owner, repo, issue_number, body| {
+                let results = setup_test_vote_results();
+                let expected_body = tmpl::VoteStatus::new(&results).render().unwrap();
+                *inst_id == INST_ID
+                    && owner == ORG
+                    && repo == REPO
+                    && *issue_number == ISSUE_NUM
+                    && body == expected_body.as_str()
+            })
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        let event = setup_test_pr_event();
+
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+        votes_processor
+            .check_vote(&CheckVoteInput::new(&Event::PullRequest(event)))
             .await
             .unwrap();
     }

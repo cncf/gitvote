@@ -1,5 +1,7 @@
 # GitVote
-[![CI](https://github.com/cncf/gitvote/actions/workflows/ci.yml/badge.svg)](https://github.com/cncf/gitvote/actions/workflows/ci.yml) [![Artifact Hub](https://camo.githubusercontent.com/71c62a4d3e15d916774c527ae92a8ad2f8c026ad48dc6c711acf8ae217611817/68747470733a2f2f696d672e736869656c64732e696f2f656e64706f696e743f75726c3d68747470733a2f2f61727469666163746875622e696f2f62616467652f7265706f7369746f72792f676974766f7465)](https://artifacthub.io/packages/helm/gitvote/gitvote)
+
+[![CI](https://github.com/cncf/gitvote/actions/workflows/ci.yml/badge.svg)](https://github.com/cncf/gitvote/actions/workflows/ci.yml)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/gitvote)](https://artifacthub.io/packages/helm/gitvote/gitvote)
 
 **GitVote** is a GitHub application that allows holding a vote on *issues* and *pull requests*.
 
@@ -56,6 +58,14 @@ It is possible to vote `in favor`, `against` or to `abstain`, and each of these 
 Only votes from users with a binding vote as defined in the configuration file will be counted.
 
 *Please note that voting multiple options is not allowed and those votes won't be counted.*
+
+### Checking votes
+
+It is possible to check the status of a vote in progress by calling the `/check-vote` command:
+
+![vote-status](docs/screenshots/vote-status.png)
+
+*Please note that this command can only be called once a day per vote (additional calls will be ignored).*
 
 ### Closing votes
 
