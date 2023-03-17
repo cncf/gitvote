@@ -1,4 +1,5 @@
 # GitVote
+[![CI](https://github.com/cncf/gitvote/actions/workflows/ci.yml/badge.svg)](https://github.com/cncf/gitvote/actions/workflows/ci.yml) [![Artifact Hub](https://camo.githubusercontent.com/71c62a4d3e15d916774c527ae92a8ad2f8c026ad48dc6c711acf8ae217611817/68747470733a2f2f696d672e736869656c64732e696f2f656e64706f696e743f75726c3d68747470733a2f2f61727469666163746875622e696f2f62616467652f7265706f7369746f72792f676974766f7465)](https://artifacthub.io/packages/helm/gitvote/gitvote)
 
 **GitVote** is a GitHub application that allows holding a vote on *issues* and *pull requests*.
 
