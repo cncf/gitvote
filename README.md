@@ -7,7 +7,7 @@
 
 ## Usage
 
-The first step is to install the **GitVote** application in the organization or repositories you'd like.
+The first step is to install the [**GitVote**](https://artifacthub.io/packages/helm/gitvote/gitvote) application in the organization or repositories you'd like.
 
 Once the application has been installed we can proceed with its configuration.
 
