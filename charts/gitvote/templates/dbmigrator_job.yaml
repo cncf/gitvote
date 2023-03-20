@@ -1,4 +1,3 @@
-{{- if .Release.IsInstall -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -37,4 +36,3 @@ spec:
         - name: dbmigrator-config
           secret:
             secretName: {{ include "chart.resourceNamePrefix" . }}dbmigrator-config
-{{- end }}
