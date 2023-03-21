@@ -7,7 +7,7 @@
 
 ## Usage
 
-The first step is to install the [**GitVote**](https://artifacthub.io/packages/helm/gitvote/gitvote) application in the organization or repositories you'd like.
+The first step is to install the [GitVote GitHub application](https://github.com/apps/git-vote) in the organization or repositories you'd like. Alternatively, you can deploy your own instance of the GitVote service by using [the Helm chart provided](https://artifacthub.io/packages/helm/gitvote/gitvote) (some organizations may prefer this option for private repositories).
 
 Once the application has been installed we can proceed with its configuration.
 
