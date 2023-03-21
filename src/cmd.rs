@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn manual_command_from_issue_event_unsupported_action() {
         let mut event = setup_test_issue_event();
-        event.action = IssueEventAction::Assigned;
+        event.action = IssueEventAction::Other;
         event.issue.body = Some(format!("/{CMD_CREATE_VOTE}"));
         let event = Event::Issue(event);
 
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn manual_command_from_issue_comment_event_unsupported_action() {
         let mut event = setup_test_issue_comment_event();
-        event.action = IssueCommentEventAction::Edited;
+        event.action = IssueCommentEventAction::Other;
         event.issue.body = Some(CMD_CREATE_VOTE.to_string());
         let event = Event::IssueComment(event);
 
@@ -352,7 +352,7 @@ mod tests {
     #[test]
     fn manual_command_from_pr_event_unsupported_action() {
         let mut event = setup_test_pr_event();
-        event.action = PullRequestEventAction::Edited;
+        event.action = PullRequestEventAction::Other;
         event.pull_request.body = Some(CMD_CREATE_VOTE.to_string());
         let event = Event::PullRequest(event);
 

@@ -41,7 +41,7 @@ pub(crate) fn get_test_valid_config() -> String {
 
 pub(crate) fn setup_test_issue_event() -> IssueEvent {
     IssueEvent {
-        action: IssueEventAction::Edited,
+        action: IssueEventAction::Other,
         installation: Installation { id: INST_ID as i64 },
         issue: Issue {
             id: ISSUE_ID,
@@ -64,7 +64,7 @@ pub(crate) fn setup_test_issue_event() -> IssueEvent {
 
 pub(crate) fn setup_test_issue_comment_event() -> IssueCommentEvent {
     IssueCommentEvent {
-        action: IssueCommentEventAction::Edited,
+        action: IssueCommentEventAction::Other,
         comment: Comment {
             id: COMMENT_ID,
             body: None,
@@ -91,7 +91,7 @@ pub(crate) fn setup_test_issue_comment_event() -> IssueCommentEvent {
 
 pub(crate) fn setup_test_pr_event() -> PullRequestEvent {
     PullRequestEvent {
-        action: PullRequestEventAction::Edited,
+        action: PullRequestEventAction::Other,
         installation: Installation { id: INST_ID as i64 },
         pull_request: PullRequest {
             id: ISSUE_ID,

@@ -167,7 +167,7 @@ impl GH for GHApi {
         if let Some(conclusion) = &check_details.conclusion {
             body["conclusion"] = json!(conclusion);
         };
-        let _: Value = client.post(url, Some(&body)).await?; // Do not remove let _: Value
+        let _: Value = client.post(url, Some(&body)).await?;
         Ok(())
     }
 
@@ -428,21 +428,8 @@ pub(crate) struct IssueEvent {
 #[serde(rename_all = "lowercase")]
 pub(crate) enum IssueEventAction {
     Opened,
-    Edited,
-    Deleted,
-    Pinned,
-    Unpinned,
-    Closed,
-    Reopened,
-    Assigned,
-    Unassigned,
-    Labeled,
-    Unlabeled,
-    Locked,
-    Unlocked,
-    Transferred,
-    Milestoned,
-    Demilestoned,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -460,8 +447,8 @@ pub(crate) struct IssueCommentEvent {
 #[serde(rename_all = "lowercase")]
 pub(crate) enum IssueCommentEventAction {
     Created,
-    Deleted,
-    Edited,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -477,23 +464,10 @@ pub(crate) struct PullRequestEvent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PullRequestEventAction {
-    Assigned,
-    AutoMergeDisabled,
-    AutoMergeEnabled,
-    Closed,
-    ConvertedToDraft,
-    Edited,
-    Labeled,
-    Locked,
     Opened,
-    ReadyForReview,
-    Reopened,
-    ReviewRequestRemoved,
-    ReviewRequested,
     Synchronize,
-    Unassigned,
-    Unlabeled,
-    Unlocked,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

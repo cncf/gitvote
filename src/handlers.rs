@@ -467,7 +467,7 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let gh = Arc::new(MockGH::new());
         let mut event = setup_test_pr_event();
-        event.action = PullRequestEventAction::ReadyForReview;
+        event.action = PullRequestEventAction::Other;
 
         assert!(set_check_status(db, gh, &event).await.is_ok());
     }
