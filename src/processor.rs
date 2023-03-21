@@ -128,6 +128,8 @@ impl Processor {
                         _ = stop_rx.recv() => break,
                     },
                     Err(_) => {
+                        // Something went wrong closing finished vote, pause
+                        // unless we've been asked to stop
                         tokio::select! {
                             _ = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
                             _ = stop_rx.recv() => break,

@@ -9,6 +9,7 @@ use postgres_openssl::MakeTlsConnector;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{signal, sync::broadcast};
 use tracing::{debug, info};
+use tracing_subscriber::EnvFilter;
 
 mod cfg;
 mod cmd;
@@ -35,6 +36,7 @@ async fn main() -> Result<()> {
 
     // Setup configuration
     let cfg = Config::builder()
+        .set_default("log.format", "pretty")?
         .set_default("addr", "127.0.0.1:9000")?
         .add_source(File::from(args.config))
         .build()
@@ -45,7 +47,11 @@ async fn main() -> Result<()> {
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "gitvote=debug")
     }
-    tracing_subscriber::fmt::init();
+    let s = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env());
+    match cfg.get_string("log.format").as_deref() {
+        Ok("json") => s.json().init(),
+        _ => s.init(),
+    };
 
     // Setup database
     let mut builder = SslConnector::builder(SslMethod::tls())?;

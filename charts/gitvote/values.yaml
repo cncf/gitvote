@@ -26,6 +26,11 @@ db:
   user: postgres
   password: postgres
 
+# Log configuration
+log:
+  # Output format [json|pretty]
+  format: json
+
 # Database migrator configuration
 dbmigrator:
   job:
