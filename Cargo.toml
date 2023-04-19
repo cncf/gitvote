@@ -12,7 +12,7 @@ askama_axum = "0.3.0"
 async-channel = "1.8.0"
 async-trait = "0.1.68"
 axum = { version = "0.6.15", features = ["macros"] }
-clap = { version = "4.2.2", features = ["derive"] }
+clap = { version = "4.2.4", features = ["derive"] }
 config = "0.13.3"
 deadpool-postgres = { version = "0.10.5", features = ["serde"] }
 futures = "0.3.28"
