@@ -128,8 +128,8 @@ pub(crate) fn setup_test_vote() -> Vote {
             duration: Duration::from_secs(300),
             pass_threshold: 50.0,
             allowed_voters: Some(AllowedVoters {
-                teams: None,
                 users: Some(vec![USER1.to_string()]),
+                ..Default::default()
             }),
         },
         installation_id: INST_ID as i64,
