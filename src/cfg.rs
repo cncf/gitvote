@@ -16,7 +16,7 @@ const ERR_TEAMS_NOT_ALLOWED: &str = "teams in allowed voters can only be used in
 type ProfileName = String;
 
 /// GitVote configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Cfg {
     pub automation: Option<Automation>,
     pub profiles: HashMap<ProfileName, CfgProfile>,
@@ -42,14 +42,14 @@ impl Cfg {
 }
 
 /// Automation configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Automation {
     pub enabled: bool,
     pub rules: Vec<AutomationRule>,
 }
 
 /// Automation rule.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AutomationRule {
     pub patterns: Vec<String>,
     pub profile: ProfileName,
@@ -72,7 +72,7 @@ impl AutomationRule {
 }
 
 /// Vote configuration profile.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct CfgProfile {
     #[serde(with = "humantime_serde")]
     pub duration: Duration,
@@ -123,10 +123,11 @@ impl CfgProfile {
 }
 
 /// Represents the teams and users allowed to vote.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AllowedVoters {
     pub teams: Option<Vec<TeamSlug>>,
     pub users: Option<Vec<UserName>>,
+    pub exclude_team_maintainers: Option<bool>,
 }
 
 /// Errors that may occur while getting the configuration profile.
@@ -285,10 +286,7 @@ mod tests {
             CfgProfile {
                 duration: Duration::from_secs(300),
                 pass_threshold: 50.0,
-                allowed_voters: Some(AllowedVoters {
-                    teams: None,
-                    users: None
-                }),
+                allowed_voters: Some(AllowedVoters::default()),
             }
         )
     }
@@ -318,6 +316,7 @@ mod tests {
                 allowed_voters: Some(AllowedVoters {
                     teams: Some(vec![TEAM1.to_string()]),
                     users: Some(vec![USER1.to_string(), USER2.to_string()]),
+                    ..Default::default()
                 }),
             }
         )

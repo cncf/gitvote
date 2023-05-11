@@ -91,7 +91,13 @@ pub(crate) trait GH {
 
     /// Get all members of the provided team.
     #[allow(dead_code)]
-    async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>>;
+    async fn get_team_members(
+        &self,
+        inst_id: u64,
+        org: &str,
+        team: &str,
+        exclude_maintainers: bool,
+    ) -> Result<Vec<UserName>>;
 
     /// Verify if the GitVote check is required via branch protection in the
     /// repository's branch provided.
@@ -186,9 +192,16 @@ impl GH for GHApi {
             // Teams
             if org.is_some() {
                 if let Some(teams) = &cfg_allowed_voters.teams {
+                    let exclude_maintainers =
+                        cfg_allowed_voters.exclude_team_maintainers.unwrap_or(false);
                     for team in teams {
                         if let Ok(members) = self
-                            .get_team_members(inst_id, org.as_ref().unwrap().as_str(), team)
+                            .get_team_members(
+                                inst_id,
+                                org.as_ref().unwrap().as_str(),
+                                team,
+                                exclude_maintainers,
+                            )
                             .await
                         {
                             for user in members {
@@ -295,10 +308,23 @@ impl GH for GHApi {
         Ok(files)
     }
 
-    async fn get_team_members(&self, inst_id: u64, org: &str, team: &str) -> Result<Vec<UserName>> {
+    async fn get_team_members(
+        &self,
+        inst_id: u64,
+        org: &str,
+        team: &str,
+        exclude_maintainers: bool,
+    ) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{GITHUB_API_URL}/orgs/{org}/teams/{team}/members");
-        let first_page: Page<User> = client.get(url, None::<&()>).await?;
+        let first_page: Page<User> = client
+            .get(
+                url,
+                Some(&serde_json::json!({
+                    "role": if exclude_maintainers { "member" } else { "all" },
+                })),
+            )
+            .await?;
         let members: Vec<UserName> = client
             .all_pages(first_page)
             .await?

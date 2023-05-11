@@ -567,10 +567,7 @@ mod tests {
         let cfg = CfgProfile {
             duration: Duration::from_secs(300),
             pass_threshold: 50.0,
-            allowed_voters: Some(AllowedVoters {
-                teams: None,
-                users: None,
-            }),
+            allowed_voters: Some(AllowedVoters::default()),
         };
 
         let mut db = MockDB::new();
@@ -621,10 +618,7 @@ mod tests {
         let cfg = CfgProfile {
             duration: Duration::from_secs(300),
             pass_threshold: 50.0,
-            allowed_voters: Some(AllowedVoters {
-                teams: None,
-                users: None,
-            }),
+            allowed_voters: Some(AllowedVoters::default()),
         };
 
         let mut db = MockDB::new();
