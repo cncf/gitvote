@@ -271,6 +271,7 @@ mod tests {
                 duration: Duration::from_secs(1),
                 pass_threshold: 50.0,
                 allowed_voters: None, // It won't be used (effective value is set below)
+                periodic_status_check: None,
             },
             reactions: vec![
                 Reaction {
@@ -322,6 +323,7 @@ mod tests {
                 duration: Duration::from_secs(1),
                 pass_threshold: 50.0,
                 allowed_voters: None, // It won't be used (effective value is set below)
+                periodic_status_check: None,
             },
             reactions: vec![
                 Reaction {
@@ -359,6 +361,7 @@ mod tests {
                 duration: Duration::from_secs(1),
                 pass_threshold: 50.0,
                 allowed_voters: None, // It won't be used (effective value is set below)
+                periodic_status_check: None,
             },
             reactions: vec![
                 Reaction {
@@ -442,6 +445,7 @@ mod tests {
                 duration: Duration::from_secs(1),
                 pass_threshold: 75.0,
                 allowed_voters: None, // It won't be used (effective value is set below)
+                periodic_status_check: None,
             },
             reactions: vec![
                 Reaction {

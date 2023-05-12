@@ -15,7 +15,7 @@ use tokio::{
     task::JoinHandle,
     time::sleep,
 };
-use tracing::{debug, instrument};
+use tracing::{debug, error, instrument};
 use uuid::Uuid;
 
 /// Number of commands handlers workers.
@@ -34,6 +34,9 @@ const VOTES_CLOSER_PAUSE_ON_ERROR: Duration = Duration::from_secs(30);
 /// How often a vote can be checked.
 const MAX_VOTE_CHECK_FREQUENCY: Duration = Duration::from_secs(60 * 60 * 24);
 
+/// How often the status check scheduler should run.
+const STATUS_CHECK_SCHEDULER_FREQUENCY: Duration = Duration::from_secs(60 * 30);
+
 /// A votes processor is in charge of creating the requested votes, stopping
 /// them at the scheduled time and publishing results, etc.
 pub(crate) struct Processor {
@@ -50,10 +53,11 @@ impl Processor {
     /// Start votes processor.
     pub(crate) fn start(
         self: Arc<Self>,
+        cmds_tx: async_channel::Sender<Command>,
         cmds_rx: async_channel::Receiver<Command>,
         stop_tx: broadcast::Sender<()>,
     ) -> JoinAll<JoinHandle<()>> {
-        let num_workers = COMMANDS_HANDLERS_WORKERS + VOTES_CLOSERS_WORKERS;
+        let num_workers = COMMANDS_HANDLERS_WORKERS + VOTES_CLOSERS_WORKERS + 1; // Status check scheduler
         let mut workers_handles = Vec::with_capacity(num_workers);
 
         // Launch commands handler workers
@@ -69,6 +73,11 @@ impl Processor {
             let handle = self.clone().votes_closer(stop_tx.subscribe());
             workers_handles.push(handle);
         }
+
+        // Launch status check scheduler worker
+        let status_check_scheduler_handle =
+            self.status_check_scheduler(cmds_tx, stop_tx.subscribe());
+        workers_handles.push(status_check_scheduler_handle);
 
         future::join_all(workers_handles)
     }
@@ -140,6 +149,37 @@ impl Processor {
                 // Exit if the votes processor has been asked to stop
                 if let Some(TryRecvError::Closed) = stop_rx.try_recv().err() {
                     break;
+                }
+            }
+        })
+    }
+
+    /// Worker that schedules the execution of status check commands.
+    fn status_check_scheduler(
+        self: Arc<Self>,
+        cmds_tx: async_channel::Sender<Command>,
+        mut stop_rx: broadcast::Receiver<()>,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            loop {
+                // Process pending periodic status checks
+                match self.db.get_pending_status_checks().await {
+                    Ok(inputs) => {
+                        // Enqueue check vote commands
+                        for input in inputs.into_iter() {
+                            _ = cmds_tx.send(Command::CheckVote(input)).await;
+                        }
+                    }
+                    Err(err) => {
+                        error!(?err, "error getting pending status checks");
+                    }
+                }
+
+                // Pause until it's time for the next run or exit if the votes
+                // processor has been asked to stop
+                tokio::select! {
+                    _ = sleep(STATUS_CHECK_SCHEDULER_FREQUENCY) => {},
+                    _ = stop_rx.recv() => break,
                 }
             }
         })
@@ -381,6 +421,8 @@ impl Processor {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
     use crate::results::{Vote, REACTION_IN_FAVOR};
     use crate::testutil::*;
@@ -394,12 +436,14 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_close_finished_vote()
             .returning(|_| Box::pin(future::ready(Ok(None))));
+        db.expect_get_pending_status_checks()
+            .returning(|| Box::pin(future::ready(Ok(vec![]))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
-        let (_, cmds_rx) = async_channel::unbounded();
+        let (cmds_tx, cmds_rx) = async_channel::unbounded();
         let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let processor = votes_processor.start(cmds_rx, stop_tx.clone());
+        let processor = votes_processor.start(cmds_tx, cmds_rx, stop_tx.clone());
 
         drop(stop_tx);
         assert!(processor.await.iter().all(Result::is_ok));
@@ -471,6 +515,69 @@ mod tests {
 
         drop(stop_tx);
         assert!(votes_closer.await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn status_check_scheduler_stops_when_requested_none_pending() {
+        let mut db = MockDB::new();
+        db.expect_get_pending_status_checks()
+            .returning(|| Box::pin(future::ready(Ok(vec![]))));
+        let gh = MockGH::new();
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+
+        let (cmds_tx, cmds_rx) = async_channel::unbounded();
+        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
+        let status_check_scheduler =
+            votes_processor.status_check_scheduler(cmds_tx, stop_tx.subscribe());
+
+        drop(stop_tx);
+        assert!(status_check_scheduler.await.is_ok());
+        assert!(cmds_rx.is_empty());
+    }
+
+    #[tokio::test]
+    async fn status_check_scheduler_stops_after_processing_pending_status_check() {
+        let check_vote_input = CheckVoteInput {
+            repository_full_name: "repo_full_name".to_string(),
+            issue_number: 1,
+        };
+        let check_vote_input_copy = check_vote_input.clone();
+
+        let mut db = MockDB::new();
+        db.expect_get_pending_status_checks()
+            .returning(move || Box::pin(future::ready(Ok(vec![check_vote_input_copy.clone()]))));
+        let gh = MockGH::new();
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+
+        let (cmds_tx, cmds_rx) = async_channel::unbounded();
+        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
+        let status_check_scheduler =
+            votes_processor.status_check_scheduler(cmds_tx, stop_tx.subscribe());
+
+        drop(stop_tx);
+        assert!(status_check_scheduler.await.is_ok());
+        assert_eq!(
+            cmds_rx.recv().await.unwrap(),
+            Command::CheckVote(check_vote_input)
+        );
+    }
+
+    #[tokio::test]
+    async fn status_check_scheduler_stops_when_requested_error_getting_pending() {
+        let mut db = MockDB::new();
+        db.expect_get_pending_status_checks()
+            .returning(|| Box::pin(future::ready(Err(format_err!(ERROR)))));
+        let gh = MockGH::new();
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+
+        let (cmds_tx, cmds_rx) = async_channel::unbounded();
+        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
+        let status_check_scheduler =
+            votes_processor.status_check_scheduler(cmds_tx, stop_tx.subscribe());
+
+        drop(stop_tx);
+        assert!(status_check_scheduler.await.is_ok());
+        assert!(cmds_rx.is_empty());
     }
 
     #[tokio::test]
@@ -568,6 +675,7 @@ mod tests {
             duration: Duration::from_secs(300),
             pass_threshold: 50.0,
             allowed_voters: Some(AllowedVoters::default()),
+            periodic_status_check: None,
         };
 
         let mut db = MockDB::new();
@@ -619,6 +727,7 @@ mod tests {
             duration: Duration::from_secs(300),
             pass_threshold: 50.0,
             allowed_voters: Some(AllowedVoters::default()),
+            periodic_status_check: None,
         };
 
         let mut db = MockDB::new();
