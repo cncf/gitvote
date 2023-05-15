@@ -383,7 +383,7 @@ impl GH for GHApi {
     ) -> Result<bool> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators/{user}",);
-        let resp = client._get(url, None::<&()>).await?;
+        let resp = client._get(url).await?;
         if resp.status() == StatusCode::NO_CONTENT {
             return Ok(true);
         }
