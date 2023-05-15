@@ -1,6 +1,6 @@
 -- Helper function to validate an interval.
 -- Source: https://stackoverflow.com/a/36777132
-create function string_to_interval(s text)
+create or replace function string_to_interval(s text)
 returns interval as $$
 begin
     return s::interval;
