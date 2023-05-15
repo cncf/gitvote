@@ -263,6 +263,7 @@ impl DB for PgDB {
                 where closed = false
                 and cfg ? 'periodic_status_check'
                 and string_to_interval(cfg->>'periodic_status_check') is not null
+                and (cfg->>'periodic_status_check')::interval >= '1 day'::interval
                 and current_timestamp > created_at + (cfg->>'periodic_status_check')::interval
                 and
                     case when checked_at is not null then
