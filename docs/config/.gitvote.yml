@@ -94,6 +94,35 @@ profiles:
       teams: []
       users: []
 
+    # Periodic status check
+    # 
+    # GitVote allows checking the status of a vote in progress manually by
+    # calling the /check-vote command. The periodic status check option makes
+    # it possible to automate the execution of status checks periodically. The
+    # vote status will be published to the corresponding issue or pull request,
+    # the same way as if the /check-vote command would have been called
+    # manually.
+    #
+    # When this option is enabled, while the vote is open, a status check will
+    # be run automatically using the frequency configured. Please note that the
+    # hard limit of one status check per day still applies, so if the command
+    # has been called manually the automatic periodic run may be delayed.
+    # Automatic status checks won't be run if the vote will be closed within
+    # the next hour.
+    #
+    # Units supported:
+    #
+    #   - day / days
+    #   - week / weeks
+    #
+    # As an example, using a value of "5 days" would mean that 5 days after the
+    # vote was created, and every 5 days after that, an automatic status check
+    # will be run.
+    #
+    # periodic_status_check: "5 days"
+    #
+    periodic_status_check: null
+
   # Additional configuration profiles
   #
   # In addition to the default configuration profile, it is possible to add more

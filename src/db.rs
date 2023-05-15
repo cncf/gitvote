@@ -1,6 +1,6 @@
 use crate::{
     cfg::CfgProfile,
-    cmd::CreateVoteInput,
+    cmd::{CheckVoteInput, CreateVoteInput},
     github::{split_full_name, DynGH},
     results::{self, Vote, VoteResults},
 };
@@ -36,6 +36,9 @@ pub(crate) trait DB {
         repository_full_name: &str,
         issue_number: i64,
     ) -> Result<Option<Vote>>;
+
+    /// Get pending status checks.
+    async fn get_pending_status_checks(&self) -> Result<Vec<CheckVoteInput>>;
 
     /// Check if the issue/pr provided has a vote.
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
@@ -145,6 +148,7 @@ impl PgDB {
 
 #[async_trait]
 impl DB for PgDB {
+    /// [DB::cancel_vote]
     async fn cancel_vote(
         &self,
         repository_full_name: &str,
@@ -167,6 +171,7 @@ impl DB for PgDB {
         Ok(cancelled_vote_id)
     }
 
+    /// [DB::close_finished_vote]
     async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, VoteResults)>> {
         // Get pending finished vote (if any) from database
         let mut db = self.pool.get().await?;
@@ -187,6 +192,7 @@ impl DB for PgDB {
         Ok(Some((vote, results)))
     }
 
+    /// [DB::get_open_vote]
     async fn get_open_vote(
         &self,
         repository_full_name: &str,
@@ -246,6 +252,37 @@ impl DB for PgDB {
         Ok(vote)
     }
 
+    /// [DB::get_pending_status_checks]
+    async fn get_pending_status_checks(&self) -> Result<Vec<CheckVoteInput>> {
+        let db = self.pool.get().await?;
+        let inputs = db
+            .query(
+                "
+                select repository_full_name, issue_number
+                from vote
+                where closed = false
+                and cfg ? 'periodic_status_check'
+                and string_to_interval(cfg->>'periodic_status_check') is not null
+                and current_timestamp > created_at + (cfg->>'periodic_status_check')::interval
+                and
+                    case when checked_at is not null then
+                        current_timestamp > checked_at + (cfg->>'periodic_status_check')::interval
+                    else true end
+                and ends_at > current_timestamp + '1 hour'::interval
+                ",
+                &[],
+            )
+            .await?
+            .iter()
+            .map(|row| CheckVoteInput {
+                repository_full_name: row.get("repository_full_name"),
+                issue_number: row.get("issue_number"),
+            })
+            .collect();
+        Ok(inputs)
+    }
+
+    /// [DB::has_vote]
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
         let has_vote = db
@@ -264,6 +301,7 @@ impl DB for PgDB {
         Ok(has_vote)
     }
 
+    /// [DB::has_vote_open]
     async fn has_vote_open(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
         let has_vote_open = db
@@ -283,6 +321,7 @@ impl DB for PgDB {
         Ok(has_vote_open)
     }
 
+    /// [DB::store_vote]
     async fn store_vote(
         &self,
         vote_comment_id: i64,
@@ -337,6 +376,7 @@ impl DB for PgDB {
         Ok(vote_id)
     }
 
+    /// [DB::update_vote_last_check]
     async fn update_vote_last_check(&self, vote_id: Uuid) -> Result<()> {
         let db = self.pool.get().await?;
         db.execute(

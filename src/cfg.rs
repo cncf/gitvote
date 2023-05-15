@@ -18,6 +18,7 @@ type ProfileName = String;
 /// GitVote configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Cfg {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub automation: Option<Automation>,
     pub profiles: HashMap<ProfileName, CfgProfile>,
 }
@@ -77,7 +78,10 @@ pub(crate) struct CfgProfile {
     #[serde(with = "humantime_serde")]
     pub duration: Duration,
     pub pass_threshold: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_voters: Option<AllowedVoters>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub periodic_status_check: Option<String>,
 }
 
 impl CfgProfile {
@@ -125,8 +129,11 @@ impl CfgProfile {
 /// Represents the teams and users allowed to vote.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AllowedVoters {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub teams: Option<Vec<TeamSlug>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub users: Option<Vec<UserName>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exclude_team_maintainers: Option<bool>,
 }
 
@@ -287,6 +294,7 @@ mod tests {
                 duration: Duration::from_secs(300),
                 pass_threshold: 50.0,
                 allowed_voters: Some(AllowedVoters::default()),
+                periodic_status_check: None,
             }
         )
     }
@@ -318,6 +326,7 @@ mod tests {
                     users: Some(vec![USER1.to_string(), USER2.to_string()]),
                     ..Default::default()
                 }),
+                periodic_status_check: None,
             }
         )
     }

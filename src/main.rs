@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
     let (cmds_tx, cmds_rx) = async_channel::unbounded();
     let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
     let votes_processor = processor::Processor::new(db.clone(), gh.clone());
-    let votes_processor_done = votes_processor.start(cmds_rx, stop_tx.clone());
+    let votes_processor_done = votes_processor.start(cmds_tx.clone(), cmds_rx, stop_tx.clone());
     debug!("[votes processor] started");
 
     // Setup and launch HTTP server
