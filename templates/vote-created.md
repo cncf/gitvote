@@ -3,26 +3,28 @@
 **@{{ creator }}** has called for a vote on `{{ issue_title }}` (#{{ issue_number }}).
 
 {% if !teams.is_empty() || !users.is_empty() %}
-{% if !teams.is_empty() %}
-The members of the following teams have binding votes:
+  {% if !teams.is_empty() ~%}
+    The members of the following teams have binding votes:
 
-| Team |
-| ---- |
-{% for team in teams -%}
-| @{{ org }}/{{ team }} |
-{% endfor %}
-{% endif %}
-{% if !users.is_empty() %}
-The following users have binding votes:
+    {{~ "| Team |" }}
+    {{~ "| ---- |" }}
+    {%- for team in teams ~%}
+      | @{{ org }}/{{ team }} |
+    {% endfor %}
+  {% endif -%}
 
-| User |
-| ---- |
-{% for user in users -%}
-| @{{ user }} |
-{% endfor %}
-{% endif %}
-{% else %}
-All repository collaborators have binding votes.
+  {% if !users.is_empty() ~%}
+    The following users have binding votes:
+
+    {{~ "| User |" }}
+    {{~ "| ---- |" }}
+    {%- for user in users ~%}
+      | @{{ user }} |
+    {% endfor %}
+  {% endif -%}
+
+{% else ~%}
+  All repository collaborators have binding votes.
 {% endif %}
 
 Non-binding votes are also appreciated as a sign of support!
