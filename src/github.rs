@@ -150,6 +150,7 @@ impl GHApi {
 
 #[async_trait]
 impl GH for GHApi {
+    /// [GH::create_check_run]
     async fn create_check_run(
         &self,
         inst_id: u64,
@@ -177,6 +178,7 @@ impl GH for GHApi {
         Ok(())
     }
 
+    /// [GH::get_allowed_voters]
     async fn get_allowed_voters(
         &self,
         inst_id: u64,
@@ -233,6 +235,7 @@ impl GH for GHApi {
         Ok(allowed_voters)
     }
 
+    /// [GH::get_collaborators]
     async fn get_collaborators(
         &self,
         inst_id: u64,
@@ -251,6 +254,7 @@ impl GH for GHApi {
         Ok(collaborators)
     }
 
+    /// [GH::get_comment_reactions]
     async fn get_comment_reactions(
         &self,
         inst_id: u64,
@@ -267,6 +271,7 @@ impl GH for GHApi {
         Ok(reactions)
     }
 
+    /// [GH::get_config_file]
     async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String> {
         let client = self.app_client.installation(InstallationId(inst_id));
 
@@ -294,6 +299,7 @@ impl GH for GHApi {
         content
     }
 
+    /// [GH::get_pr_files]
     async fn get_pr_files(
         &self,
         inst_id: u64,
@@ -308,6 +314,7 @@ impl GH for GHApi {
         Ok(files)
     }
 
+    /// [GH::get_team_members]
     async fn get_team_members(
         &self,
         inst_id: u64,
@@ -334,6 +341,7 @@ impl GH for GHApi {
         Ok(members)
     }
 
+    /// [GH::is_check_required]
     async fn is_check_required(
         &self,
         inst_id: u64,
@@ -358,6 +366,7 @@ impl GH for GHApi {
         Ok(is_check_required)
     }
 
+    /// [GH::post_comment]
     async fn post_comment(
         &self,
         inst_id: u64,
@@ -374,6 +383,7 @@ impl GH for GHApi {
         Ok(comment.id.0 as i64)
     }
 
+    /// [GH::user_is_collaborator]
     async fn user_is_collaborator(
         &self,
         inst_id: u64,
