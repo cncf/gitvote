@@ -62,6 +62,7 @@ async fn index() -> impl IntoResponse {
 }
 
 /// Handler that processes webhook events from GitHub.
+#[allow(clippy::let_with_type_underscore)]
 #[instrument(skip_all, err(Debug))]
 async fn event(
     State(db): State<DynDB>,
