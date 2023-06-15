@@ -87,6 +87,10 @@ When a vote on a pull request is closed, GitVote will add a check to the head co
 
 At the moment this feature is always enabled but we'll make it configurable so that votes creators can opt-out per configuration profile.
 
+## Adopters
+
+Please see [ADOPTERS.md](./ADOPTERS.md) for more details.
+
 ## Contributing
 
 Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for more details.
