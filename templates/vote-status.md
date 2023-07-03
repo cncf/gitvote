@@ -17,7 +17,7 @@ So far `{{ "{:.2}"|format(results.in_favor_percentage) }}%` of the users with bi
     {{~ "| ---- | :---: | :-------: |" }}
     {%- for (user, vote) in results.votes ~%}
       {%- if vote.binding ~%}
-        | {{ user }} | {{ vote.vote_option }} | {{ vote.timestamp }} |
+        | {{ user }} | {{ vote.vote_option }} | {{ vote.timestamp }} {{ "|" -}}
       {% endif -%}
     {% endfor -%}
   {% endif -%}
@@ -34,7 +34,7 @@ So far `{{ "{:.2}"|format(results.in_favor_percentage) }}%` of the users with bi
       {{~ "| User | Vote  | Timestamp |" }}
       {{~ "| ---- | :---: | :-------: |" }}
       {%- for (user, vote) in results.votes|non_binding(max_non_binding) ~%}
-        | {{ user }} | {{ vote.vote_option }} | {{ vote.timestamp }} |
+        | {{ user }} | {{ vote.vote_option }} | {{ vote.timestamp }} {{ "|" -}}
       {% endfor ~%}
     </details>
   {% endif %}
