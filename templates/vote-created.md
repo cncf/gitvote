@@ -9,7 +9,7 @@
     {{~ "| Team |" }}
     {{~ "| ---- |" }}
     {%- for team in teams ~%}
-      | @{{ org }}/{{ team }} |
+      | @{{ org }}/{{ team }} {{ "|" -}}
     {% endfor %}
   {% endif -%}
 
@@ -19,7 +19,7 @@
     {{~ "| User |" }}
     {{~ "| ---- |" }}
     {%- for user in users ~%}
-      | @{{ user }} |
+      | @{{ user }} {{ "|" -}}
     {% endfor %}
   {% endif -%}
 
