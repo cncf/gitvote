@@ -131,7 +131,7 @@ pub(crate) fn setup_test_vote() -> Vote {
                 users: Some(vec![USER1.to_string()]),
                 ..Default::default()
             }),
-            periodic_status_check: None,
+            ..Default::default()
         },
         installation_id: INST_ID as i64,
         issue_id: ISSUE_ID,

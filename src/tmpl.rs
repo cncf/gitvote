@@ -190,6 +190,7 @@ mod filters {
     /// Template filter that returns up to the requested number of non-binding
     /// votes from the votes collection provided sorted by timestamp (oldest
     /// first).
+    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unnecessary_wraps)]
     pub(crate) fn non_binding(
         votes: &HashMap<UserName, UserVote>,
         max: &i64,

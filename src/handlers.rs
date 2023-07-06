@@ -33,7 +33,7 @@ struct RouterState {
 
 /// Setup HTTP server router.
 pub(crate) fn setup_router(
-    cfg: Arc<Config>,
+    cfg: &Arc<Config>,
     db: DynDB,
     gh: DynGH,
     cmds_tx: async_channel::Sender<Command>,
@@ -57,6 +57,7 @@ pub(crate) fn setup_router(
 }
 
 /// Handler that returns the index document.
+#[allow(clippy::unused_async)]
 async fn index() -> impl IntoResponse {
     tmpl::Index {}
 }
@@ -109,14 +110,14 @@ async fn event(
     match Command::from_event(gh.clone(), &event).await {
         Some(cmd) => {
             trace!(?cmd, "command detected");
-            cmds_tx.send(cmd).await.unwrap()
+            cmds_tx.send(cmd).await.unwrap();
         }
         None => {
             if let Event::PullRequest(event) = event {
                 set_check_status(db, gh, &event).await.map_err(|err| {
                     error!(?err, ?event, "error setting pull request check status");
                     (StatusCode::INTERNAL_SERVER_ERROR, String::new())
-                })?
+                })?;
             }
         }
     };
@@ -160,7 +161,7 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: &PullRequestEvent) -> Res
                 return Ok(());
             }
             gh.create_check_run(inst_id, owner, repo, pr, &check_details)
-                .await?
+                .await?;
         }
         PullRequestEventAction::Synchronize => {
             if !gh.is_check_required(inst_id, owner, repo, branch).await? {
@@ -173,9 +174,9 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: &PullRequestEvent) -> Res
                 return Ok(());
             }
             gh.create_check_run(inst_id, owner, repo, pr, &check_details)
-                .await?
+                .await?;
         }
-        _ => {}
+        PullRequestEventAction::Other => {}
     };
 
     Ok(())
@@ -442,7 +443,7 @@ mod tests {
             .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = Arc::new(gh);
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        let router = setup_router(cfg, db, gh, cmds_tx).unwrap();
+        let router = setup_router(&cfg, db, gh, cmds_tx).unwrap();
 
         let body = fs::read(Path::new(TESTDATA_PATH).join("event-pr-no-cmd.json")).unwrap();
         let response = router
@@ -596,7 +597,7 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let gh = Arc::new(MockGH::new());
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        (setup_router(cfg, db, gh, cmds_tx).unwrap(), cmds_rx)
+        (setup_router(&cfg, db, gh, cmds_tx).unwrap(), cmds_rx)
     }
 
     fn setup_test_config() -> Config {

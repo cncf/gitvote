@@ -6,6 +6,7 @@ use anyhow::{format_err, Result};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use tokio_postgres::{types::Json, Row};
 use uuid::Uuid;
 
 /// Supported reactions.
@@ -32,6 +33,31 @@ pub(crate) struct Vote {
     pub repository_full_name: String,
     pub organization: Option<String>,
     pub results: Option<VoteResults>,
+}
+
+impl From<&Row> for Vote {
+    fn from(row: &Row) -> Self {
+        let Json(cfg): Json<CfgProfile> = row.get("cfg");
+        let results: Option<Json<VoteResults>> = row.get("results");
+        Self {
+            vote_id: row.get("vote_id"),
+            vote_comment_id: row.get("vote_comment_id"),
+            created_at: row.get("created_at"),
+            created_by: row.get("created_by"),
+            ends_at: row.get("ends_at"),
+            closed: row.get("closed"),
+            closed_at: row.get("closed_at"),
+            checked_at: row.get("checked_at"),
+            cfg,
+            installation_id: row.get("installation_id"),
+            issue_id: row.get("issue_id"),
+            issue_number: row.get("issue_number"),
+            is_pull_request: row.get("is_pull_request"),
+            repository_full_name: row.get("repository_full_name"),
+            organization: row.get("organization"),
+            results: results.map(|Json(results)| results),
+        }
+    }
 }
 
 /// Vote options.
@@ -114,12 +140,8 @@ pub(crate) async fn calculate<'a>(
     for reaction in reactions {
         // Get vote option from reaction
         let username: UserName = reaction.user.login;
-        let vote_option = match VoteOption::from_reaction(reaction.content.as_str()) {
-            Ok(vote_option) => vote_option,
-            Err(_) => {
-                // Ignore unsupported reactions
-                continue;
-            }
+        let Ok(vote_option) = VoteOption::from_reaction(reaction.content.as_str()) else {
+            continue;
         };
 
         // Do not count votes of users voting for multiple options
@@ -149,7 +171,7 @@ pub(crate) async fn calculate<'a>(
 
     // Prepare results and return them
     let (mut in_favor, mut against, mut abstain, mut binding, mut non_binding) = (0, 0, 0, 0, 0);
-    for (_, user_vote) in votes.iter() {
+    for user_vote in votes.values() {
         if user_vote.binding {
             match user_vote.vote_option {
                 VoteOption::InFavor => in_favor += 1,
@@ -163,7 +185,7 @@ pub(crate) async fn calculate<'a>(
     }
     let mut in_favor_percentage = 0.0;
     if !allowed_voters.is_empty() {
-        in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0
+        in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
     }
     let passed = in_favor_percentage >= vote.cfg.pass_threshold;
     let not_voted = allowed_voters
@@ -270,8 +292,7 @@ mod tests {
             cfg: CfgProfile {
                 duration: Duration::from_secs(1),
                 pass_threshold: 50.0,
-                allowed_voters: None, // It won't be used (effective value is set below)
-                periodic_status_check: None,
+                ..Default::default()
             },
             reactions: vec![
                 Reaction {
@@ -322,8 +343,7 @@ mod tests {
             cfg: CfgProfile {
                 duration: Duration::from_secs(1),
                 pass_threshold: 50.0,
-                allowed_voters: None, // It won't be used (effective value is set below)
-                periodic_status_check: None,
+                ..Default::default()
             },
             reactions: vec![
                 Reaction {
@@ -360,8 +380,7 @@ mod tests {
             cfg: CfgProfile {
                 duration: Duration::from_secs(1),
                 pass_threshold: 50.0,
-                allowed_voters: None, // It won't be used (effective value is set below)
-                periodic_status_check: None,
+                ..Default::default()
             },
             reactions: vec![
                 Reaction {
@@ -444,8 +463,7 @@ mod tests {
             cfg: CfgProfile {
                 duration: Duration::from_secs(1),
                 pass_threshold: 75.0,
-                allowed_voters: None, // It won't be used (effective value is set below)
-                periodic_status_check: None,
+                ..Default::default()
             },
             reactions: vec![
                 Reaction {

@@ -208,7 +208,7 @@ impl GH for GHApi {
                         {
                             for user in members {
                                 if !allowed_voters.contains(&user) {
-                                    allowed_voters.push(user.to_owned());
+                                    allowed_voters.push(user.clone());
                                 }
                             }
                         }
@@ -220,7 +220,7 @@ impl GH for GHApi {
             if let Some(users) = &cfg_allowed_voters.users {
                 for user in users {
                     if !allowed_voters.contains(user) {
-                        allowed_voters.push(user.to_owned());
+                        allowed_voters.push(user.clone());
                     }
                 }
             }

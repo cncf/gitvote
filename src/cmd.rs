@@ -120,7 +120,7 @@ impl Command {
                         if rule.matches(pr_files.as_slice())? {
                             let cmd = Command::CreateVote(CreateVoteInput::new(
                                 Some(&rule.profile),
-                                &Event::PullRequest(event.to_owned()),
+                                &Event::PullRequest(event.clone()),
                             ));
                             return Ok(Some(cmd));
                         }
@@ -154,7 +154,7 @@ impl CreateVoteInput {
     pub(crate) fn new(profile_name: Option<&str>, event: &Event) -> Self {
         match event {
             Event::Issue(event) => Self {
-                profile_name: profile_name.map(|s| s.to_string()),
+                profile_name: profile_name.map(ToString::to_string),
                 created_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_id: event.issue.id,
@@ -165,7 +165,7 @@ impl CreateVoteInput {
                 organization: event.organization.as_ref().map(|o| o.login.clone()),
             },
             Event::IssueComment(event) => Self {
-                profile_name: profile_name.map(|s| s.to_string()),
+                profile_name: profile_name.map(ToString::to_string),
                 created_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_id: event.issue.id,
@@ -176,7 +176,7 @@ impl CreateVoteInput {
                 organization: event.organization.as_ref().map(|o| o.login.clone()),
             },
             Event::PullRequest(event) => Self {
-                profile_name: profile_name.map(|s| s.to_string()),
+                profile_name: profile_name.map(ToString::to_string),
                 created_by: event.sender.login.clone(),
                 installation_id: event.installation.id,
                 issue_id: event.pull_request.id,
