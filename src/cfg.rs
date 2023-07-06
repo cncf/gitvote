@@ -82,6 +82,8 @@ pub(crate) struct CfgProfile {
     pub allowed_voters: Option<AllowedVoters>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub periodic_status_check: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_on_passing: Option<bool>,
 }
 
 impl CfgProfile {
@@ -206,7 +208,7 @@ mod tests {
                 .await
                 .unwrap_err(),
             CfgError::ConfigNotFound
-        )
+        );
     }
 
     #[tokio::test]
@@ -229,7 +231,7 @@ mod tests {
             .await
             .unwrap_err(),
             CfgError::InvalidConfig(_)
-        ))
+        ));
     }
 
     #[tokio::test]
@@ -252,7 +254,7 @@ mod tests {
             .await
             .unwrap_err(),
             CfgError::InvalidConfig(ERR_TEAMS_NOT_ALLOWED.to_string())
-        )
+        );
     }
 
     #[tokio::test]
@@ -275,7 +277,7 @@ mod tests {
             .await
             .unwrap_err(),
             CfgError::ProfileNotFound
-        )
+        );
     }
 
     #[tokio::test]
@@ -294,9 +296,9 @@ mod tests {
                 duration: Duration::from_secs(300),
                 pass_threshold: 50.0,
                 allowed_voters: Some(AllowedVoters::default()),
-                periodic_status_check: None,
+                ..Default::default()
             }
-        )
+        );
     }
 
     #[tokio::test]
@@ -326,8 +328,8 @@ mod tests {
                     users: Some(vec![USER1.to_string(), USER2.to_string()]),
                     ..Default::default()
                 }),
-                periodic_status_check: None,
+                ..Default::default()
             }
-        )
+        );
     }
 }

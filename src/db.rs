@@ -37,6 +37,9 @@ pub(crate) trait DB {
         issue_number: i64,
     ) -> Result<Option<Vote>>;
 
+    /// Get open votes that have close on passing enabled.
+    async fn get_open_votes_with_close_on_passing(&self) -> Result<Vec<Vote>>;
+
     /// Get pending status checks.
     async fn get_pending_status_checks(&self) -> Result<Vec<CheckVoteInput>>;
 
@@ -53,6 +56,9 @@ pub(crate) trait DB {
         input: &CreateVoteInput,
         cfg: &CfgProfile,
     ) -> Result<Uuid>;
+
+    /// Update vote's ending timestamp.
+    async fn update_vote_ends_at(&self, vote_id: Uuid) -> Result<()>;
 
     /// Update vote's last check ts.
     async fn update_vote_last_check(&self, vote_id: Uuid) -> Result<()>;
@@ -74,23 +80,7 @@ impl PgDB {
         let vote = tx
             .query_opt(
                 "
-                select
-                    vote_id,
-                    vote_comment_id,
-                    created_at,
-                    created_by,
-                    ends_at,
-                    closed,
-                    closed_at,
-                    checked_at,
-                    cfg,
-                    installation_id,
-                    issue_id,
-                    issue_number,
-                    is_pull_request,
-                    repository_full_name,
-                    organization,
-                    results
+                select *
                 from vote
                 where current_timestamp > ends_at
                 and closed = false
@@ -100,28 +90,7 @@ impl PgDB {
                 &[],
             )
             .await?
-            .map(|row| {
-                let Json(cfg): Json<CfgProfile> = row.get("cfg");
-                let results: Option<Json<VoteResults>> = row.get("results");
-                Vote {
-                    vote_id: row.get("vote_id"),
-                    vote_comment_id: row.get("vote_comment_id"),
-                    created_at: row.get("created_at"),
-                    created_by: row.get("created_by"),
-                    ends_at: row.get("ends_at"),
-                    closed: row.get("closed"),
-                    closed_at: row.get("closed_at"),
-                    checked_at: row.get("checked_at"),
-                    cfg,
-                    installation_id: row.get("installation_id"),
-                    issue_id: row.get("issue_id"),
-                    issue_number: row.get("issue_number"),
-                    is_pull_request: row.get("is_pull_request"),
-                    repository_full_name: row.get("repository_full_name"),
-                    organization: row.get("organization"),
-                    results: results.map(|Json(results)| results),
-                }
-            });
+            .map(|row| Vote::from(&row));
         Ok(vote)
     }
 
@@ -176,9 +145,8 @@ impl DB for PgDB {
         // Get pending finished vote (if any) from database
         let mut db = self.pool.get().await?;
         let tx = db.transaction().await?;
-        let vote = match PgDB::get_pending_finished_vote(&tx).await? {
-            Some(vote) => vote,
-            None => return Ok(None),
+        let Some(vote) = PgDB::get_pending_finished_vote(&tx).await? else {
+            return Ok(None);
         };
 
         // Calculate results
@@ -202,23 +170,7 @@ impl DB for PgDB {
         let vote = db
             .query_opt(
                 "
-                select
-                    vote_id,
-                    vote_comment_id,
-                    created_at,
-                    created_by,
-                    ends_at,
-                    closed,
-                    closed_at,
-                    checked_at,
-                    cfg,
-                    installation_id,
-                    issue_id,
-                    issue_number,
-                    is_pull_request,
-                    repository_full_name,
-                    organization,
-                    results
+                select *
                 from vote
                 where repository_full_name = $1::text
                 and issue_number = $2::bigint
@@ -227,29 +179,29 @@ impl DB for PgDB {
                 &[&repository_full_name, &issue_number],
             )
             .await?
-            .map(|row| {
-                let Json(cfg): Json<CfgProfile> = row.get("cfg");
-                let results: Option<Json<VoteResults>> = row.get("results");
-                Vote {
-                    vote_id: row.get("vote_id"),
-                    vote_comment_id: row.get("vote_comment_id"),
-                    created_at: row.get("created_at"),
-                    created_by: row.get("created_by"),
-                    ends_at: row.get("ends_at"),
-                    closed: row.get("closed"),
-                    closed_at: row.get("closed_at"),
-                    checked_at: row.get("checked_at"),
-                    cfg,
-                    installation_id: row.get("installation_id"),
-                    issue_id: row.get("issue_id"),
-                    issue_number: row.get("issue_number"),
-                    is_pull_request: row.get("is_pull_request"),
-                    repository_full_name: row.get("repository_full_name"),
-                    organization: row.get("organization"),
-                    results: results.map(|Json(results)| results),
-                }
-            });
+            .map(|row| Vote::from(&row));
         Ok(vote)
+    }
+
+    /// [DB::get_open_votes_with_close_on_passing]
+    async fn get_open_votes_with_close_on_passing(&self) -> Result<Vec<Vote>> {
+        let db = self.pool.get().await?;
+        let votes = db
+            .query(
+                "
+                select *
+                from vote
+                where closed = false
+                and cfg ? 'close_on_passing'
+                and (cfg->>'close_on_passing')::boolean = true
+                ",
+                &[],
+            )
+            .await?
+            .iter()
+            .map(Vote::from)
+            .collect();
+        Ok(votes)
     }
 
     /// [DB::get_pending_status_checks]
@@ -375,6 +327,21 @@ impl DB for PgDB {
             .await?
             .get("vote_id");
         Ok(vote_id)
+    }
+
+    /// [DB::update_vote_ends_at]
+    async fn update_vote_ends_at(&self, vote_id: Uuid) -> Result<()> {
+        let db = self.pool.get().await?;
+        db.execute(
+            "
+            update vote set
+                ends_at = current_timestamp
+            where vote_id = $1::uuid;
+            ",
+            &[&vote_id],
+        )
+        .await?;
+        Ok(())
     }
 
     /// [DB::update_vote_last_check]

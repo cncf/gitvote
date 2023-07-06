@@ -1,3 +1,13 @@
+#![warn(clippy::all, clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::doc_markdown,
+    clippy::wildcard_imports
+)]
+
 use crate::{db::PgDB, github::GHApi};
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -45,7 +55,7 @@ async fn main() -> Result<()> {
 
     // Setup logging
     if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "gitvote=debug")
+        std::env::set_var("RUST_LOG", "gitvote=debug");
     }
     let s = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env());
     match cfg.get_string("log.format").as_deref() {
@@ -74,11 +84,11 @@ async fn main() -> Result<()> {
     let (cmds_tx, cmds_rx) = async_channel::unbounded();
     let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
     let votes_processor = processor::Processor::new(db.clone(), gh.clone());
-    let votes_processor_done = votes_processor.start(cmds_tx.clone(), cmds_rx, stop_tx.clone());
+    let votes_processor_done = votes_processor.start(cmds_tx.clone(), &cmds_rx, &stop_tx);
     debug!("[votes processor] started");
 
     // Setup and launch HTTP server
-    let router = handlers::setup_router(cfg.clone(), db, gh, cmds_tx)?;
+    let router = handlers::setup_router(&cfg, db, gh, cmds_tx)?;
     let addr: SocketAddr = cfg.get_string("addr")?.parse()?;
     info!(%addr, "gitvote service started");
     axum::Server::bind(&addr)
