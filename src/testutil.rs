@@ -163,5 +163,6 @@ pub(crate) fn setup_test_vote_results() -> VoteResults {
             },
         )]),
         allowed_voters: 1,
+        pending_voters: vec![],
     }
 }

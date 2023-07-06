@@ -106,6 +106,7 @@ pub(crate) struct VoteResults {
     pub non_binding: i64,
     pub allowed_voters: i64,
     pub votes: HashMap<UserName, UserVote>,
+    pub pending_voters: Vec<UserName>,
 }
 
 /// User's vote details.
@@ -187,24 +188,25 @@ pub(crate) async fn calculate<'a>(
     if !allowed_voters.is_empty() {
         in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
     }
-    let passed = in_favor_percentage >= vote.cfg.pass_threshold;
-    let not_voted = allowed_voters
+    let pending_voters: Vec<UserName> = allowed_voters
         .iter()
         .filter(|user| !votes.contains_key(*user))
-        .count() as i64;
+        .cloned()
+        .collect();
 
     Ok(VoteResults {
-        passed,
+        passed: in_favor_percentage >= vote.cfg.pass_threshold,
         in_favor_percentage,
         pass_threshold: vote.cfg.pass_threshold,
         in_favor,
         against,
         abstain,
-        not_voted,
+        not_voted: pending_voters.len() as i64,
         binding,
         non_binding,
         allowed_voters: allowed_voters.len() as i64,
         votes,
+        pending_voters,
     })
 }
 
@@ -335,6 +337,7 @@ mod tests {
                     )
                 ]),
                 allowed_voters: 1,
+                pending_voters: vec![],
             }
         },
 
@@ -372,6 +375,7 @@ mod tests {
                 non_binding: 0,
                 votes: HashMap::new(),
                 allowed_voters: 1,
+                pending_voters: vec![USER1.to_string()],
             }
         },
 
@@ -455,6 +459,7 @@ mod tests {
                     ),
                 ]),
                 allowed_voters: 4,
+                pending_voters: vec![USER4.to_string()],
             }
         },
 
@@ -525,6 +530,7 @@ mod tests {
                     ),
                 ]),
                 allowed_voters: 4,
+                pending_voters: vec![USER4.to_string()],
             }
         },
     );
