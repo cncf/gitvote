@@ -24,7 +24,7 @@ ignore = "0.4.20"
 jsonwebtoken = "8.3.0"
 lazy_static = "1.4.0"
 octocrab = "0.29.1"
-openssl = { version = "0.10.55", features = ["vendored"] }
+openssl = { version = "0.10.56", features = ["vendored"] }
 postgres-openssl = "0.5.0"
 regex = "1.9.1"
 reqwest = "0.11.18"
