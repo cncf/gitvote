@@ -2,8 +2,8 @@ apiVersion: v2
 name: gitvote
 description: GitVote is a GitHub application that allows holding a vote on issues and pull requests
 type: application
-version: 1.0.0
-appVersion: 1.0.0
+version: 1.1.0
+appVersion: 1.1.0
 kubeVersion: ">= 1.19.0-0"
 home: https://gitvote.dev
 icon: https://raw.githubusercontent.com/cncf/gitvote/main/docs/logo/logo.png
@@ -25,21 +25,20 @@ annotations:
   artifacthub.io/category: skip-prediction
   artifacthub.io/changes: |
     - kind: added
-      description: New command to check the status of a vote
-      links:
-        - name: Documentation
-          url: https://github.com/cncf/gitvote#checking-votes
+      description: Support for automatic periodic status checks
     - kind: added
-      description: JSON log format
+      description: Auto-close vote on passing feature
+    - kind: added
+      description: Mention pending voters when checking vote status
+    - kind: added
+      description: Allow excluding team maintainers from allowed voters
     - kind: changed
-      description: Only repository collaborators can now cancel votes
+      description: Improve comments templates
     - kind: changed
-      description: Improve logging plus some refactoring
+      description: Bump Alpine to 3.18.3
     - kind: changed
       description: Upgrade dependencies
-    - kind: fixed
-      description: Issue with dbmigrator in Helm chart
-  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/images: |
     - name: dbmigrator
       image: public.ecr.aws/g6m3a0y9/gitvote-dbmigrator

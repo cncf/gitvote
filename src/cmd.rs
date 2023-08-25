@@ -15,7 +15,7 @@ const CMD_CHECK_VOTE: &str = "check-vote";
 
 lazy_static! {
     /// Regex used to detect commands in issues/prs comments.
-    static ref CMD: Regex = Regex::new(r#"(?m)^/(vote|cancel-vote|check-vote)-?([a-zA-Z0-9]*)\s*$"#)
+    static ref CMD: Regex = Regex::new(r"(?m)^/(vote|cancel-vote|check-vote)-?([a-zA-Z0-9]*)\s*$")
         .expect("invalid CMD regexp");
 }
 
