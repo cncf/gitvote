@@ -1,5 +1,5 @@
 use crate::cfg::CfgProfile;
-use anyhow::Result;
+use anyhow::{Error, Result};
 use async_trait::async_trait;
 use axum::http::HeaderValue;
 #[cfg(test)]
@@ -594,4 +594,18 @@ pub(crate) struct File {
 pub(crate) fn split_full_name(full_name: &str) -> (&str, &str) {
     let mut parts = full_name.split('/');
     (parts.next().unwrap(), parts.next().unwrap())
+}
+
+/// Check if the provided error is a "Not Found" error from GitHub.
+pub(crate) fn is_not_found_error(err: &Error) -> bool {
+    if let Some(octocrab::Error::GitHub {
+        source,
+        backtrace: _,
+    }) = err.downcast_ref::<octocrab::Error>()
+    {
+        if source.message == "Not Found" {
+            return true;
+        }
+    }
+    false
 }

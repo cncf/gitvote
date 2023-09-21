@@ -1,7 +1,7 @@
 use crate::{
     cfg::CfgProfile,
     cmd::{CheckVoteInput, CreateVoteInput},
-    github::{split_full_name, DynGH},
+    github::{self, split_full_name, DynGH},
     results::{self, Vote, VoteResults},
 };
 use anyhow::Result;
@@ -28,7 +28,7 @@ pub(crate) trait DB {
     ) -> Result<Option<Uuid>>;
 
     /// Close any pending finished vote.
-    async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, VoteResults)>>;
+    async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, Option<VoteResults>)>>;
 
     /// Get open vote (if available) in the issue/pr provided.
     async fn get_open_vote(
@@ -84,6 +84,7 @@ impl PgDB {
                 from vote
                 where current_timestamp > ends_at
                 and closed = false
+                order by random()
                 for update of vote skip locked
                 limit 1
                 ",
@@ -98,7 +99,7 @@ impl PgDB {
     async fn store_vote_results(
         tx: &Transaction<'_>,
         vote_id: Uuid,
-        results: &VoteResults,
+        results: &Option<VoteResults>,
     ) -> Result<()> {
         tx.execute(
             "
@@ -141,7 +142,7 @@ impl DB for PgDB {
     }
 
     /// [DB::close_finished_vote]
-    async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, VoteResults)>> {
+    async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, Option<VoteResults>)>> {
         // Get pending finished vote (if any) from database
         let mut db = self.pool.get().await?;
         let tx = db.transaction().await?;
@@ -151,7 +152,18 @@ impl DB for PgDB {
 
         // Calculate results
         let (owner, repo) = split_full_name(&vote.repository_full_name);
-        let results = results::calculate(gh, owner, repo, &vote).await?;
+        let results = match results::calculate(gh, owner, repo, &vote).await {
+            Ok(results) => Some(results),
+            Err(err) => {
+                if github::is_not_found_error(&err) {
+                    // Vote comment was deleted. We still want to proceed and
+                    // close the vote so that we don't try again to close it.
+                    None
+                } else {
+                    return Err(err);
+                }
+            }
+        };
 
         // Store results in database
         PgDB::store_vote_results(&tx, vote.vote_id, &results).await?;
