@@ -424,32 +424,40 @@ impl Processor {
         // Record vote_id as part of the current span
         tracing::Span::current().record("vote_id", &vote.vote_id.to_string());
 
-        // Post vote closed comment on the issue/pr
+        // Post vote closed comment on the issue/pr if results were returned
+        // (i.e. if the vote comment was removed, the vote will be closed but
+        // no results will be received)
         let inst_id = vote.installation_id as u64;
         let (owner, repo) = split_full_name(&vote.repository_full_name);
-        let body = tmpl::VoteClosed::new(&results).render()?;
-        self.gh
-            .post_comment(inst_id, owner, repo, vote.issue_number, &body)
-            .await?;
+        if let Some(results) = &results {
+            let body = tmpl::VoteClosed::new(results).render()?;
+            self.gh
+                .post_comment(inst_id, owner, repo, vote.issue_number, &body)
+                .await?;
+        }
 
         // Create check run if the vote is on a pull request
         if vote.is_pull_request {
-            let (conclusion, summary) = if results.passed {
-                (
-                    "success",
-                    format!(
-                        "The vote passed! {} out of {} voted in favor.",
-                        results.in_favor, results.allowed_voters
-                    ),
-                )
+            let (conclusion, summary) = if let Some(results) = &results {
+                if results.passed {
+                    (
+                        "success",
+                        format!(
+                            "The vote passed! {} out of {} voted in favor.",
+                            results.in_favor, results.allowed_voters
+                        ),
+                    )
+                } else {
+                    (
+                        "failure",
+                        format!(
+                            "The vote did not pass. {} out of {} voted in favor.",
+                            results.in_favor, results.allowed_voters
+                        ),
+                    )
+                }
             } else {
-                (
-                    "failure",
-                    format!(
-                        "The vote did not pass. {} out of {} voted in favor.",
-                        results.in_favor, results.allowed_voters
-                    ),
-                )
+                ("success", "The vote was cancelled".to_string())
             };
             let check_details = CheckDetails {
                 status: "completed".to_string(),
@@ -1194,7 +1202,7 @@ mod tests {
         db.expect_close_finished_vote().returning(move |_| {
             Box::pin(future::ready(Ok(Some((
                 setup_test_vote(),
-                results_copy.clone(),
+                Some(results_copy.clone()),
             )))))
         });
         let mut gh = MockGH::new();
@@ -1222,7 +1230,7 @@ mod tests {
         db.expect_close_finished_vote().returning(move |_| {
             let mut vote = setup_test_vote();
             vote.is_pull_request = true;
-            Box::pin(future::ready(Ok(Some((vote, results_copy.clone())))))
+            Box::pin(future::ready(Ok(Some((vote, Some(results_copy.clone()))))))
         });
         let mut gh = MockGH::new();
         gh.expect_post_comment()
@@ -1266,7 +1274,7 @@ mod tests {
         db.expect_close_finished_vote().returning(move |_| {
             let mut vote = setup_test_vote();
             vote.is_pull_request = true;
-            Box::pin(future::ready(Ok(Some((vote, results_copy.clone())))))
+            Box::pin(future::ready(Ok(Some((vote, Some(results_copy.clone()))))))
         });
         let mut gh = MockGH::new();
         gh.expect_post_comment()
