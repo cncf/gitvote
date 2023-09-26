@@ -4,6 +4,52 @@ entries:
   - annotations:
       artifacthub.io/category: skip-prediction
       artifacthub.io/changes: |
+        - kind: fixed
+          description: Issue closing vote
+        - kind: changed
+          description: Upgrade dependencies
+      artifacthub.io/containsSecurityUpdates: "true"
+      artifacthub.io/images: |
+        - name: dbmigrator
+          image: public.ecr.aws/g6m3a0y9/gitvote-dbmigrator
+        - name: gitvote
+          image: public.ecr.aws/g6m3a0y9/gitvote
+      artifacthub.io/links: |
+        - name: source
+          url: https://github.com/cncf/gitvote
+        - name: support
+          url: https://github.com/cncf/gitvote/issues
+    apiVersion: v2
+    appVersion: 1.1.1
+    created: "2023-09-26T06:13:38.184441844Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: https://charts.helm.sh/stable
+      version: 8.2.1
+    description: GitVote is a GitHub application that allows holding a vote on issues
+      and pull requests
+    digest: 4e6a6ce8bfc24591817c0c1a35a16870ea6e1619245aef2c9c5de752ecd69b78
+    home: https://gitvote.dev
+    icon: https://raw.githubusercontent.com/cncf/gitvote/main/docs/logo/logo.png
+    keywords:
+    - git
+    - vote
+    - gitvote
+    kubeVersion: '>= 1.19.0-0'
+    maintainers:
+    - email: tegioz@icloud.com
+      name: Sergio
+    - email: cynthiasg@icloud.com
+      name: Cintia
+    name: gitvote
+    type: application
+    urls:
+    - https://github.com/cncf/gitvote/releases/download/gitvote-chart-1.1.1/gitvote-1.1.1.tgz
+    version: 1.1.1
+  - annotations:
+      artifacthub.io/category: skip-prediction
+      artifacthub.io/changes: |
         - kind: added
           description: Support for automatic periodic status checks
         - kind: added
@@ -157,4 +203,4 @@ entries:
     urls:
     - https://github.com/cncf/gitvote/releases/download/gitvote-chart-0.2.0/gitvote-0.2.0.tgz
     version: 0.2.0
-generated: "2023-08-25T10:40:52.283679749Z"
+generated: "2023-09-26T06:13:38.184466247Z"
