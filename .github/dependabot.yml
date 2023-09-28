@@ -4,19 +4,30 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "wednesday"
+    groups:
+      backend:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "wednesday"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "wednesday"
+
   - package-ecosystem: "docker"
     directory: "/database/migrations"
     schedule:
       interval: "weekly"
-      day: "wednesday"
+
