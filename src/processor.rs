@@ -139,14 +139,14 @@ impl Processor {
                     Ok(None) => tokio::select! {
                         // No pending finished votes were found, pause unless
                         // we've been asked to stop
-                        _ = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
+                        () = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
                         _ = stop_rx.recv() => break,
                     },
                     Err(_) => {
                         // Something went wrong closing finished vote, pause
                         // unless we've been asked to stop
                         tokio::select! {
-                            _ = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
+                            () = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
                             _ = stop_rx.recv() => break,
                         }
                     }
@@ -184,7 +184,7 @@ impl Processor {
                 // Pause until it's time for the next run or exit if the votes
                 // processor has been asked to stop
                 tokio::select! {
-                    _ = sleep(STATUS_CHECK_FREQUENCY) => {},
+                    () = sleep(STATUS_CHECK_FREQUENCY) => {},
                     _ = stop_rx.recv() => break,
                 }
             }
@@ -226,7 +226,7 @@ impl Processor {
                 // Pause until it's time for the next run or exit if the votes
                 // processor has been asked to stop
                 tokio::select! {
-                    _ = sleep(AUTO_CLOSE_FREQUENCY) => {},
+                    () = sleep(AUTO_CLOSE_FREQUENCY) => {},
                     _ = stop_rx.recv() => break,
                 }
             }
