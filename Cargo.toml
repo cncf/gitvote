@@ -10,7 +10,7 @@ anyhow = "1.0.75"
 askama = "0.12.1"
 askama_axum = "0.3.0"
 async-channel = "1.9.0"
-async-trait = "0.1.73"
+async-trait = "0.1.74"
 axum = { version = "0.6.20", features = ["macros"] }
 clap = { version = "4.4.6", features = ["derive"] }
 config = "0.13.3"
