@@ -20,7 +20,7 @@ jobs:
           aws-region: us-east-2
       - name: Login to AWS ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push gitvote-dbmigrator image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -42,7 +42,7 @@ jobs:
           aws-region: us-east-2
       - name: Login to AWS ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push gitvote image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
