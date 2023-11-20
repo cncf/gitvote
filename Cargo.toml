@@ -53,5 +53,5 @@ uuid = { version = "1.5.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
 http-body = "0.4.5"
-hyper = "0.14.27"
+hyper = "1.0.1"
 mockall = "0.11.4"
