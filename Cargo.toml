@@ -52,6 +52,6 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 uuid = { version = "1.5.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
-http-body = "0.4.5"
+http-body = "1.0.0"
 hyper = "0.14.27"
 mockall = "0.11.4"
