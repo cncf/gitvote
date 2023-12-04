@@ -8,23 +8,23 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.75"
 askama = "0.12.1"
-askama_axum = "0.3.0"
-async-channel = "2.1.0"
+askama_axum = "0.4.0"
+async-channel = "2.1.1"
 async-trait = "0.1.74"
-axum = { version = "0.6.20", features = ["macros"] }
-clap = { version = "4.4.8", features = ["derive"] }
-config = "0.13.3"
+axum = { version = "0.7.2", features = ["macros"] }
+clap = { version = "4.4.11", features = ["derive"] }
+config = "0.13.4"
 deadpool-postgres = { version = "0.11.0", features = ["serde"] }
 futures = "0.3.29"
 hex = "0.4.3"
 hmac = "0.12.1"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
-ignore = "0.4.20"
-jsonwebtoken = "9.1.0"
+ignore = "0.4.21"
+jsonwebtoken = "9.2.0"
 lazy_static = "1.4.0"
 octocrab = "0.32.0"
-openssl = { version = "0.10.59", features = ["vendored"] }
+openssl = { version = "0.10.60", features = ["vendored"] }
 postgres-openssl = "0.5.0"
 regex = "1.10.2"
 reqwest = "0.11.22"
@@ -46,7 +46,7 @@ tokio-postgres = { version = "0.7.10", features = [
     "with-time-0_3",
 ] }
 tower = "0.4.13"
-tower-http = { version = "0.4.4", features = ["trace"] }
+tower-http = { version = "0.5.0", features = ["trace"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 uuid = { version = "1.6.1", features = ["serde", "v4"] }
