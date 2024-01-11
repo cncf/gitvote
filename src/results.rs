@@ -16,6 +16,7 @@ pub(crate) const REACTION_ABSTAIN: &str = "eyes";
 
 /// Vote information.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub(crate) struct Vote {
     pub vote_id: Uuid,
     pub vote_comment_id: i64,

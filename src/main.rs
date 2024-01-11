@@ -17,7 +17,7 @@ use octocrab::Octocrab;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio::{signal, sync::broadcast};
+use tokio::{net::TcpListener, signal, sync::broadcast};
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
 
@@ -90,9 +90,9 @@ async fn main() -> Result<()> {
     // Setup and launch HTTP server
     let router = handlers::setup_router(&cfg, db, gh, cmds_tx)?;
     let addr: SocketAddr = cfg.get_string("addr")?.parse()?;
+    let listener = TcpListener::bind(addr).await?;
     info!(%addr, "gitvote service started");
-    axum::Server::bind(&addr)
-        .serve(router.into_make_service())
+    axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();

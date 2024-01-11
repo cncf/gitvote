@@ -188,12 +188,12 @@ mod tests {
     use crate::testutil::*;
     use crate::{cmd::CreateVoteInput, db::MockDB};
     use async_channel::Receiver;
+    use axum::body::to_bytes;
     use axum::{
         body::Body,
         http::{header::CONTENT_TYPE, Request},
     };
     use futures::future;
-    use http_body::combinators::UnsyncBoxBody;
     use hyper::Response;
     use mockall::predicate::eq;
     use std::{fs, path::Path};
@@ -253,11 +253,9 @@ mod tests {
                     .method("POST")
                     .uri("/api/events")
                     .header(GITHUB_SIGNATURE_HEADER, "invalid-signature")
-                    .body(
-                        fs::read(Path::new(TESTDATA_PATH).join("event-cmd.json"))
-                            .unwrap()
-                            .into(),
-                    )
+                    .body(Body::from(
+                        fs::read(Path::new(TESTDATA_PATH).join("event-cmd.json")).unwrap(),
+                    ))
                     .unwrap(),
             )
             .await
@@ -278,7 +276,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/events")
                     .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
-                    .body(body.into())
+                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
@@ -303,7 +301,7 @@ mod tests {
                     .uri("/api/events")
                     .header(GITHUB_EVENT_HEADER, "issue_comment")
                     .header(GITHUB_SIGNATURE_HEADER, generate_signature(body))
-                    .body(body.to_vec().into())
+                    .body(Body::from(body.to_vec()))
                     .unwrap(),
             )
             .await
@@ -328,7 +326,7 @@ mod tests {
                     .uri("/api/events")
                     .header(GITHUB_EVENT_HEADER, "unsupported")
                     .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
-                    .body(body.into())
+                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
@@ -350,7 +348,7 @@ mod tests {
                     .uri("/api/events")
                     .header(GITHUB_EVENT_HEADER, "issue_comment")
                     .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
-                    .body(body.into())
+                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
@@ -372,7 +370,7 @@ mod tests {
                     .uri("/api/events")
                     .header(GITHUB_EVENT_HEADER, "issue_comment")
                     .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
-                    .body(body.into())
+                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
@@ -407,7 +405,7 @@ mod tests {
                     .uri("/api/events")
                     .header(GITHUB_EVENT_HEADER, "issue_comment")
                     .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
-                    .body(body.into())
+                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
@@ -453,7 +451,7 @@ mod tests {
                     .uri("/api/events")
                     .header(GITHUB_EVENT_HEADER, "pull_request")
                     .header(GITHUB_SIGNATURE_HEADER, generate_signature(body.as_slice()))
-                    .body(body.into())
+                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
@@ -608,8 +606,8 @@ mod tests {
             .unwrap()
     }
 
-    async fn get_body(response: Response<UnsyncBoxBody<Bytes, axum::Error>>) -> Bytes {
-        hyper::body::to_bytes(response.into_body()).await.unwrap()
+    async fn get_body(response: Response<Body>) -> Bytes {
+        to_bytes(response.into_body(), usize::MAX).await.unwrap()
     }
 
     fn generate_signature(body: &[u8]) -> String {
