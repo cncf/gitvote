@@ -54,7 +54,7 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
       - name: Install Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@v4
       - name: Run chart-releaser
         run: |
           # From: https://github.com/metallb/metallb/blob/293f43c1f78ab1b5fa8879a76746b094bd9dd3ca/.github/workflows/publish.yaml#L134-L163
