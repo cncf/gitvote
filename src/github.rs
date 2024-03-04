@@ -1,11 +1,10 @@
 use crate::cfg::CfgProfile;
 use anyhow::{Error, Result};
 use async_trait::async_trait;
-use axum::http::HeaderValue;
+use axum::http::{HeaderValue, StatusCode};
 #[cfg(test)]
 use mockall::automock;
 use octocrab::{models::InstallationId, Octocrab, Page};
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
