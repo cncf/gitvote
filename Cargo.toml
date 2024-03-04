@@ -13,7 +13,7 @@ async-channel = "2.2.0"
 async-trait = "0.1.77"
 axum = { version = "0.7.4", features = ["macros"] }
 clap = { version = "4.5.1", features = ["derive"] }
-config = "0.13.4"
+config = "0.14.0"
 deadpool-postgres = { version = "0.12.1", features = ["serde"] }
 futures = "0.3.30"
 hex = "0.4.3"
