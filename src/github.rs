@@ -39,6 +39,16 @@ pub(crate) type UserName = String;
 #[async_trait]
 #[cfg_attr(test, automock)]
 pub(crate) trait GH {
+    /// Add labels to the provided issue.
+    async fn add_labels(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+        labels: &[&str],
+    ) -> Result<()>;
+
     /// Create a check run for the head commit in the provided pull request.
     async fn create_check_run(
         &self,
@@ -119,6 +129,16 @@ pub(crate) trait GH {
         body: &str,
     ) -> Result<CommentId>;
 
+    /// Remove label from the provided issue.
+    async fn remove_label(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+        label: &str,
+    ) -> Result<()>;
+
     /// Check if the user given is a collaborator of the provided repository.
     async fn user_is_collaborator(
         &self,
@@ -150,6 +170,27 @@ impl GHApi {
 
 #[async_trait]
 impl GH for GHApi {
+    /// [GH::add_labels]
+    async fn add_labels(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+        labels: &[&str],
+    ) -> Result<()> {
+        let client = self.app_client.installation(InstallationId(inst_id));
+        let labels = labels
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>();
+        client
+            .issues(owner, repo)
+            .add_labels(issue_number as u64, &labels)
+            .await?;
+        Ok(())
+    }
+
     /// [GH::create_check_run]
     async fn create_check_run(
         &self,
@@ -381,6 +422,23 @@ impl GH for GHApi {
             .create_comment(issue_number as u64, body)
             .await?;
         Ok(comment.id.0 as i64)
+    }
+
+    /// [GH::remove_label]
+    async fn remove_label(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+        label: &str,
+    ) -> Result<()> {
+        let client = self.app_client.installation(InstallationId(inst_id));
+        client
+            .issues(owner, repo)
+            .remove_label(issue_number as u64, label)
+            .await?;
+        Ok(())
     }
 
     /// [GH::user_is_collaborator]

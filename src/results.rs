@@ -2,7 +2,7 @@ use crate::{
     cfg::CfgProfile,
     github::{DynGH, UserName},
 };
-use anyhow::{format_err, Result};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
@@ -76,7 +76,7 @@ impl VoteOption {
             REACTION_IN_FAVOR => Self::InFavor,
             REACTION_AGAINST => Self::Against,
             REACTION_ABSTAIN => Self::Abstain,
-            _ => return Err(format_err!("reaction not supported")),
+            _ => bail!("reaction not supported"),
         };
         Ok(vote_option)
     }

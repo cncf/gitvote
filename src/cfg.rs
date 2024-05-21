@@ -1,5 +1,5 @@
 use crate::github::{DynGH, File, TeamSlug, UserName};
-use anyhow::{format_err, Result};
+use anyhow::{bail, Result};
 use ignore::gitignore::GitignoreBuilder;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
@@ -119,7 +119,7 @@ impl CfgProfile {
                 .and_then(|allowed_voters| allowed_voters.teams.as_ref())
             {
                 if !teams.is_empty() {
-                    return Err(format_err!(ERR_TEAMS_NOT_ALLOWED));
+                    bail!(ERR_TEAMS_NOT_ALLOWED);
                 }
             }
         }
