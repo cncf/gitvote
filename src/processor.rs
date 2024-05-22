@@ -40,6 +40,12 @@ const STATUS_CHECK_FREQUENCY: Duration = Duration::from_secs(60 * 30);
 /// How often we try to auto close votes that have already passed.
 const AUTO_CLOSE_FREQUENCY: Duration = Duration::from_secs(60 * 60 * 24);
 
+/// Label used to tag issues/prs where a vote has been created.
+const GITVOTE_LABEL: &str = "gitvote";
+
+/// Label used to tag issues/prs where a vote is open.
+const VOTE_OPEN_LABEL: &str = "vote open";
+
 /// A votes processor is in charge of creating the requested votes, stopping
 /// them at the scheduled time and publishing results, etc.
 pub(crate) struct Processor {
@@ -313,6 +319,17 @@ impl Processor {
                 .await?;
         }
 
+        // Add "vote open" label to issue/pr
+        self.gh
+            .add_labels(
+                inst_id,
+                owner,
+                repo,
+                i.issue_number,
+                &[GITVOTE_LABEL, VOTE_OPEN_LABEL],
+            )
+            .await?;
+
         debug!(?vote_id, "created");
         Ok(())
     }
@@ -352,15 +369,23 @@ impl Processor {
             .post_comment(inst_id, owner, repo, i.issue_number, &body)
             .await?;
 
-        // Create check run if needed
-        if cancelled_vote_id.is_some() && i.is_pull_request {
-            let check_details = CheckDetails {
-                status: "completed".to_string(),
-                conclusion: Some("success".to_string()),
-                summary: "Vote cancelled".to_string(),
-            };
+        // Create check run and remove "vote open" label if the vote was cancelled
+        if cancelled_vote_id.is_some() {
+            // Create check run if the vote is on a pull request
+            if i.is_pull_request {
+                let check_details = CheckDetails {
+                    status: "completed".to_string(),
+                    conclusion: Some("success".to_string()),
+                    summary: "Vote cancelled".to_string(),
+                };
+                self.gh
+                    .create_check_run(inst_id, owner, repo, i.issue_number, &check_details)
+                    .await?;
+            }
+
+            // Remove "vote open" label from issue/pr
             self.gh
-                .create_check_run(inst_id, owner, repo, i.issue_number, &check_details)
+                .remove_label(inst_id, owner, repo, i.issue_number, VOTE_OPEN_LABEL)
                 .await?;
         }
 
@@ -468,6 +493,11 @@ impl Processor {
                 .create_check_run(inst_id, owner, repo, vote.issue_number, &check_details)
                 .await?;
         }
+
+        // Remove "vote open" label from issue/pr
+        self.gh
+            .remove_label(inst_id, owner, repo, vote.issue_number, VOTE_OPEN_LABEL)
+            .await?;
 
         debug!("closed");
         Ok(Some(()))
@@ -834,6 +864,15 @@ mod tests {
                     && body == expected_body.as_str()
             })
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        gh.expect_add_labels()
+            .withf(|inst_id, owner, repo, issue_number, labels| {
+                *inst_id == INST_ID
+                    && owner == ORG
+                    && repo == REPO
+                    && *issue_number == ISSUE_NUM
+                    && labels == vec![GITVOTE_LABEL, VOTE_OPEN_LABEL]
+            })
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor
@@ -898,6 +937,15 @@ mod tests {
                     summary: "Vote open".to_string(),
                 }),
             )
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_add_labels()
+            .withf(|inst_id, owner, repo, issue_number, labels| {
+                *inst_id == INST_ID
+                    && owner == ORG
+                    && repo == REPO
+                    && *issue_number == ISSUE_NUM
+                    && labels == vec![GITVOTE_LABEL, VOTE_OPEN_LABEL]
+            })
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -1007,6 +1055,15 @@ mod tests {
                     && body == expected_body.as_str()
             })
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_OPEN_LABEL),
+            )
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         let event = setup_test_issue_comment_event();
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -1047,6 +1104,15 @@ mod tests {
                     conclusion: Some("success".to_string()),
                     summary: "Vote cancelled".to_string(),
                 }),
+            )
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_OPEN_LABEL),
             )
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         let event = setup_test_pr_event();
@@ -1216,6 +1282,15 @@ mod tests {
                     && body == expected_body.as_str()
             })
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_OPEN_LABEL),
+            )
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
         votes_processor.close_finished_vote().await.unwrap();
@@ -1254,6 +1329,15 @@ mod tests {
                     conclusion: Some("success".to_string()),
                     summary: "The vote passed! 1 out of 1 voted in favor.".to_string(),
                 }),
+            )
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_OPEN_LABEL),
             )
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
@@ -1298,6 +1382,15 @@ mod tests {
                     conclusion: Some("failure".to_string()),
                     summary: "The vote did not pass. 0 out of 1 voted in favor.".to_string(),
                 }),
+            )
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_OPEN_LABEL),
             )
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
