@@ -121,7 +121,7 @@ profiles:
     #
     # periodic_status_check: "5 days"
     #
-    periodic_status_check: "7 days"
+    periodic_status_check: null
 
     # Close on passing
     # 
