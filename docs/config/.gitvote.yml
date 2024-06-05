@@ -136,6 +136,21 @@ profiles:
     #
     close_on_passing: false
 
+    # Announcements
+    #
+    # GitVote can announce the results of a vote when it is closed on GitHub
+    # discussions. This feature won't be enabled if this configuration section
+    # is not provided. The slug of the category where the announcement will be
+    # posted to must be specified (i.e. announcements).
+    #
+    # announcements:
+    #   discussions:
+    #     category: announcements
+    #
+    announcements:
+      discussions:
+        category: announcements
+
   # Additional configuration profiles
   #
   # In addition to the default configuration profile, it is possible to add more

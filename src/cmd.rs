@@ -81,9 +81,7 @@ impl Command {
                     CMD_CREATE_VOTE => {
                         return Some(Command::CreateVote(CreateVoteInput::new(profile, event)))
                     }
-                    CMD_CANCEL_VOTE => {
-                        return Some(Command::CancelVote(CancelVoteInput::new(event)))
-                    }
+                    CMD_CANCEL_VOTE => return Some(Command::CancelVote(CancelVoteInput::new(event))),
                     CMD_CHECK_VOTE => return Some(Command::CheckVote(CheckVoteInput::new(event))),
                     _ => return None,
                 }
@@ -377,9 +375,11 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         gh.expect_get_pr_files()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _, _, _| {
                 Box::pin(future::ready(Ok(vec![File {
                     filename: "README.md".to_string(),
@@ -392,13 +392,8 @@ mod tests {
         let event = Event::PullRequest(event);
 
         assert_eq!(
-            Command::from_event_automatic(gh, &event.clone())
-                .await
-                .unwrap(),
-            Some(Command::CreateVote(CreateVoteInput::new(
-                Some("default"),
-                &event
-            )))
+            Command::from_event_automatic(gh, &event.clone()).await.unwrap(),
+            Some(Command::CreateVote(CreateVoteInput::new(Some("default"), &event)))
         );
     }
 }

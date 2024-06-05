@@ -17,7 +17,8 @@ To create votes, you'll first need to add a [.gitvote.yml](https://github.com/cn
 - At the root of the repository where the vote was created
 - At the root of the `.github` repository, for organization wide configuration
 
-Please note that the configuration file is **required** and no commands will be processed if it cannot be found. Once a vote is created, the configuration it will use during its lifetime will be the one present at the vote creation time.
+> [!IMPORTANT]
+> Please note that the configuration file is **required** and no commands will be processed if it cannot be found. Once a vote is created, the configuration it will use during its lifetime will be the one present at the vote creation time.
 
 For more information about the configuration file format please see the [reference documentation](https://github.com/cncf/gitvote/blob/main/docs/config/.gitvote.yml).
 
@@ -34,7 +35,8 @@ The command **must** be on a line by itself. Please note that GitVote only detec
 
 Alternatively, if you have setup multiple configuration profiles, you can also start votes using any of them with the command `/vote-PROFILE`.
 
-Only repositories collaborators can create votes. For organization-owned repositories, the list of collaborators includes outside collaborators, organization members that are direct collaborators, organization members with access through team memberships, organization members with access through default organization permissions, and organization owners.
+> [!NOTE]
+> Only repositories collaborators can create votes. For organization-owned repositories, the list of collaborators includes outside collaborators, organization members that are direct collaborators, organization members with access through team memberships, organization members with access through default organization permissions, and organization owners.
 
 Shortly after the comment with the `/vote` command is posted, the vote will be created and the bot will post a new comment to the corresponding issue or pull request with the vote instructions.
 
@@ -56,7 +58,8 @@ It is possible to vote `in favor`, `against` or to `abstain`, and each of these 
 
 Only votes from users with a binding vote as defined in the configuration file will be counted.
 
-*Please note that voting multiple options is not allowed and those votes won't be counted.*
+> [!WARNING]
+> Voting multiple options is not allowed and those votes won't be counted.
 
 ### Checking votes
 
@@ -64,7 +67,8 @@ It is possible to check the status of a vote in progress by calling the `/check-
 
 ![vote-status](docs/screenshots/vote-status.png)
 
-*Please note that this command can only be called once a day per vote (additional calls will be ignored).*
+> [!NOTE]
+> This command can only be called once a day per vote (additional calls will be ignored).
 
 ### Closing votes
 
@@ -78,13 +82,26 @@ It is possible to cancel a vote in progress by calling the `/cancel-vote` comman
 
 ![vote-cancelled](docs/screenshots/vote-cancelled.png)
 
-### Checks in pull requests (experimental)
+### Checks in pull requests
 
 When a vote on a pull request is closed, GitVote will add a check to the head commit with its result. If the vote passes, the result of the check will be *success*, whereas if it doesn't pass, it'll be *failure*. When used in combination with `protected branch`, this feature can be used to *require* a vote in favor before a pull request can be merged.
 
 ![check-passed](docs/screenshots/check-passed.png)
 
-At the moment this feature is always enabled but we'll make it configurable so that votes creators can opt-out per configuration profile.
+### Announcements
+
+GitVote is able to post announcements on GitHub discussions. When this feature is enabled, a new discussion will be created with the results of the vote once it is closed.
+
+Announcements can be configured per vote profile, by adding the `announcements` configuration section to the `.gitvote.yml` file.
+
+```yaml
+announcements:
+  discussions:
+    category: announcements  # Category slug (i.e. spaces are replaced by hyphens)
+```
+
+> [!NOTE]
+> This feature requires some extra permissions to be able to read and write discussions in your repositories. If you installed the GitVote GitHub application before this feature was available (June 2024), you should receive an email from GitHub requesting you to approve these new permissions. Please note that announcements won't be created until those permissions are granted.
 
 ## Adopters
 

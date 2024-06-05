@@ -90,6 +90,26 @@ impl<'a> VoteClosed<'a> {
     }
 }
 
+/// Template for the vote closed announcement.
+#[derive(Debug, Clone, Template)]
+#[template(path = "vote-closed-announcement.md")]
+pub(crate) struct VoteClosedAnnouncement<'a> {
+    issue_number: i64,
+    issue_title: &'a str,
+    results: &'a VoteResults,
+}
+
+impl<'a> VoteClosedAnnouncement<'a> {
+    /// Create a new VoteClosedAnnouncement template.
+    pub(crate) fn new(issue_number: i64, issue_title: &'a str, results: &'a VoteResults) -> Self {
+        Self {
+            issue_number,
+            issue_title,
+            results,
+        }
+    }
+}
+
 /// Template for the vote created comment.
 #[derive(Debug, Clone, Template)]
 #[template(path = "vote-created.md")]
@@ -195,11 +215,8 @@ mod filters {
         votes: &HashMap<UserName, UserVote>,
         max: &i64,
     ) -> askama::Result<Vec<(UserName, UserVote)>> {
-        let mut non_binding_votes: Vec<(UserName, UserVote)> = votes
-            .iter()
-            .filter(|(_, v)| !v.binding)
-            .map(|(n, v)| (n.clone(), v.clone()))
-            .collect();
+        let mut non_binding_votes: Vec<(UserName, UserVote)> =
+            votes.iter().filter(|(_, v)| !v.binding).map(|(n, v)| (n.clone(), v.clone())).collect();
         non_binding_votes.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
         Ok(non_binding_votes.into_iter().take(*max as usize).collect())
     }

@@ -1,4 +1,6 @@
-## Vote closed
+{% block introduction %}{% endblock %}
+
+## {% block title %}Vote closed{% endblock %}
 
 The vote {% if results.passed %}**passed**! 🎉{% else %}**did not pass**.{% endif %}
 

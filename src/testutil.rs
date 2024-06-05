@@ -1,5 +1,5 @@
 use crate::{
-    cfg::{AllowedVoters, CfgProfile},
+    cfg::{AllowedVoters, Announcements, CfgProfile, DiscussionsAnnouncements},
     github::*,
     results::{UserVote, Vote, VoteOption, VoteResults},
 };
@@ -21,6 +21,7 @@ pub(crate) const REPO: &str = "repo";
 pub(crate) const REPOFN: &str = "org/repo";
 pub(crate) const TESTDATA_PATH: &str = "src/testdata";
 pub(crate) const TITLE: &str = "Test title";
+pub(crate) const DISCUSSIONS_CATEGORY: &str = "announcements";
 pub(crate) const USER: &str = "user";
 pub(crate) const USER1: &str = "user1";
 pub(crate) const USER2: &str = "user2";
@@ -131,11 +132,17 @@ pub(crate) fn setup_test_vote() -> Vote {
                 users: Some(vec![USER1.to_string()]),
                 ..Default::default()
             }),
+            announcements: Some(Announcements {
+                discussions: Some(DiscussionsAnnouncements {
+                    category: DISCUSSIONS_CATEGORY.to_string(),
+                }),
+            }),
             ..Default::default()
         },
         installation_id: INST_ID as i64,
         issue_id: ISSUE_ID,
         issue_number: ISSUE_NUM,
+        issue_title: Some(TITLE.to_string()),
         is_pull_request: false,
         repository_full_name: REPOFN.to_string(),
         organization: Some(ORG.to_string()),

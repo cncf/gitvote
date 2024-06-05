@@ -81,26 +81,17 @@ async fn event(
     )
     .is_err()
     {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "no valid signature found".to_string(),
-        ));
+        return Err((StatusCode::BAD_REQUEST, "no valid signature found".to_string()));
     };
 
     // Parse event
     let event = match Event::try_from((headers.get(GITHUB_EVENT_HEADER), &body[..])) {
         Ok(event) => event,
         Err(EventError::MissingHeader) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                EventError::MissingHeader.to_string(),
-            ))
+            return Err((StatusCode::BAD_REQUEST, EventError::MissingHeader.to_string()))
         }
         Err(EventError::InvalidBody(err)) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                EventError::InvalidBody(err).to_string(),
-            ))
+            return Err((StatusCode::BAD_REQUEST, EventError::InvalidBody(err).to_string()))
         }
         Err(EventError::UnsupportedEvent) => return Ok(()),
     };
@@ -160,21 +151,16 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: &PullRequestEvent) -> Res
             if !gh.is_check_required(inst_id, owner, repo, branch).await? {
                 return Ok(());
             }
-            gh.create_check_run(inst_id, owner, repo, pr, &check_details)
-                .await?;
+            gh.create_check_run(inst_id, owner, repo, pr, &check_details).await?;
         }
         PullRequestEventAction::Synchronize => {
             if !gh.is_check_required(inst_id, owner, repo, branch).await? {
                 return Ok(());
             }
-            if db
-                .has_vote(&event.repository.full_name, event.pull_request.number)
-                .await?
-            {
+            if db.has_vote(&event.repository.full_name, event.pull_request.number).await? {
                 return Ok(());
             }
-            gh.create_check_run(inst_id, owner, repo, pr, &check_details)
-                .await?;
+            gh.create_check_run(inst_id, owner, repo, pr, &check_details).await?;
         }
         PullRequestEventAction::Other => {}
     };
@@ -204,13 +190,7 @@ mod tests {
         let (router, _) = setup_test_router();
 
         let response = router
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri("/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().method("GET").uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -218,9 +198,7 @@ mod tests {
         assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
         assert_eq!(
             get_body(response).await,
-            fs::read_to_string("templates/index.html")
-                .unwrap()
-                .trim_end_matches('\n')
+            fs::read_to_string("templates/index.html").unwrap().trim_end_matches('\n')
         );
     }
 
@@ -229,13 +207,7 @@ mod tests {
         let (router, _) = setup_test_router();
 
         let response = router
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/events")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().method("POST").uri("/api/events").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -283,10 +255,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(
-            get_body(response).await,
-            EventError::MissingHeader.to_string()
-        );
+        assert_eq!(get_body(response).await, EventError::MissingHeader.to_string());
     }
 
     #[tokio::test]
@@ -435,9 +404,11 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(None)));
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = Arc::new(gh);
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
@@ -478,6 +449,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
@@ -492,6 +464,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(false))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
@@ -506,6 +479,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_create_check_run()
             .with(
@@ -519,6 +493,7 @@ mod tests {
                     summary: "No vote found".to_string(),
                 }),
             )
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
@@ -533,6 +508,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(false))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
@@ -546,11 +522,13 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_has_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(true))));
         let db = Arc::new(db);
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
@@ -564,11 +542,13 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_has_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(false))));
         let db = Arc::new(db);
         let mut gh = MockGH::new();
         gh.expect_is_check_required()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(BRANCH))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_create_check_run()
             .with(
@@ -582,6 +562,7 @@ mod tests {
                     summary: "No vote found".to_string(),
                 }),
             )
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         let gh = Arc::new(gh);
         let mut event = setup_test_pr_event();
@@ -599,11 +580,7 @@ mod tests {
     }
 
     fn setup_test_config() -> Config {
-        Config::builder()
-            .set_default("github.webhookSecret", "secret")
-            .unwrap()
-            .build()
-            .unwrap()
+        Config::builder().set_default("github.webhookSecret", "secret").unwrap().build().unwrap()
     }
 
     async fn get_body(response: Response<Body>) -> Bytes {

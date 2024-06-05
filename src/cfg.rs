@@ -33,8 +33,8 @@ impl Cfg {
     ) -> Result<Self, CfgError> {
         match gh.get_config_file(inst_id, owner, repo).await {
             Some(content) => {
-                let cfg: Cfg = serde_yaml::from_str(&content)
-                    .map_err(|e| CfgError::InvalidConfig(e.to_string()))?;
+                let cfg: Cfg =
+                    serde_yaml::from_str(&content).map_err(|e| CfgError::InvalidConfig(e.to_string()))?;
                 Ok(cfg)
             }
             None => Err(CfgError::ConfigNotFound),
@@ -65,9 +65,7 @@ impl AutomationRule {
             builder.add_line(None, pattern)?;
         }
         let checker = builder.build()?;
-        let matches = files
-            .iter()
-            .any(|file| checker.matched(&file.filename, false).is_ignore());
+        let matches = files.iter().any(|file| checker.matched(&file.filename, false).is_ignore());
         Ok(matches)
     }
 }
@@ -80,6 +78,8 @@ pub(crate) struct CfgProfile {
     pub pass_threshold: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_voters: Option<AllowedVoters>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub announcements: Option<Announcements>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub periodic_status_check: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,10 +113,8 @@ impl CfgProfile {
         // Only repositories that belong to some organization can use teams in
         // the allowed voters configuration section.
         if !is_org {
-            if let Some(teams) = self
-                .allowed_voters
-                .as_ref()
-                .and_then(|allowed_voters| allowed_voters.teams.as_ref())
+            if let Some(teams) =
+                self.allowed_voters.as_ref().and_then(|allowed_voters| allowed_voters.teams.as_ref())
             {
                 if !teams.is_empty() {
                     bail!(ERR_TEAMS_NOT_ALLOWED);
@@ -137,6 +135,19 @@ pub(crate) struct AllowedVoters {
     pub users: Option<Vec<UserName>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exclude_team_maintainers: Option<bool>,
+}
+
+/// Announcements configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub(crate) struct Announcements {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discussions: Option<DiscussionsAnnouncements>,
+}
+
+/// GitHub discussions announcements configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub(crate) struct DiscussionsAnnouncements {
+    pub category: String,
 }
 
 /// Errors that may occur while getting the configuration profile.
@@ -200,13 +211,12 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(OWNER), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(None)));
         let gh = Arc::new(gh);
 
         assert_eq!(
-            CfgProfile::get(gh, INST_ID, OWNER, OWNER_IS_ORG, REPO, None)
-                .await
-                .unwrap_err(),
+            CfgProfile::get(gh, INST_ID, OWNER, OWNER_IS_ORG, REPO, None).await.unwrap_err(),
             CfgError::ConfigNotFound
         );
     }
@@ -216,6 +226,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(OWNER), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_invalid_config()))));
         let gh = Arc::new(gh);
 
@@ -239,6 +250,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(OWNER), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         let gh = Arc::new(gh);
 
@@ -262,6 +274,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(OWNER), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         let gh = Arc::new(gh);
 
@@ -285,13 +298,12 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(OWNER), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         let gh = Arc::new(gh);
 
         assert_eq!(
-            CfgProfile::get(gh, INST_ID, OWNER, OWNER_IS_ORG, REPO, None)
-                .await
-                .unwrap(),
+            CfgProfile::get(gh, INST_ID, OWNER, OWNER_IS_ORG, REPO, None).await.unwrap(),
             CfgProfile {
                 duration: Duration::from_secs(300),
                 pass_threshold: 50.0,
@@ -306,6 +318,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(OWNER), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         let gh = Arc::new(gh);
 

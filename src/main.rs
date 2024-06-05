@@ -75,9 +75,7 @@ async fn main() -> Result<()> {
     let app_id = cfg.get_int("github.appID")? as u64;
     let app_private_key = cfg.get_string("github.appPrivateKey")?;
     let app_private_key = jsonwebtoken::EncodingKey::from_rsa_pem(app_private_key.as_bytes())?;
-    let app_client = Octocrab::builder()
-        .app(app_id.into(), app_private_key)
-        .build()?;
+    let app_client = Octocrab::builder().app(app_id.into(), app_private_key).build()?;
     let gh = Arc::new(GHApi::new(app_client));
 
     // Setup and launch votes processor
@@ -92,10 +90,7 @@ async fn main() -> Result<()> {
     let addr: SocketAddr = cfg.get_string("addr")?.parse()?;
     let listener = TcpListener::bind(addr).await?;
     info!(%addr, "gitvote service started");
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .unwrap();
+    axum::serve(listener, router).with_graceful_shutdown(shutdown_signal()).await.unwrap();
 
     // Ask votes processor to stop and wait for it to finish
     drop(stop_tx);
@@ -111,9 +106,7 @@ async fn main() -> Result<()> {
 async fn shutdown_signal() {
     // Setup signal handlers
     let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install ctrl+c signal handler");
+        signal::ctrl_c().await.expect("failed to install ctrl+c signal handler");
     };
 
     #[cfg(unix)]

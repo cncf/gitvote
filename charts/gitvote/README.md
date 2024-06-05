@@ -14,6 +14,7 @@ Repository:
 
 - **Checks**: *read/write*
 - **Contents**: *read*
+- **Discussions**: *read/write*
 - **Issues**: *read/write*
 - **Metadata**: *read*
 - **Pull requests**: *read/write*
