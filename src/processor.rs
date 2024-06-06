@@ -15,7 +15,7 @@ use tokio::{
     task::JoinHandle,
     time::sleep,
 };
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, warn};
 use uuid::Uuid;
 
 /// Number of commands handlers workers.
@@ -71,9 +71,7 @@ impl Processor {
 
         // Launch commands handler workers
         for _ in 0..COMMANDS_HANDLERS_WORKERS {
-            let handle = self
-                .clone()
-                .commands_handler(cmds_rx.clone(), stop_tx.subscribe());
+            let handle = self.clone().commands_handler(cmds_rx.clone(), stop_tx.subscribe());
             workers_handles.push(handle);
         }
 
@@ -214,8 +212,7 @@ impl Processor {
                                 Ok(results) => {
                                     // If the vote has already passed, update its ending timestamp
                                     if results.passed {
-                                        if let Err(err) = self.db.update_vote_ends_at(vote_id).await
-                                        {
+                                        if let Err(err) = self.db.update_vote_ends_at(vote_id).await {
                                             error!(?err, ?vote.vote_id, "error updating vote ends at");
                                         }
                                     }
@@ -260,49 +257,30 @@ impl Processor {
                 let body = match err {
                     CfgError::ConfigNotFound => tmpl::ConfigNotFound {}.render()?,
                     CfgError::ProfileNotFound => tmpl::ConfigProfileNotFound {}.render()?,
-                    CfgError::InvalidConfig(reason) => {
-                        tmpl::InvalidConfig::new(&reason).render()?
-                    }
+                    CfgError::InvalidConfig(reason) => tmpl::InvalidConfig::new(&reason).render()?,
                 };
-                self.gh
-                    .post_comment(inst_id, owner, repo, i.issue_number, &body)
-                    .await?;
+                self.gh.post_comment(inst_id, owner, repo, i.issue_number, &body).await?;
                 return Ok(());
             }
         };
 
         // Only repository collaborators can create votes
-        if !self
-            .gh
-            .user_is_collaborator(inst_id, owner, repo, &i.created_by)
-            .await?
-        {
+        if !self.gh.user_is_collaborator(inst_id, owner, repo, &i.created_by).await? {
             let body = tmpl::VoteRestricted::new(&i.created_by).render()?;
-            self.gh
-                .post_comment(inst_id, owner, repo, i.issue_number, &body)
-                .await?;
+            self.gh.post_comment(inst_id, owner, repo, i.issue_number, &body).await?;
             return Ok(());
         }
 
         // Only allow one vote open at the same time per issue/pr
-        if self
-            .db
-            .has_vote_open(&i.repository_full_name, i.issue_number)
-            .await?
-        {
+        if self.db.has_vote_open(&i.repository_full_name, i.issue_number).await? {
             let body = tmpl::VoteInProgress::new(&i.created_by, i.is_pull_request).render()?;
-            self.gh
-                .post_comment(inst_id, owner, repo, i.issue_number, &body)
-                .await?;
+            self.gh.post_comment(inst_id, owner, repo, i.issue_number, &body).await?;
             return Ok(());
         }
 
         // Post vote created comment on the issue/pr
         let body = tmpl::VoteCreated::new(i, &cfg).render()?;
-        let vote_comment_id = self
-            .gh
-            .post_comment(inst_id, owner, repo, i.issue_number, &body)
-            .await?;
+        let vote_comment_id = self.gh.post_comment(inst_id, owner, repo, i.issue_number, &body).await?;
 
         // Store vote information in database
         let vote_id = self.db.store_vote(vote_comment_id, i, &cfg).await?;
@@ -314,9 +292,7 @@ impl Processor {
                 conclusion: None,
                 summary: "Vote open".to_string(),
             };
-            self.gh
-                .create_check_run(inst_id, owner, repo, i.issue_number, &check_details)
-                .await?;
+            self.gh.create_check_run(inst_id, owner, repo, i.issue_number, &check_details).await?;
         }
 
         // Add "vote open" label to issue/pr
@@ -340,19 +316,13 @@ impl Processor {
         // Only repository collaborators can cancel votes
         let inst_id = i.installation_id as u64;
         let (owner, repo) = split_full_name(&i.repository_full_name);
-        if !self
-            .gh
-            .user_is_collaborator(inst_id, owner, repo, &i.cancelled_by)
-            .await?
-        {
+        if !self.gh.user_is_collaborator(inst_id, owner, repo, &i.cancelled_by).await? {
             return Ok(());
         }
 
         // Try cancelling the vote open in the issue/pr provided
-        let cancelled_vote_id: Option<Uuid> = self
-            .db
-            .cancel_vote(&i.repository_full_name, i.issue_number)
-            .await?;
+        let cancelled_vote_id: Option<Uuid> =
+            self.db.cancel_vote(&i.repository_full_name, i.issue_number).await?;
 
         // Post the corresponding comment on the issue/pr
         let body: String;
@@ -365,9 +335,7 @@ impl Processor {
                 body = tmpl::NoVoteInProgress::new(&i.cancelled_by, i.is_pull_request).render()?;
             }
         }
-        self.gh
-            .post_comment(inst_id, owner, repo, i.issue_number, &body)
-            .await?;
+        self.gh.post_comment(inst_id, owner, repo, i.issue_number, &body).await?;
 
         // Create check run and remove "vote open" label if the vote was cancelled
         if cancelled_vote_id.is_some() {
@@ -378,15 +346,11 @@ impl Processor {
                     conclusion: Some("success".to_string()),
                     summary: "Vote cancelled".to_string(),
                 };
-                self.gh
-                    .create_check_run(inst_id, owner, repo, i.issue_number, &check_details)
-                    .await?;
+                self.gh.create_check_run(inst_id, owner, repo, i.issue_number, &check_details).await?;
             }
 
             // Remove "vote open" label from issue/pr
-            self.gh
-                .remove_label(inst_id, owner, repo, i.issue_number, VOTE_OPEN_LABEL)
-                .await?;
+            self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_OPEN_LABEL).await?;
         }
 
         Ok(())
@@ -397,11 +361,7 @@ impl Processor {
     #[instrument(fields(vote_id), skip_all, err(Debug))]
     async fn check_vote(&self, i: &CheckVoteInput) -> Result<()> {
         // Get open vote (if any) from database
-        let Some(vote) = self
-            .db
-            .get_open_vote(&i.repository_full_name, i.issue_number)
-            .await?
-        else {
+        let Some(vote) = self.db.get_open_vote(&i.repository_full_name, i.issue_number).await? else {
             return Ok(());
         };
 
@@ -415,9 +375,7 @@ impl Processor {
             if OffsetDateTime::now_utc() - checked_at < MAX_VOTE_CHECK_FREQUENCY {
                 // Post comment on the issue/pr and return
                 let body = tmpl::VoteCheckedRecently {}.render()?;
-                self.gh
-                    .post_comment(inst_id, owner, repo, vote.issue_number, &body)
-                    .await?;
+                self.gh.post_comment(inst_id, owner, repo, vote.issue_number, &body).await?;
                 return Ok(());
             }
         }
@@ -428,9 +386,7 @@ impl Processor {
 
         // Post vote status comment on the issue/pr
         let body = tmpl::VoteStatus::new(&results).render()?;
-        self.gh
-            .post_comment(inst_id, owner, repo, vote.issue_number, &body)
-            .await?;
+        self.gh.post_comment(inst_id, owner, repo, vote.issue_number, &body).await?;
 
         // Update vote's last check ts
         self.db.update_vote_last_check(vote.vote_id).await?;
@@ -449,16 +405,34 @@ impl Processor {
         // Record vote_id as part of the current span
         tracing::Span::current().record("vote_id", &vote.vote_id.to_string());
 
-        // Post vote closed comment on the issue/pr if results were returned
-        // (i.e. if the vote comment was removed, the vote will be closed but
-        // no results will be received)
+        // Extract some information from the vote
         let inst_id = vote.installation_id as u64;
         let (owner, repo) = split_full_name(&vote.repository_full_name);
+
+        // Post vote results (if some were returned; if the vote comment was
+        // removed, the vote will be closed but no results will be received)
         if let Some(results) = &results {
+            // Post comment on the issue/pr
             let body = tmpl::VoteClosed::new(results).render()?;
-            self.gh
-                .post_comment(inst_id, owner, repo, vote.issue_number, &body)
-                .await?;
+            self.gh.post_comment(inst_id, owner, repo, vote.issue_number, &body).await?;
+
+            // Post announcement to discussions if enabled in vote profile
+            if let Some(discussions) = &vote.cfg.announcements.and_then(|a| a.discussions) {
+                let issue_title = vote.issue_title.unwrap_or_default();
+                let title = build_announcement_title(vote.issue_number, &issue_title);
+                let body =
+                    tmpl::VoteClosedAnnouncement::new(vote.issue_number, &issue_title, results).render()?;
+                if let Err(err) = self
+                    .gh
+                    .create_discussion(inst_id, owner, repo, &discussions.category, &title, &body)
+                    .await
+                {
+                    // Permissions required to create discussions may not have
+                    // been granted yet for this installation, so we raise a
+                    // warning and continue
+                    warn!(?err, "error creating announcement discussion");
+                }
+            }
         }
 
         // Create check run if the vote is on a pull request
@@ -489,19 +463,20 @@ impl Processor {
                 conclusion: Some(conclusion.to_string()),
                 summary,
             };
-            self.gh
-                .create_check_run(inst_id, owner, repo, vote.issue_number, &check_details)
-                .await?;
+            self.gh.create_check_run(inst_id, owner, repo, vote.issue_number, &check_details).await?;
         }
 
         // Remove "vote open" label from issue/pr
-        self.gh
-            .remove_label(inst_id, owner, repo, vote.issue_number, VOTE_OPEN_LABEL)
-            .await?;
+        self.gh.remove_label(inst_id, owner, repo, vote.issue_number, VOTE_OPEN_LABEL).await?;
 
         debug!("closed");
         Ok(Some(()))
     }
+}
+
+/// Helper function to build an announcement title.
+fn build_announcement_title(issue_number: i64, issue_title: &str) -> String {
+    format!("{issue_title} #{issue_number} (vote closed)")
 }
 
 #[cfg(test)]
@@ -519,11 +494,12 @@ mod tests {
     #[tokio::test]
     async fn votes_processor_stops_when_requested() {
         let mut db = MockDB::new();
-        db.expect_close_finished_vote()
-            .returning(|_| Box::pin(future::ready(Ok(None))));
+        db.expect_close_finished_vote().times(1).returning(|_| Box::pin(future::ready(Ok(None))));
         db.expect_get_pending_status_checks()
+            .times(1)
             .returning(|| Box::pin(future::ready(Ok(vec![]))));
         db.expect_get_open_votes_with_close_on_passing()
+            .times(1)
             .returning(|| Box::pin(future::ready(Ok(vec![]))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -555,10 +531,12 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_cancel_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let mut gh = MockGH::new();
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
@@ -577,8 +555,7 @@ mod tests {
     #[tokio::test]
     async fn votes_closer_stops_when_requested_none_closed() {
         let mut db = MockDB::new();
-        db.expect_close_finished_vote()
-            .returning(|_| Box::pin(future::ready(Ok(None))));
+        db.expect_close_finished_vote().times(1).returning(|_| Box::pin(future::ready(Ok(None))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
@@ -593,6 +570,7 @@ mod tests {
     async fn votes_closer_stops_when_requested_error_closing() {
         let mut db = MockDB::new();
         db.expect_close_finished_vote()
+            .times(1)
             .returning(|_| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -608,6 +586,7 @@ mod tests {
     async fn status_checker_stops_when_requested_none_pending() {
         let mut db = MockDB::new();
         db.expect_get_pending_status_checks()
+            .times(1)
             .returning(|| Box::pin(future::ready(Ok(vec![]))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -631,6 +610,7 @@ mod tests {
 
         let mut db = MockDB::new();
         db.expect_get_pending_status_checks()
+            .times(1)
             .returning(move || Box::pin(future::ready(Ok(vec![check_vote_input_copy.clone()]))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -651,6 +631,7 @@ mod tests {
     async fn status_checker_stops_when_requested_error_getting_pending() {
         let mut db = MockDB::new();
         db.expect_get_pending_status_checks()
+            .times(1)
             .returning(|| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -668,6 +649,7 @@ mod tests {
     async fn votes_auto_closer_stops_when_requested_none_pending() {
         let mut db = MockDB::new();
         db.expect_get_open_votes_with_close_on_passing()
+            .times(1)
             .returning(|| Box::pin(future::ready(Ok(vec![]))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -683,13 +665,16 @@ mod tests {
     async fn votes_auto_closer_stops_after_processing_pending_vote() {
         let mut db = MockDB::new();
         db.expect_get_open_votes_with_close_on_passing()
+            .times(1)
             .returning(move || Box::pin(future::ready(Ok(vec![setup_test_vote()]))));
         db.expect_update_vote_ends_at()
+            .times(1)
             .returning(move |_| Box::pin(future::ready(Ok(()))));
 
         let mut gh = MockGH::new();
         gh.expect_get_comment_reactions()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(COMMENT_ID))
+            .times(1)
             .returning(|_, _, _, _| {
                 Box::pin(future::ready(Ok(vec![Reaction {
                     user: User {
@@ -707,6 +692,7 @@ mod tests {
                 eq(REPO),
                 eq(Some(ORG.to_string())),
             )
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(vec![USER1.to_string()]))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -722,6 +708,7 @@ mod tests {
     async fn votes_auto_closer_stops_when_requested_error_getting_pending() {
         let mut db = MockDB::new();
         db.expect_get_open_votes_with_close_on_passing()
+            .times(1)
             .returning(|| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -739,6 +726,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(None)));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
@@ -749,6 +737,7 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         let event = setup_test_issue_event();
 
@@ -765,9 +754,11 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(false))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
@@ -778,6 +769,7 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         let event = setup_test_issue_event();
 
@@ -793,13 +785,16 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_has_vote_open()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(true))));
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
@@ -810,6 +805,7 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         let event = setup_test_issue_event();
 
@@ -834,35 +830,36 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_has_vote_open()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(false))));
         let cfg_copy = cfg.clone();
         let create_vote_input_copy = create_vote_input.clone();
         db.expect_store_vote()
             .withf(move |vote_comment_id, input, cfg| {
-                *vote_comment_id == COMMENT_ID
-                    && *input == create_vote_input_copy
-                    && *cfg == cfg_copy
+                *vote_comment_id == COMMENT_ID && *input == create_vote_input_copy && *cfg == cfg_copy
             })
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Ok(Uuid::new_v4()))));
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         let create_vote_input_copy = create_vote_input.clone();
         gh.expect_post_comment()
             .withf(move |inst_id, owner, repo, issue_number, body| {
-                let expected_body = tmpl::VoteCreated::new(&create_vote_input_copy, &cfg)
-                    .render()
-                    .unwrap();
+                let expected_body = tmpl::VoteCreated::new(&create_vote_input_copy, &cfg).render().unwrap();
                 *inst_id == INST_ID
                     && owner == ORG
                     && repo == REPO
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         gh.expect_add_labels()
             .withf(|inst_id, owner, repo, issue_number, labels| {
@@ -872,13 +869,11 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && labels == vec![GITVOTE_LABEL, VOTE_OPEN_LABEL]
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .create_vote(&create_vote_input)
-            .await
-            .unwrap();
+        votes_processor.create_vote(&create_vote_input).await.unwrap();
     }
 
     #[tokio::test]
@@ -895,35 +890,36 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_has_vote_open()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(false))));
         let cfg_copy = cfg.clone();
         let create_vote_input_copy = create_vote_input.clone();
         db.expect_store_vote()
             .withf(move |vote_comment_id, input, cfg| {
-                *vote_comment_id == COMMENT_ID
-                    && *input == create_vote_input_copy
-                    && *cfg == cfg_copy
+                *vote_comment_id == COMMENT_ID && *input == create_vote_input_copy && *cfg == cfg_copy
             })
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Ok(Uuid::new_v4()))));
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
             .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
             .returning(|_, _, _| Box::pin(future::ready(Some(get_test_valid_config()))));
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         let create_vote_input_copy = create_vote_input.clone();
         gh.expect_post_comment()
             .withf(move |inst_id, owner, repo, issue_number, body| {
-                let expected_body = tmpl::VoteCreated::new(&create_vote_input_copy, &cfg)
-                    .render()
-                    .unwrap();
+                let expected_body = tmpl::VoteCreated::new(&create_vote_input_copy, &cfg).render().unwrap();
                 *inst_id == INST_ID
                     && owner == ORG
                     && repo == REPO
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         gh.expect_create_check_run()
             .with(
@@ -937,6 +933,7 @@ mod tests {
                     summary: "Vote open".to_string(),
                 }),
             )
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_add_labels()
             .withf(|inst_id, owner, repo, issue_number, labels| {
@@ -946,13 +943,11 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && labels == vec![GITVOTE_LABEL, VOTE_OPEN_LABEL]
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .create_vote(&create_vote_input)
-            .await
-            .unwrap();
+        votes_processor.create_vote(&create_vote_input).await.unwrap();
     }
 
     #[tokio::test]
@@ -961,6 +956,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let event = setup_test_issue_comment_event();
 
@@ -977,6 +973,7 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(false))));
         let event = setup_test_issue_comment_event();
 
@@ -992,10 +989,12 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_cancel_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let mut gh = MockGH::new();
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         let event = setup_test_issue_comment_event();
 
@@ -1011,10 +1010,12 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_cancel_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(None))));
         let mut gh = MockGH::new();
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
@@ -1025,6 +1026,7 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         let event = setup_test_issue_comment_event();
 
@@ -1040,10 +1042,12 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_cancel_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(Some(Uuid::parse_str(VOTE_ID).unwrap())))));
         let mut gh = MockGH::new();
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
@@ -1054,15 +1058,11 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         gh.expect_remove_label()
-            .with(
-                eq(INST_ID),
-                eq(ORG),
-                eq(REPO),
-                eq(ISSUE_NUM),
-                eq(VOTE_OPEN_LABEL),
-            )
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         let event = setup_test_issue_comment_event();
 
@@ -1078,10 +1078,12 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_cancel_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(Some(Uuid::parse_str(VOTE_ID).unwrap())))));
         let mut gh = MockGH::new();
         gh.expect_user_is_collaborator()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
+            .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
@@ -1092,6 +1094,7 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         gh.expect_create_check_run()
             .with(
@@ -1105,15 +1108,11 @@ mod tests {
                     summary: "Vote cancelled".to_string(),
                 }),
             )
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_remove_label()
-            .with(
-                eq(INST_ID),
-                eq(ORG),
-                eq(REPO),
-                eq(ISSUE_NUM),
-                eq(VOTE_OPEN_LABEL),
-            )
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         let event = setup_test_pr_event();
 
@@ -1129,6 +1128,7 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_get_open_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
         let event = setup_test_pr_event();
@@ -1145,6 +1145,7 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_get_open_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(None))));
         let gh = MockGH::new();
         let event = setup_test_pr_event();
@@ -1159,14 +1160,12 @@ mod tests {
     #[tokio::test]
     async fn check_vote_checked_recently() {
         let mut db = MockDB::new();
-        db.expect_get_open_vote()
-            .with(eq(REPOFN), eq(ISSUE_NUM))
-            .returning(|_, _| {
-                Box::pin(future::ready(Ok(Some(Vote {
-                    checked_at: OffsetDateTime::now_utc().checked_sub(1.hours()),
-                    ..setup_test_vote()
-                }))))
-            });
+        db.expect_get_open_vote().with(eq(REPOFN), eq(ISSUE_NUM)).times(1).returning(|_, _| {
+            Box::pin(future::ready(Ok(Some(Vote {
+                checked_at: OffsetDateTime::now_utc().checked_sub(1.hours()),
+                ..setup_test_vote()
+            }))))
+        });
         let mut gh = MockGH::new();
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
@@ -1177,6 +1176,7 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         let event = setup_test_pr_event();
 
@@ -1192,13 +1192,16 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_get_open_vote()
             .with(eq(REPOFN), eq(ISSUE_NUM))
+            .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(Some(setup_test_vote())))));
         db.expect_update_vote_last_check()
             .with(eq(Uuid::parse_str(VOTE_ID).unwrap()))
+            .times(1)
             .returning(|_| Box::pin(future::ready(Ok(()))));
         let mut gh = MockGH::new();
         gh.expect_get_comment_reactions()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(COMMENT_ID))
+            .times(1)
             .returning(|_, _, _, _| {
                 Box::pin(future::ready(Ok(vec![Reaction {
                     user: User {
@@ -1216,6 +1219,7 @@ mod tests {
                 eq(REPO),
                 eq(Some(ORG.to_string())),
             )
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(vec![USER1.to_string()]))));
         gh.expect_post_comment()
             .withf(|inst_id, owner, repo, issue_number, body| {
@@ -1227,6 +1231,7 @@ mod tests {
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
         let event = setup_test_pr_event();
 
@@ -1241,6 +1246,7 @@ mod tests {
     async fn close_finished_vote_error_closing() {
         let mut db = MockDB::new();
         db.expect_close_finished_vote()
+            .times(1)
             .returning(|_| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
 
@@ -1251,8 +1257,7 @@ mod tests {
     #[tokio::test]
     async fn close_finished_vote_none_closed() {
         let mut db = MockDB::new();
-        db.expect_close_finished_vote()
-            .returning(|_| Box::pin(future::ready(Ok(None))));
+        db.expect_close_finished_vote().times(1).returning(|_| Box::pin(future::ready(Ok(None))));
         let gh = MockGH::new();
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -1263,9 +1268,10 @@ mod tests {
     async fn close_finished_vote_on_issue() {
         let results = setup_test_vote_results();
         let results_copy = results.clone();
+        let results_copy2 = results.clone();
 
         let mut db = MockDB::new();
-        db.expect_close_finished_vote().returning(move |_| {
+        db.expect_close_finished_vote().times(1).returning(move |_| {
             Box::pin(future::ready(Ok(Some((
                 setup_test_vote(),
                 Some(results_copy.clone()),
@@ -1274,22 +1280,31 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_post_comment()
             .withf(move |inst_id, owner, repo, issue_number, body| {
-                let expected_body = tmpl::VoteClosed::new(&results).render().unwrap();
+                let expected_body = tmpl::VoteClosed::new(&results_copy2).render().unwrap();
                 *inst_id == INST_ID
                     && owner == ORG
                     && repo == REPO
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        gh.expect_create_discussion()
+            .withf(move |inst_id, owner, repo, category, title, body| {
+                let expected_body =
+                    tmpl::VoteClosedAnnouncement::new(ISSUE_NUM, TITLE, &results).render().unwrap();
+                *inst_id == INST_ID
+                    && owner == ORG
+                    && repo == REPO
+                    && category == DISCUSSIONS_CATEGORY
+                    && title == build_announcement_title(ISSUE_NUM, TITLE)
+                    && body == expected_body.as_str()
+            })
+            .times(1)
+            .returning(|_, _, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_remove_label()
-            .with(
-                eq(INST_ID),
-                eq(ORG),
-                eq(REPO),
-                eq(ISSUE_NUM),
-                eq(VOTE_OPEN_LABEL),
-            )
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -1300,9 +1315,10 @@ mod tests {
     async fn close_finished_vote_on_pr_closed_vote_passed() {
         let results = setup_test_vote_results();
         let results_copy = results.clone();
+        let results_copy2 = results.clone();
 
         let mut db = MockDB::new();
-        db.expect_close_finished_vote().returning(move |_| {
+        db.expect_close_finished_vote().times(1).returning(move |_| {
             let mut vote = setup_test_vote();
             vote.is_pull_request = true;
             Box::pin(future::ready(Ok(Some((vote, Some(results_copy.clone()))))))
@@ -1310,14 +1326,28 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_post_comment()
             .withf(move |inst_id, owner, repo, issue_number, body| {
-                let expected_body = tmpl::VoteClosed::new(&results).render().unwrap();
+                let expected_body = tmpl::VoteClosed::new(&results_copy2).render().unwrap();
                 *inst_id == INST_ID
                     && owner == ORG
                     && repo == REPO
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        gh.expect_create_discussion()
+            .withf(move |inst_id, owner, repo, category, title, body| {
+                let expected_body =
+                    tmpl::VoteClosedAnnouncement::new(ISSUE_NUM, TITLE, &results).render().unwrap();
+                *inst_id == INST_ID
+                    && owner == ORG
+                    && repo == REPO
+                    && category == DISCUSSIONS_CATEGORY
+                    && title == build_announcement_title(ISSUE_NUM, TITLE)
+                    && body == expected_body.as_str()
+            })
+            .times(1)
+            .returning(|_, _, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_create_check_run()
             .with(
                 eq(INST_ID),
@@ -1330,15 +1360,11 @@ mod tests {
                     summary: "The vote passed! 1 out of 1 voted in favor.".to_string(),
                 }),
             )
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_remove_label()
-            .with(
-                eq(INST_ID),
-                eq(ORG),
-                eq(REPO),
-                eq(ISSUE_NUM),
-                eq(VOTE_OPEN_LABEL),
-            )
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
@@ -1353,9 +1379,10 @@ mod tests {
         results.in_favor = 0;
         results.against = 1;
         let results_copy = results.clone();
+        let results_copy2 = results.clone();
 
         let mut db = MockDB::new();
-        db.expect_close_finished_vote().returning(move |_| {
+        db.expect_close_finished_vote().times(1).returning(move |_| {
             let mut vote = setup_test_vote();
             vote.is_pull_request = true;
             Box::pin(future::ready(Ok(Some((vote, Some(results_copy.clone()))))))
@@ -1363,14 +1390,28 @@ mod tests {
         let mut gh = MockGH::new();
         gh.expect_post_comment()
             .withf(move |inst_id, owner, repo, issue_number, body| {
-                let expected_body = tmpl::VoteClosed::new(&results).render().unwrap();
+                let expected_body = tmpl::VoteClosed::new(&results_copy2).render().unwrap();
                 *inst_id == INST_ID
                     && owner == ORG
                     && repo == REPO
                     && *issue_number == ISSUE_NUM
                     && body == expected_body.as_str()
             })
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        gh.expect_create_discussion()
+            .withf(move |inst_id, owner, repo, category, title, body| {
+                let expected_body =
+                    tmpl::VoteClosedAnnouncement::new(ISSUE_NUM, TITLE, &results).render().unwrap();
+                *inst_id == INST_ID
+                    && owner == ORG
+                    && repo == REPO
+                    && category == DISCUSSIONS_CATEGORY
+                    && title == build_announcement_title(ISSUE_NUM, TITLE)
+                    && body == expected_body.as_str()
+            })
+            .times(1)
+            .returning(|_, _, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_create_check_run()
             .with(
                 eq(INST_ID),
@@ -1383,15 +1424,11 @@ mod tests {
                     summary: "The vote did not pass. 0 out of 1 voted in favor.".to_string(),
                 }),
             )
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_remove_label()
-            .with(
-                eq(INST_ID),
-                eq(ORG),
-                eq(REPO),
-                eq(ISSUE_NUM),
-                eq(VOTE_OPEN_LABEL),
-            )
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
+            .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));

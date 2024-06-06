@@ -21,21 +21,13 @@ pub(crate) type DynDB = Arc<dyn DB + Send + Sync>;
 #[cfg_attr(test, automock)]
 pub(crate) trait DB {
     /// Cancel open vote (if exists) in the issue/pr provided.
-    async fn cancel_vote(
-        &self,
-        repository_full_name: &str,
-        issue_number: i64,
-    ) -> Result<Option<Uuid>>;
+    async fn cancel_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<Option<Uuid>>;
 
     /// Close any pending finished vote.
     async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, Option<VoteResults>)>>;
 
     /// Get open vote (if available) in the issue/pr provided.
-    async fn get_open_vote(
-        &self,
-        repository_full_name: &str,
-        issue_number: i64,
-    ) -> Result<Option<Vote>>;
+    async fn get_open_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<Option<Vote>>;
 
     /// Get open votes that have close on passing enabled.
     async fn get_open_votes_with_close_on_passing(&self) -> Result<Vec<Vote>>;
@@ -119,11 +111,7 @@ impl PgDB {
 #[async_trait]
 impl DB for PgDB {
     /// [DB::cancel_vote]
-    async fn cancel_vote(
-        &self,
-        repository_full_name: &str,
-        issue_number: i64,
-    ) -> Result<Option<Uuid>> {
+    async fn cancel_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<Option<Uuid>> {
         let db = self.pool.get().await?;
         let cancelled_vote_id = db
             .query_opt(
@@ -173,11 +161,7 @@ impl DB for PgDB {
     }
 
     /// [DB::get_open_vote]
-    async fn get_open_vote(
-        &self,
-        repository_full_name: &str,
-        issue_number: i64,
-    ) -> Result<Option<Vote>> {
+    async fn get_open_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<Option<Vote>> {
         let db = self.pool.get().await?;
         let vote = db
             .query_opt(
@@ -305,6 +289,7 @@ impl DB for PgDB {
                     installation_id,
                     issue_id,
                     issue_number,
+                    issue_title,
                     is_pull_request,
                     repository_full_name,
                     organization
@@ -317,9 +302,10 @@ impl DB for PgDB {
                     $5::bigint,
                     $6::bigint,
                     $7::bigint,
-                    $8::boolean,
-                    $9::text,
-                    $10::text
+                    $8::text,
+                    $9::boolean,
+                    $10::text,
+                    $11::text
                 )
                 returning vote_id
                 ",
@@ -331,6 +317,7 @@ impl DB for PgDB {
                     &input.installation_id,
                     &input.issue_id,
                     &input.issue_number,
+                    &input.issue_title,
                     &input.is_pull_request,
                     &input.repository_full_name,
                     &input.organization,

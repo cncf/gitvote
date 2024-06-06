@@ -30,6 +30,7 @@ pub(crate) struct Vote {
     pub installation_id: i64,
     pub issue_id: i64,
     pub issue_number: i64,
+    pub issue_title: Option<String>,
     pub is_pull_request: bool,
     pub repository_full_name: String,
     pub organization: Option<String>,
@@ -53,6 +54,7 @@ impl From<&Row> for Vote {
             installation_id: row.get("installation_id"),
             issue_id: row.get("issue_id"),
             issue_number: row.get("issue_number"),
+            issue_title: row.get("issue_title"),
             is_pull_request: row.get("is_pull_request"),
             repository_full_name: row.get("repository_full_name"),
             organization: row.get("organization"),
@@ -127,14 +129,10 @@ pub(crate) async fn calculate<'a>(
 ) -> Result<VoteResults> {
     // Get vote comment reactions (aka votes)
     let inst_id = vote.installation_id as u64;
-    let reactions = gh
-        .get_comment_reactions(inst_id, owner, repo, vote.vote_comment_id)
-        .await?;
+    let reactions = gh.get_comment_reactions(inst_id, owner, repo, vote.vote_comment_id).await?;
 
     // Get list of allowed voters (users with binding votes)
-    let allowed_voters = gh
-        .get_allowed_voters(inst_id, &vote.cfg, owner, repo, &vote.organization)
-        .await?;
+    let allowed_voters = gh.get_allowed_voters(inst_id, &vote.cfg, owner, repo, &vote.organization).await?;
 
     // Track users votes
     let mut votes: HashMap<UserName, UserVote> = HashMap::new();
@@ -189,11 +187,8 @@ pub(crate) async fn calculate<'a>(
     if !allowed_voters.is_empty() {
         in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
     }
-    let pending_voters: Vec<UserName> = allowed_voters
-        .iter()
-        .filter(|user| !votes.contains_key(*user))
-        .cloned()
-        .collect();
+    let pending_voters: Vec<UserName> =
+        allowed_voters.iter().filter(|user| !votes.contains_key(*user)).cloned().collect();
 
     Ok(VoteResults {
         passed: in_favor_percentage >= vote.cfg.pass_threshold,
@@ -264,6 +259,7 @@ mod tests {
                     installation_id: INST_ID as i64,
                     issue_id: ISSUE_ID,
                     issue_number: ISSUE_NUM,
+                    issue_title: Some(TITLE.to_string()),
                     is_pull_request: false,
                     repository_full_name: REPOFN.to_string(),
                     organization: Some(ORG.to_string()),
@@ -274,9 +270,11 @@ mod tests {
                 let mut gh = MockGH::new();
                 gh.expect_get_comment_reactions()
                     .with(eq(INST_ID), eq(OWNER), eq(REPO), eq(COMMENT_ID))
+                    .times(1)
                     .returning(|_, _, _, _| Box::pin(future::ready(Ok($reactions))));
                 gh.expect_get_allowed_voters()
                     .with(eq(INST_ID), eq($cfg), eq(OWNER), eq(REPO), eq(Some(ORG.to_string())))
+                    .times(1)
                     .returning(|_, _, _, _, _| Box::pin(future::ready(Ok($allowed_voters))));
 
                 // Calculate vote results and check we get what we expect

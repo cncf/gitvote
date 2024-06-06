@@ -1,0 +1,8 @@
+query AnnouncementRepoQuery($owner: String!, $repo: String!, $category: String!) {
+      repository(owner: $owner, name: $repo) {
+        id
+        discussionCategory(slug: $category) {
+          id
+        }
+      }
+    }

@@ -1,7 +1,8 @@
 use crate::cfg::CfgProfile;
-use anyhow::{Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
 use axum::http::HeaderValue;
+use graphql_client::GraphQLQuery;
 use http::StatusCode;
 #[cfg(test)]
 use mockall::automock;
@@ -35,6 +36,24 @@ pub(crate) type TeamSlug = String;
 /// Type alias to represent a username.
 pub(crate) type UserName = String;
 
+/// Announcement repository query.
+#[derive(Debug, Clone, GraphQLQuery)]
+#[graphql(
+    schema_path = "src/graphql/github_schema.graphql",
+    query_path = "src/graphql/announcement_repo_query.graphql",
+    response_derives = "Debug, PartialEq, Eq"
+)]
+pub struct AnnouncementRepoQuery;
+
+/// Create discussion mutation.
+#[derive(Debug, Clone, GraphQLQuery)]
+#[graphql(
+    schema_path = "src/graphql/github_schema.graphql",
+    query_path = "src/graphql/create_discussion.graphql",
+    response_derives = "Debug, PartialEq, Eq"
+)]
+pub struct CreateDiscussion;
+
 /// Trait that defines some operations a GH implementation must support.
 #[async_trait]
 #[cfg_attr(test, automock)]
@@ -59,6 +78,17 @@ pub(crate) trait GH {
         check_details: &CheckDetails,
     ) -> Result<()>;
 
+    /// Create a new discussion in the repository provided.
+    async fn create_discussion(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        category: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<()>;
+
     /// Get all users allowed to vote on a given vote.
     async fn get_allowed_voters(
         &self,
@@ -71,12 +101,7 @@ pub(crate) trait GH {
 
     /// Get all repository collaborators.
     #[allow(dead_code)]
-    async fn get_collaborators(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-    ) -> Result<Vec<UserName>>;
+    async fn get_collaborators(&self, inst_id: u64, owner: &str, repo: &str) -> Result<Vec<UserName>>;
 
     /// Get reactions for the provided comment.
     async fn get_comment_reactions(
@@ -91,13 +116,7 @@ pub(crate) trait GH {
     async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String>;
 
     /// Get pull request files.
-    async fn get_pr_files(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-        pr_number: i64,
-    ) -> Result<Vec<File>>;
+    async fn get_pr_files(&self, inst_id: u64, owner: &str, repo: &str, pr_number: i64) -> Result<Vec<File>>;
 
     /// Get all members of the provided team.
     #[allow(dead_code)]
@@ -111,13 +130,7 @@ pub(crate) trait GH {
 
     /// Verify if the GitVote check is required via branch protection in the
     /// repository's branch provided.
-    async fn is_check_required(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-        branch: &str,
-    ) -> Result<bool>;
+    async fn is_check_required(&self, inst_id: u64, owner: &str, repo: &str, branch: &str) -> Result<bool>;
 
     /// Post the comment provided in the repository's issue given.
     async fn post_comment(
@@ -140,13 +153,7 @@ pub(crate) trait GH {
     ) -> Result<()>;
 
     /// Check if the user given is a collaborator of the provided repository.
-    async fn user_is_collaborator(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-        user: &str,
-    ) -> Result<bool>;
+    async fn user_is_collaborator(&self, inst_id: u64, owner: &str, repo: &str, user: &str) -> Result<bool>;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -180,14 +187,8 @@ impl GH for GHApi {
         labels: &[&str],
     ) -> Result<()> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let labels = labels
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<String>>();
-        client
-            .issues(owner, repo)
-            .add_labels(issue_number as u64, &labels)
-            .await?;
+        let labels = labels.iter().map(ToString::to_string).collect::<Vec<String>>();
+        client.issues(owner, repo).add_labels(issue_number as u64, &labels).await?;
         Ok(())
     }
 
@@ -219,6 +220,49 @@ impl GH for GHApi {
         Ok(())
     }
 
+    /// [GH::create_discussion]
+    async fn create_discussion(
+        &self,
+        inst_id: u64,
+        owner: &str,
+        repo: &str,
+        category: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<()> {
+        let client = self.app_client.installation(InstallationId(inst_id));
+
+        // Fetch some repository details needed to create a discussion
+        let response: graphql_client::Response<announcement_repo_query::ResponseData> = client
+            .graphql(&AnnouncementRepoQuery::build_query(
+                announcement_repo_query::Variables {
+                    owner: owner.to_string(),
+                    repo: repo.to_string(),
+                    category: category.to_string(),
+                },
+            ))
+            .await?;
+        let Some((repository_id, category_id)) = response.data.and_then(|d| d.repository).and_then(|r| {
+            let discussion_category = r.discussion_category?;
+            Some((r.id, discussion_category.id))
+        }) else {
+            bail!("something went wrong while fetching repository details for announcement")
+        };
+
+        // Create discussion
+        let _: graphql_client::Response<create_discussion::ResponseData> = client
+            .graphql(&CreateDiscussion::build_query(create_discussion::Variables {
+                repository_id,
+                category_id,
+                title: title.to_string(),
+                body: body.to_string(),
+            }))
+            .await
+            .context("error creating announcement discussion")?;
+
+        Ok(())
+    }
+
     /// [GH::get_allowed_voters]
     async fn get_allowed_voters(
         &self,
@@ -235,8 +279,7 @@ impl GH for GHApi {
             // Teams
             if org.is_some() {
                 if let Some(teams) = &cfg_allowed_voters.teams {
-                    let exclude_maintainers =
-                        cfg_allowed_voters.exclude_team_maintainers.unwrap_or(false);
+                    let exclude_maintainers = cfg_allowed_voters.exclude_team_maintainers.unwrap_or(false);
                     for team in teams {
                         if let Ok(members) = self
                             .get_team_members(
@@ -277,21 +320,11 @@ impl GH for GHApi {
     }
 
     /// [GH::get_collaborators]
-    async fn get_collaborators(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-    ) -> Result<Vec<UserName>> {
+    async fn get_collaborators(&self, inst_id: u64, owner: &str, repo: &str) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators");
         let first_page: Page<User> = client.get(url, None::<&()>).await?;
-        let collaborators = client
-            .all_pages(first_page)
-            .await?
-            .into_iter()
-            .map(|u| u.login)
-            .collect();
+        let collaborators = client.all_pages(first_page).await?.into_iter().map(|u| u.login).collect();
         Ok(collaborators)
     }
 
@@ -304,9 +337,7 @@ impl GH for GHApi {
         comment_id: i64,
     ) -> Result<Vec<Reaction>> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let url = format!(
-            "{GITHUB_API_URL}/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
-        );
+        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",);
         let first_page: Page<Reaction> = client.get(url, None::<&()>).await?;
         let reactions = client.all_pages(first_page).await?;
         Ok(reactions)
@@ -320,13 +351,7 @@ impl GH for GHApi {
         // getting the organization wide config file in the .github repo.
         let mut content: Option<String> = None;
         for repo in &[repo, ORG_CONFIG_REPO] {
-            match client
-                .repos(owner, *repo)
-                .get_content()
-                .path(CONFIG_FILE)
-                .send()
-                .await
-            {
+            match client.repos(owner, *repo).get_content().path(CONFIG_FILE).send().await {
                 Ok(resp) => {
                     if resp.items.len() == 1 {
                         content = resp.items[0].decoded_content();
@@ -341,13 +366,7 @@ impl GH for GHApi {
     }
 
     /// [GH::get_pr_files]
-    async fn get_pr_files(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-        pr_number: i64,
-    ) -> Result<Vec<File>> {
+    async fn get_pr_files(&self, inst_id: u64, owner: &str, repo: &str, pr_number: i64) -> Result<Vec<File>> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}/files");
         let first_page: Page<File> = client.get(url, None::<&()>).await?;
@@ -373,34 +392,20 @@ impl GH for GHApi {
                 })),
             )
             .await?;
-        let members: Vec<UserName> = client
-            .all_pages(first_page)
-            .await?
-            .into_iter()
-            .map(|u| u.login)
-            .collect();
+        let members: Vec<UserName> =
+            client.all_pages(first_page).await?.into_iter().map(|u| u.login).collect();
         Ok(members)
     }
 
     /// [GH::is_check_required]
-    async fn is_check_required(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-        branch: &str,
-    ) -> Result<bool> {
+    async fn is_check_required(&self, inst_id: u64, owner: &str, repo: &str, branch: &str) -> Result<bool> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/branches/{branch}");
         let branch: Branch = client.get(url, None::<&()>).await?;
-        let is_check_required = if let Some(required_checks) = branch
-            .protection
-            .and_then(|protection| protection.required_status_checks)
+        let is_check_required = if let Some(required_checks) =
+            branch.protection.and_then(|protection| protection.required_status_checks)
         {
-            required_checks
-                .contexts
-                .iter()
-                .any(|context| context == GITVOTE_CHECK_NAME)
+            required_checks.contexts.iter().any(|context| context == GITVOTE_CHECK_NAME)
         } else {
             false
         };
@@ -417,10 +422,7 @@ impl GH for GHApi {
         body: &str,
     ) -> Result<i64> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        let comment = client
-            .issues(owner, repo)
-            .create_comment(issue_number as u64, body)
-            .await?;
+        let comment = client.issues(owner, repo).create_comment(issue_number as u64, body).await?;
         Ok(comment.id.0 as i64)
     }
 
@@ -434,21 +436,12 @@ impl GH for GHApi {
         label: &str,
     ) -> Result<()> {
         let client = self.app_client.installation(InstallationId(inst_id));
-        client
-            .issues(owner, repo)
-            .remove_label(issue_number as u64, label)
-            .await?;
+        client.issues(owner, repo).remove_label(issue_number as u64, label).await?;
         Ok(())
     }
 
     /// [GH::user_is_collaborator]
-    async fn user_is_collaborator(
-        &self,
-        inst_id: u64,
-        owner: &str,
-        repo: &str,
-        user: &str,
-    ) -> Result<bool> {
+    async fn user_is_collaborator(&self, inst_id: u64, owner: &str, repo: &str, user: &str) -> Result<bool> {
         let client = self.app_client.installation(InstallationId(inst_id));
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators/{user}",);
         let resp = client._get(url).await?;
@@ -470,9 +463,7 @@ pub(crate) enum Event {
 impl TryFrom<(Option<&HeaderValue>, &[u8])> for Event {
     type Error = EventError;
 
-    fn try_from(
-        (event_name, event_body): (Option<&HeaderValue>, &[u8]),
-    ) -> Result<Self, Self::Error> {
+    fn try_from((event_name, event_body): (Option<&HeaderValue>, &[u8])) -> Result<Self, Self::Error> {
         match event_name {
             Some(event_name) => match event_name.as_bytes() {
                 b"issues" => {
@@ -656,11 +647,7 @@ pub(crate) fn split_full_name(full_name: &str) -> (&str, &str) {
 
 /// Check if the provided error is a "Not Found" error from GitHub.
 pub(crate) fn is_not_found_error(err: &Error) -> bool {
-    if let Some(octocrab::Error::GitHub {
-        source,
-        backtrace: _,
-    }) = err.downcast_ref::<octocrab::Error>()
-    {
+    if let Some(octocrab::Error::GitHub { source, backtrace: _ }) = err.downcast_ref::<octocrab::Error>() {
         if source.message == "Not Found" {
             return true;
         }
