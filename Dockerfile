@@ -1,5 +1,5 @@
 # Build gitvote
-FROM rust:1-alpine3.19 as builder
+FROM rust:1-alpine3.20 as builder
 RUN apk --no-cache add musl-dev perl make
 WORKDIR /gitvote
 COPY src src
@@ -10,7 +10,7 @@ WORKDIR /gitvote/src
 RUN cargo build --release
 
 # Final stage
-FROM alpine:3.19.1
+FROM alpine:3.20.0
 RUN apk --no-cache add ca-certificates && addgroup -S gitvote && adduser -S gitvote -G gitvote
 USER gitvote
 WORKDIR /home/gitvote
