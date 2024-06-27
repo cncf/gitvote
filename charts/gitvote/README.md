@@ -48,6 +48,7 @@ gitvote:
       ...
       -----END RSA PRIVATE KEY-----
     webhookSecret: "your-webhook-secret"
+    webhookSecretFallback: "old-webhook-secret" # Handy for webhook secret rotation
 ```
 
 To install the chart with the release name `my-gitvote` run:
