@@ -2,8 +2,8 @@ apiVersion: v2
 name: gitvote
 description: GitVote is a GitHub application that allows holding a vote on issues and pull requests
 type: application
-version: 1.2.1-2
-appVersion: 1.2.0
+version: 1.3.0
+appVersion: 1.3.0
 kubeVersion: ">= 1.19.0-0"
 home: https://gitvote.dev
 icon: https://raw.githubusercontent.com/cncf/gitvote/main/docs/logo/logo.png
@@ -25,17 +25,19 @@ annotations:
   artifacthub.io/category: skip-prediction
   artifacthub.io/changes: |
     - kind: added
-      description: Add labels to issues and pull requests
+      description: Support for GitHub discussions announcements
+    - kind: added
+      description: Webhook secret fallback for key rotation
     - kind: changed
-      description: Bump Alpine to 3.19.1
+      description: Bump Alpine to 3.20.1
     - kind: changed
       description: Upgrade dependencies
   artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/images: |
     - name: dbmigrator
-      image: public.ecr.aws/g6m3a0y9/gitvote-dbmigrator:v1.2.0
+      image: public.ecr.aws/g6m3a0y9/gitvote-dbmigrator:v1.3.0
     - name: gitvote
-      image: public.ecr.aws/g6m3a0y9/gitvote:v1.2.0
+      image: public.ecr.aws/g6m3a0y9/gitvote:v1.3.0
   artifacthub.io/links: |
     - name: source
       url: https://github.com/cncf/gitvote
