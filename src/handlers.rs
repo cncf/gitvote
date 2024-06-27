@@ -8,7 +8,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use config::Config;
+use config::{Config, ConfigError};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::sync::Arc;
@@ -29,6 +29,7 @@ struct RouterState {
     gh: DynGH,
     cmds_tx: async_channel::Sender<Command>,
     webhook_secret: String,
+    webhook_secret_fallback: Option<String>,
 }
 
 /// Setup HTTP server router.
@@ -40,6 +41,11 @@ pub(crate) fn setup_router(
 ) -> Result<Router> {
     // Setup webhook secret
     let webhook_secret = cfg.get_string("github.webhookSecret")?;
+    let webhook_secret_fallback = match cfg.get_string("github.webhookSecretFallback") {
+        Ok(secret) => Some(secret),
+        Err(ConfigError::NotFound(_)) => None,
+        Err(err) => return Err(err.into()),
+    };
 
     // Setup router
     let router = Router::new()
@@ -51,6 +57,7 @@ pub(crate) fn setup_router(
             gh,
             cmds_tx,
             webhook_secret,
+            webhook_secret_fallback,
         });
 
     Ok(router)
@@ -70,13 +77,17 @@ async fn event(
     State(gh): State<DynGH>,
     State(cmds_tx): State<async_channel::Sender<Command>>,
     State(webhook_secret): State<String>,
+    State(webhook_secret_fallback): State<Option<String>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
     // Verify payload signature
+    let webhook_secret = webhook_secret.as_bytes();
+    let webhook_secret_fallback = webhook_secret_fallback.as_ref().map(String::as_bytes);
     if verify_signature(
         headers.get(GITHUB_SIGNATURE_HEADER),
-        webhook_secret.as_bytes(),
+        webhook_secret,
+        webhook_secret_fallback,
         &body[..],
     )
     .is_err()
@@ -117,13 +128,30 @@ async fn event(
 }
 
 /// Verify that the signature provided is valid.
-fn verify_signature(signature: Option<&HeaderValue>, secret: &[u8], body: &[u8]) -> Result<()> {
+fn verify_signature(
+    signature: Option<&HeaderValue>,
+    secret: &[u8],
+    secret_fallback: Option<&[u8]>,
+    body: &[u8],
+) -> Result<()> {
     if let Some(signature) = signature
         .and_then(|s| s.to_str().ok())
         .and_then(|s| s.strip_prefix("sha256="))
         .and_then(|s| hex::decode(s).ok())
     {
+        // Try primary secret
         let mut mac = Hmac::<Sha256>::new_from_slice(secret)?;
+        mac.update(body);
+        let result = mac.verify_slice(&signature[..]);
+        if result.is_ok() {
+            return Ok(());
+        }
+        if secret_fallback.is_none() {
+            return result.map_err(Error::new);
+        }
+
+        // Try fallback secret (if available)
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret_fallback.expect("secret should be set"))?;
         mac.update(body);
         mac.verify_slice(&signature[..]).map_err(Error::new)
     } else {
