@@ -366,7 +366,7 @@ impl Processor {
         };
 
         // Record vote_id as part of the current span
-        tracing::Span::current().record("vote_id", &vote.vote_id.to_string());
+        tracing::Span::current().record("vote_id", vote.vote_id.to_string());
 
         // Check if the vote has already been checked recently
         let inst_id = vote.installation_id as u64;
@@ -403,7 +403,7 @@ impl Processor {
         };
 
         // Record vote_id as part of the current span
-        tracing::Span::current().record("vote_id", &vote.vote_id.to_string());
+        tracing::Span::current().record("vote_id", vote.vote_id.to_string());
 
         // Extract some information from the vote
         let inst_id = vote.installation_id as u64;
