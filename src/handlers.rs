@@ -202,9 +202,8 @@ mod tests {
     use crate::testutil::*;
     use crate::{cmd::CreateVoteInput, db::MockDB};
     use async_channel::Receiver;
-    use axum::body::to_bytes;
     use axum::{
-        body::Body,
+        body::{to_bytes, Body},
         http::{header::CONTENT_TYPE, Request},
     };
     use futures::future;
