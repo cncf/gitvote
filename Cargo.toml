@@ -13,7 +13,7 @@ async-channel = "2.3.1"
 async-trait = "0.1.83"
 axum = { version = "0.7.7", features = ["macros"] }
 clap = { version = "4.5.18", features = ["derive"] }
-config = "0.13.4"
+config = "0.14.0"
 deadpool-postgres = { version = "0.14.0", features = ["serde"] }
 futures = "0.3.30"
 graphql_client = { version = "0.14.0", features = ["reqwest"] }
@@ -25,7 +25,7 @@ humantime-serde = "1.1.1"
 ignore = "0.4.23"
 jsonwebtoken = "9.3.0"
 lazy_static = "1.5.0"
-octocrab = "=0.33.3"
+octocrab = "=0.40.0"
 openssl = { version = "0.10.66", features = ["vendored"] }
 postgres-openssl = "0.5.0"
 regex = "1.11.0"
