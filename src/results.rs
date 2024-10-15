@@ -103,6 +103,7 @@ pub(crate) struct VoteResults {
     pub pass_threshold: f64,
     pub in_favor: i64,
     pub against: i64,
+    pub against_percentage: f64,
     pub abstain: i64,
     pub not_voted: i64,
     pub binding: i64,
@@ -184,8 +185,10 @@ pub(crate) async fn calculate<'a>(
         }
     }
     let mut in_favor_percentage = 0.0;
+    let mut against_percentage = 0.0;
     if !allowed_voters.is_empty() {
         in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
+        against_percentage = against as f64 / allowed_voters.len() as f64 * 100.0;
     }
     let pending_voters: Vec<UserName> =
         allowed_voters.iter().filter(|user| !votes.contains_key(*user)).cloned().collect();
@@ -196,6 +199,7 @@ pub(crate) async fn calculate<'a>(
         pass_threshold: vote.cfg.pass_threshold,
         in_favor,
         against,
+        against_percentage,
         abstain,
         not_voted: pending_voters.len() as i64,
         binding,
@@ -321,6 +325,7 @@ mod tests {
                 pass_threshold: 50.0,
                 in_favor: 0,
                 against: 1,
+                against_percentage: 100.0,
                 abstain: 0,
                 not_voted: 0,
                 binding: 1,
@@ -368,6 +373,7 @@ mod tests {
                 pass_threshold: 50.0,
                 in_favor: 0,
                 against: 0,
+                against_percentage: 0.0,
                 abstain: 0,
                 not_voted: 1,
                 binding: 0,
@@ -419,6 +425,7 @@ mod tests {
                 pass_threshold: 50.0,
                 in_favor: 1,
                 against: 1,
+                against_percentage: 25.0,
                 abstain: 1,
                 not_voted: 1,
                 binding: 3,
@@ -498,6 +505,7 @@ mod tests {
                 pass_threshold: 75.0,
                 in_favor: 3,
                 against: 0,
+                against_percentage: 0.0,
                 abstain: 0,
                 not_voted: 1,
                 binding: 3,
