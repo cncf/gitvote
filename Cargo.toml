@@ -6,16 +6,16 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.89"
+anyhow = "1.0.90"
 askama = "0.12.1"
 askama_axum = "0.4.0"
 async-channel = "2.3.1"
 async-trait = "0.1.83"
 axum = { version = "0.7.7", features = ["macros"] }
-clap = { version = "4.5.18", features = ["derive"] }
-config = "0.13.4"
+clap = { version = "4.5.20", features = ["derive"] }
+config = "0.14.0"
 deadpool-postgres = { version = "0.14.0", features = ["serde"] }
-futures = "0.3.30"
+futures = "0.3.31"
 graphql_client = { version = "0.14.0", features = ["reqwest"] }
 hex = "0.4.3"
 hmac = "0.12.1"
@@ -25,13 +25,13 @@ humantime-serde = "1.1.1"
 ignore = "0.4.23"
 jsonwebtoken = "9.3.0"
 lazy_static = "1.5.0"
-octocrab = "=0.33.3"
-openssl = { version = "0.10.66", features = ["vendored"] }
+octocrab = "=0.41.2"
+openssl = { version = "0.10.68", features = ["vendored"] }
 postgres-openssl = "0.5.0"
 regex = "1.11.0"
-reqwest = "0.12.7"
+reqwest = "0.12.8"
 serde = { version = "1.0.210", features = ["derive"] }
-serde_json = "1.0.128"
+serde_json = "1.0.132"
 serde_yaml = "0.9.34"
 sha2 = "0.10.8"
 thiserror = "1.0.64"
@@ -51,9 +51,9 @@ tower = { version = "0.5.1", features = ["util"] }
 tower-http = { version = "0.6.1", features = ["trace"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
-uuid = { version = "1.10.0", features = ["serde", "v4"] }
+uuid = { version = "1.11.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
 http-body = "1.0.1"
-hyper = "1.4.1"
+hyper = "1.5.0"
 mockall = "0.13.0"
