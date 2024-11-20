@@ -136,6 +136,23 @@ profiles:
     #
     close_on_passing: false
 
+    # Close on passing minimum wait
+    # 
+    # When the close on passing feature is activated, voting will conclude once
+    # the pass threshold is met. However, there may be instances where it is
+    # preferable to implement a minimum wait time, even if the vote would
+    # already pass. This allows participants sufficient opportunity to engage
+    # and reflect before the vote is automatically finalized.
+    #
+    # Units supported:
+    #
+    #   - day / days
+    #   - week / weeks 
+    #
+    # close_on_passing_min_wait: "1 week"
+    #
+    close_on_passing_min_wait: null
+
     # Announcements
     #
     # GitVote can announce the results of a vote when it is closed on GitHub

@@ -84,6 +84,8 @@ pub(crate) struct CfgProfile {
     pub periodic_status_check: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub close_on_passing: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_on_passing_min_wait: Option<String>,
 }
 
 impl CfgProfile {
