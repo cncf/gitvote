@@ -190,6 +190,12 @@ impl DB for PgDB {
                 where closed = false
                 and cfg ? 'close_on_passing'
                 and (cfg->>'close_on_passing')::boolean = true
+                and
+                    case
+                        when cfg ? 'close_on_passing_min_wait' and string_to_interval(cfg->>'close_on_passing_min_wait') is not null then
+                            current_timestamp > created_at + (cfg->>'close_on_passing_min_wait')::interval
+                        else true
+                    end
                 ",
                 &[],
             )
