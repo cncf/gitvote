@@ -1,12 +1,18 @@
-use crate::{
-    cfg::{Cfg, CfgError},
-    github::*,
-};
+//! This module defines the commands supported and the logic to parse them from
+//! GitHub events.
+
 use anyhow::Result;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::error;
+
+use crate::{
+    cfg::{Cfg, CfgError},
+    github::{
+        split_full_name, DynGH, Event, IssueCommentEventAction, IssueEventAction, PullRequestEventAction,
+    },
+};
 
 /// Available commands.
 const CMD_CREATE_VOTE: &str = "vote";
@@ -147,7 +153,7 @@ pub(crate) struct CreateVoteInput {
 }
 
 impl CreateVoteInput {
-    /// Create a new CreateVoteInput instance from the profile and event
+    /// Create a new `CreateVoteInput` instance from the profile and event
     /// provided.
     pub(crate) fn new(profile_name: Option<&str>, event: &Event) -> Self {
         match event {
@@ -199,7 +205,7 @@ pub(crate) struct CancelVoteInput {
 }
 
 impl CancelVoteInput {
-    /// Create a new CancelVoteInput instance from the event provided.
+    /// Create a new `CancelVoteInput` instance from the event provided.
     pub(crate) fn new(event: &Event) -> Self {
         match event {
             Event::Issue(event) => Self {
@@ -235,7 +241,7 @@ pub(crate) struct CheckVoteInput {
 }
 
 impl CheckVoteInput {
-    /// Create a new CheckVoteInput instance from the event provided.
+    /// Create a new `CheckVoteInput` instance from the event provided.
     pub(crate) fn new(event: &Event) -> Self {
         match event {
             Event::Issue(event) => Self {
@@ -256,11 +262,17 @@ impl CheckVoteInput {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::testutil::*;
+    use std::{sync::Arc, vec};
+
     use futures::future;
     use mockall::predicate::eq;
-    use std::{sync::Arc, vec};
+
+    use crate::{
+        github::{File, MockGH},
+        testutil::*,
+    };
+
+    use super::*;
 
     #[test]
     fn manual_command_from_issue_event_unsupported_action() {

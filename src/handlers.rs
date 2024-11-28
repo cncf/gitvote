@@ -1,4 +1,6 @@
-use crate::{cmd::Command, db::DynDB, github::*, tmpl};
+//! This module defines the handlers used to process HTTP requests to the
+//! supported endpoints.
+
 use anyhow::{format_err, Error, Result};
 use axum::{
     body::Bytes,
@@ -11,10 +13,18 @@ use axum::{
 use config::{Config, ConfigError};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{error, instrument, trace};
+
+use crate::{
+    cmd::Command,
+    db::DynDB,
+    github::{
+        split_full_name, CheckDetails, DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction,
+    },
+    tmpl,
+};
 
 /// Header representing the kind of the event received.
 const GITHUB_EVENT_HEADER: &str = "X-GitHub-Event";
@@ -34,7 +44,7 @@ struct RouterState {
 
 /// Setup HTTP server router.
 pub(crate) fn setup_router(
-    cfg: &Arc<Config>,
+    cfg: &Config,
     db: DynDB,
     gh: DynGH,
     cmds_tx: async_channel::Sender<Command>,
@@ -161,8 +171,8 @@ fn verify_signature(
 
 /// Set a success check status to the pull request referenced in the event
 /// provided when it's created or synchronized if no vote has been created on
-/// it yet. This makes it possible to use the GitVote check in combination with
-/// branch protection.
+/// it yet. This makes it possible to use the `GitVote` check in combination
+/// with branch protection.
 async fn set_check_status(db: DynDB, gh: DynGH, event: &PullRequestEvent) -> Result<()> {
     let (owner, repo) = split_full_name(&event.repository.full_name);
     let inst_id = event.installation.id as u64;
@@ -198,9 +208,9 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: &PullRequestEvent) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::testutil::*;
-    use crate::{cmd::CreateVoteInput, db::MockDB};
+    use std::sync::Arc;
+    use std::{fs, path::Path};
+
     use async_channel::Receiver;
     use axum::{
         body::{to_bytes, Body},
@@ -209,8 +219,13 @@ mod tests {
     use futures::future;
     use hyper::Response;
     use mockall::predicate::eq;
-    use std::{fs, path::Path};
     use tower::ServiceExt;
+
+    use crate::github::MockGH;
+    use crate::testutil::*;
+    use crate::{cmd::CreateVoteInput, db::MockDB};
+
+    use super::*;
 
     #[tokio::test]
     async fn index() {
@@ -426,7 +441,7 @@ mod tests {
 
     #[tokio::test]
     async fn event_pr_without_cmd_set_check_status_failed() {
-        let cfg = Arc::new(setup_test_config());
+        let cfg = setup_test_config();
         let db = Arc::new(MockDB::new());
         let mut gh = MockGH::new();
         gh.expect_get_config_file()
@@ -599,7 +614,7 @@ mod tests {
     }
 
     fn setup_test_router() -> (Router, Receiver<Command>) {
-        let cfg = Arc::new(setup_test_config());
+        let cfg = setup_test_config();
         let db = Arc::new(MockDB::new());
         let gh = Arc::new(MockGH::new());
         let (cmds_tx, cmds_rx) = async_channel::unbounded();

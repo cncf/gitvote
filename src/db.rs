@@ -1,17 +1,21 @@
+//! This module defines an abstraction layer over the database.
+
+use std::sync::Arc;
+
+use anyhow::Result;
+use async_trait::async_trait;
+use deadpool_postgres::{Pool, Transaction};
+#[cfg(test)]
+use mockall::automock;
+use tokio_postgres::types::Json;
+use uuid::Uuid;
+
 use crate::{
     cfg::CfgProfile,
     cmd::{CheckVoteInput, CreateVoteInput},
     github::{self, split_full_name, DynGH},
     results::{self, Vote, VoteResults},
 };
-use anyhow::Result;
-use async_trait::async_trait;
-use deadpool_postgres::{Pool, Transaction};
-#[cfg(test)]
-use mockall::automock;
-use std::sync::Arc;
-use tokio_postgres::types::Json;
-use uuid::Uuid;
 
 /// Type alias to represent a DB trait object.
 pub(crate) type DynDB = Arc<dyn DB + Send + Sync>;
@@ -56,13 +60,13 @@ pub(crate) trait DB {
     async fn update_vote_last_check(&self, vote_id: Uuid) -> Result<()>;
 }
 
-/// DB implementation backed by PostgreSQL.
+/// DB implementation backed by `PostgreSQL`.
 pub(crate) struct PgDB {
     pool: Pool,
 }
 
 impl PgDB {
-    /// Create a new PgDB instance.
+    /// Create a new `PgDB` instance.
     pub(crate) fn new(pool: Pool) -> Self {
         Self { pool }
     }
@@ -91,7 +95,7 @@ impl PgDB {
     async fn store_vote_results(
         tx: &Transaction<'_>,
         vote_id: Uuid,
-        results: &Option<VoteResults>,
+        results: Option<&VoteResults>,
     ) -> Result<()> {
         tx.execute(
             "
@@ -154,7 +158,7 @@ impl DB for PgDB {
         };
 
         // Store results in database
-        PgDB::store_vote_results(&tx, vote.vote_id, &results).await?;
+        PgDB::store_vote_results(&tx, vote.vote_id, results.as_ref()).await?;
         tx.commit().await?;
 
         Ok(Some((vote, results)))

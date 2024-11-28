@@ -1,3 +1,16 @@
+//! This module defines the vote processing logic.
+
+use std::time::Duration;
+
+use anyhow::{Context, Result};
+use askama::Template;
+use futures::future::{self, JoinAll};
+use time::OffsetDateTime;
+use tokio::{task::JoinHandle, time::sleep};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, instrument, warn};
+use uuid::Uuid;
+
 use crate::{
     cfg::{CfgError, CfgProfile},
     cmd::{CancelVoteInput, CheckVoteInput, Command, CreateVoteInput},
@@ -5,18 +18,6 @@ use crate::{
     github::{split_full_name, CheckDetails, DynGH},
     results, tmpl,
 };
-use anyhow::Result;
-use askama::Template;
-use futures::future::{self, JoinAll};
-use std::{sync::Arc, time::Duration};
-use time::OffsetDateTime;
-use tokio::{
-    sync::broadcast::{self, error::TryRecvError},
-    task::JoinHandle,
-    time::sleep,
-};
-use tracing::{debug, error, instrument, warn};
-use uuid::Uuid;
 
 /// Number of commands handlers workers.
 const COMMANDS_HANDLERS_WORKERS: usize = 5;
@@ -47,66 +48,88 @@ const GITVOTE_LABEL: &str = "gitvote";
 const VOTE_OPEN_LABEL: &str = "vote open";
 
 /// A votes processor is in charge of creating the requested votes, stopping
-/// them at the scheduled time and publishing results, etc.
+/// them at the scheduled time and publishing results, etc. It relies on some
+/// specialized workers to handle the different tasks.
 pub(crate) struct Processor {
     db: DynDB,
     gh: DynGH,
+    cmds_tx: async_channel::Sender<Command>,
+    cmds_rx: async_channel::Receiver<Command>,
 }
 
 impl Processor {
     /// Create a new votes processor instance.
-    pub(crate) fn new(db: DynDB, gh: DynGH) -> Arc<Self> {
-        Arc::new(Self { db, gh })
+    pub(crate) fn new(
+        db: DynDB,
+        gh: DynGH,
+        cmds_tx: async_channel::Sender<Command>,
+        cmds_rx: async_channel::Receiver<Command>,
+    ) -> Self {
+        Self {
+            db,
+            gh,
+            cmds_tx,
+            cmds_rx,
+        }
     }
 
     /// Start votes processor.
-    pub(crate) fn start(
-        self: Arc<Self>,
-        cmds_tx: async_channel::Sender<Command>,
-        cmds_rx: &async_channel::Receiver<Command>,
-        stop_tx: &broadcast::Sender<()>,
-    ) -> JoinAll<JoinHandle<()>> {
+    pub(crate) fn run(self, cancel_token: &CancellationToken) -> JoinAll<JoinHandle<()>> {
         let num_workers = COMMANDS_HANDLERS_WORKERS + VOTES_CLOSERS_WORKERS + 2; // Status checker + auto closer
         let mut workers_handles = Vec::with_capacity(num_workers);
 
         // Launch commands handler workers
         for _ in 0..COMMANDS_HANDLERS_WORKERS {
-            let handle = self.clone().commands_handler(cmds_rx.clone(), stop_tx.subscribe());
-            workers_handles.push(handle);
+            let cmds_handler = CommandsHandler::new(self.db.clone(), self.gh.clone(), self.cmds_rx.clone());
+            let cmds_handler_handle = cmds_handler.run(cancel_token.clone());
+            workers_handles.push(cmds_handler_handle);
         }
 
         // Launch votes closer workers
         for _ in 0..VOTES_CLOSERS_WORKERS {
-            let handle = self.clone().votes_closer(stop_tx.subscribe());
-            workers_handles.push(handle);
+            let votes_closer = VotesCloser::new(self.db.clone(), self.gh.clone());
+            let votes_closer_handler = votes_closer.run(cancel_token.clone());
+            workers_handles.push(votes_closer_handler);
         }
 
         // Launch status checker
-        let status_checker_handle = self.clone().status_checker(cmds_tx, stop_tx.subscribe());
+        let status_checker = StatusChecker::new(self.db.clone(), self.cmds_tx.clone());
+        let status_checker_handle = status_checker.run(cancel_token.clone());
         workers_handles.push(status_checker_handle);
 
         // Launch votes auto closer
-        let votes_auto_closer_handle = self.votes_auto_closer(stop_tx.subscribe());
+        let votes_auto_closer = VotesAutoCloser::new(self.db.clone(), self.gh.clone());
+        let votes_auto_closer_handle = votes_auto_closer.run(cancel_token.clone());
         workers_handles.push(votes_auto_closer_handle);
 
         future::join_all(workers_handles)
     }
+}
 
-    /// Worker that receives commands from the queue and executes them.
-    /// Commands are added to the queue when certain events from GitHub are
-    /// received on the webhook endpoint.
-    fn commands_handler(
-        self: Arc<Self>,
-        cmds_rx: async_channel::Receiver<Command>,
-        mut stop_rx: broadcast::Receiver<()>,
-    ) -> JoinHandle<()> {
+/// Worker that receives commands from the queue and executes them. Commands
+/// are added to the queue when certain events from GitHub are received on the
+/// webhook endpoint.
+struct CommandsHandler {
+    db: DynDB,
+    gh: DynGH,
+    cmds_rx: async_channel::Receiver<Command>,
+}
+
+impl CommandsHandler {
+    /// Create a new commands handler instance.
+    pub(crate) fn new(db: DynDB, gh: DynGH, cmds_rx: async_channel::Receiver<Command>) -> Self {
+        Self { db, gh, cmds_rx }
+    }
+
+    /// Start commands handler.
+    fn run(self, cancel_token: CancellationToken) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     biased;
 
                     // Pick next command from the queue and process it
-                    Ok(cmd) = cmds_rx.recv() => {
+                    Ok(cmd) = self.cmds_rx.recv() => {
                         match cmd {
                             Command::CreateVote(input) => {
                                 _ = self.create_vote(&input).await;
@@ -120,117 +143,8 @@ impl Processor {
                         }
                     }
 
-                    // Exit if the votes processor has been asked to stop
-                    _ = stop_rx.recv() => {
-                        break
-                    }
-                }
-            }
-        })
-    }
-
-    /// Worker that periodically checks the database for votes that should be
-    /// closed and closes them.
-    fn votes_closer(self: Arc<Self>, mut stop_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            loop {
-                // Close any pending finished votes
-                match self.close_finished_vote().await {
-                    Ok(Some(())) => {
-                        // One pending finished vote was closed, try to close
-                        // another one immediately
-                    }
-                    Ok(None) => tokio::select! {
-                        // No pending finished votes were found, pause unless
-                        // we've been asked to stop
-                        () = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
-                        _ = stop_rx.recv() => break,
-                    },
-                    Err(_) => {
-                        // Something went wrong closing finished vote, pause
-                        // unless we've been asked to stop
-                        tokio::select! {
-                            () = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
-                            _ = stop_rx.recv() => break,
-                        }
-                    }
-                }
-
-                // Exit if the votes processor has been asked to stop
-                if let Some(TryRecvError::Closed) = stop_rx.try_recv().err() {
-                    break;
-                }
-            }
-        })
-    }
-
-    /// Worker that periodically runs status check commands.
-    fn status_checker(
-        self: Arc<Self>,
-        cmds_tx: async_channel::Sender<Command>,
-        mut stop_rx: broadcast::Receiver<()>,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            loop {
-                // Process pending periodic status checks
-                match self.db.get_pending_status_checks().await {
-                    Ok(inputs) => {
-                        // Enqueue check vote commands
-                        for input in inputs {
-                            _ = cmds_tx.send(Command::CheckVote(input)).await;
-                        }
-                    }
-                    Err(err) => {
-                        error!(?err, "error getting pending status checks");
-                    }
-                }
-
-                // Pause until it's time for the next run or exit if the votes
-                // processor has been asked to stop
-                tokio::select! {
-                    () = sleep(STATUS_CHECK_FREQUENCY) => {},
-                    _ = stop_rx.recv() => break,
-                }
-            }
-        })
-    }
-
-    /// Worker that periodically auto closes votes that have already passed.
-    /// This only applies to votes with the close_on_passing feature enabled.
-    fn votes_auto_closer(self: Arc<Self>, mut stop_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            loop {
-                // Process pending automatic vote closes
-                match self.db.get_open_votes_with_close_on_passing().await {
-                    Ok(votes) => {
-                        for vote in &votes {
-                            let vote_id = vote.vote_id;
-                            let (owner, repo) = split_full_name(&vote.repository_full_name);
-
-                            // Calculate vote results
-                            match results::calculate(self.gh.clone(), owner, repo, vote).await {
-                                Ok(results) => {
-                                    // If the vote has already passed, update its ending timestamp
-                                    if results.passed {
-                                        if let Err(err) = self.db.update_vote_ends_at(vote_id).await {
-                                            error!(?err, ?vote.vote_id, "error updating vote ends at");
-                                        }
-                                    }
-                                }
-                                Err(err) => error!(?err, ?vote_id, "error calculating results"),
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        error!(?err, "error getting votes with close_on_passing enabled");
-                    }
-                }
-
-                // Pause until it's time for the next run or exit if the votes
-                // processor has been asked to stop
-                tokio::select! {
-                    () = sleep(AUTO_CLOSE_FREQUENCY) => {},
-                    _ = stop_rx.recv() => break,
+                    // Exit if the worker has been asked to stop
+                    () = cancel_token.cancelled() => break,
                 }
             }
         })
@@ -316,13 +230,21 @@ impl Processor {
         // Only repository collaborators can cancel votes
         let inst_id = i.installation_id as u64;
         let (owner, repo) = split_full_name(&i.repository_full_name);
-        if !self.gh.user_is_collaborator(inst_id, owner, repo, &i.cancelled_by).await? {
+        if !self
+            .gh
+            .user_is_collaborator(inst_id, owner, repo, &i.cancelled_by)
+            .await
+            .context("error checking if user is collaborator")?
+        {
             return Ok(());
         }
 
         // Try cancelling the vote open in the issue/pr provided
-        let cancelled_vote_id: Option<Uuid> =
-            self.db.cancel_vote(&i.repository_full_name, i.issue_number).await?;
+        let cancelled_vote_id: Option<Uuid> = self
+            .db
+            .cancel_vote(&i.repository_full_name, i.issue_number)
+            .await
+            .context("error cancelling vote")?;
 
         // Post the corresponding comment on the issue/pr
         let body: String;
@@ -361,7 +283,12 @@ impl Processor {
     #[instrument(fields(vote_id), skip_all, err(Debug))]
     async fn check_vote(&self, i: &CheckVoteInput) -> Result<()> {
         // Get open vote (if any) from database
-        let Some(vote) = self.db.get_open_vote(&i.repository_full_name, i.issue_number).await? else {
+        let Some(vote) = self
+            .db
+            .get_open_vote(&i.repository_full_name, i.issue_number)
+            .await
+            .context("error getting open vote")?
+        else {
             return Ok(());
         };
 
@@ -393,12 +320,65 @@ impl Processor {
 
         Ok(())
     }
+}
+
+/// Worker that periodically checks the database for votes that should be
+/// closed and closes them.
+struct VotesCloser {
+    db: DynDB,
+    gh: DynGH,
+}
+
+impl VotesCloser {
+    /// Create a new votes closer instance.
+    pub(crate) fn new(db: DynDB, gh: DynGH) -> Self {
+        Self { db, gh }
+    }
+
+    /// Start votes closer.
+    fn run(self, cancel_token: CancellationToken) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            loop {
+                // Close any pending finished votes
+                match self.close_finished_vote().await {
+                    Ok(Some(())) => {
+                        // One pending finished vote was closed, try to close
+                        // another one immediately
+                    }
+                    Ok(None) => tokio::select! {
+                        // No pending finished votes were found, pause unless
+                        // we've been asked to stop
+                        () = sleep(VOTES_CLOSER_PAUSE_ON_NONE) => {},
+                        () = cancel_token.cancelled() => break,
+                    },
+                    Err(_) => {
+                        // Something went wrong closing finished vote, pause
+                        // unless we've been asked to stop
+                        tokio::select! {
+                            () = sleep(VOTES_CLOSER_PAUSE_ON_ERROR) => {},
+                            () = cancel_token.cancelled() => break,
+                        }
+                    }
+                }
+
+                // Exit if the worker has been asked to stop
+                if cancel_token.is_cancelled() {
+                    break;
+                }
+            }
+        })
+    }
 
     /// Close any pending finished vote.
     #[instrument(fields(vote_id), skip_all, err(Debug))]
     async fn close_finished_vote(&self) -> Result<Option<()>> {
         // Try to close any finished vote
-        let Some((vote, results)) = self.db.close_finished_vote(self.gh.clone()).await? else {
+        let Some((vote, results)) = self
+            .db
+            .close_finished_vote(self.gh.clone())
+            .await
+            .context("error closing finished vote")?
+        else {
             return Ok(None);
         };
 
@@ -474,6 +454,100 @@ impl Processor {
     }
 }
 
+/// Worker that periodically runs status check commands.
+struct StatusChecker {
+    db: DynDB,
+    cmds_tx: async_channel::Sender<Command>,
+}
+
+impl StatusChecker {
+    /// Create a new status checker instance.
+    pub(crate) fn new(db: DynDB, cmds_tx: async_channel::Sender<Command>) -> Self {
+        Self { db, cmds_tx }
+    }
+
+    /// Start status checker.
+    fn run(self, cancel_token: CancellationToken) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            loop {
+                // Process pending periodic status checks
+                match self.db.get_pending_status_checks().await {
+                    Ok(inputs) => {
+                        // Enqueue check vote commands
+                        for input in inputs {
+                            _ = self.cmds_tx.send(Command::CheckVote(input)).await;
+                        }
+                    }
+                    Err(err) => {
+                        error!(?err, "error getting pending status checks");
+                    }
+                }
+
+                // Pause until it's time for the next run or exit if the worker
+                // has been asked to stop
+                tokio::select! {
+                    () = sleep(STATUS_CHECK_FREQUENCY) => {},
+                    () = cancel_token.cancelled() => break,
+                }
+            }
+        })
+    }
+}
+
+/// Worker that periodically auto closes votes that have already passed. This
+/// only applies to votes with the `close_on_passing` feature enabled.
+struct VotesAutoCloser {
+    db: DynDB,
+    gh: DynGH,
+}
+
+impl VotesAutoCloser {
+    /// Create a new votes auto closer instance.
+    pub(crate) fn new(db: DynDB, gh: DynGH) -> Self {
+        Self { db, gh }
+    }
+
+    /// Start votes auto closer.
+    fn run(self, cancel_token: CancellationToken) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            loop {
+                // Process pending automatic vote closes
+                match self.db.get_open_votes_with_close_on_passing().await {
+                    Ok(votes) => {
+                        for vote in &votes {
+                            let vote_id = vote.vote_id;
+                            let (owner, repo) = split_full_name(&vote.repository_full_name);
+
+                            // Calculate vote results
+                            match results::calculate(self.gh.clone(), owner, repo, vote).await {
+                                Ok(results) => {
+                                    // If the vote has already passed, update its ending timestamp
+                                    if results.passed {
+                                        if let Err(err) = self.db.update_vote_ends_at(vote_id).await {
+                                            error!(?err, ?vote.vote_id, "error updating vote ends at");
+                                        }
+                                    }
+                                }
+                                Err(err) => error!(?err, ?vote_id, "error calculating results"),
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        error!(?err, "error getting votes with close_on_passing enabled");
+                    }
+                }
+
+                // Pause until it's time for the next run or exit if the votes
+                // processor has been asked to stop
+                tokio::select! {
+                    () = sleep(AUTO_CLOSE_FREQUENCY) => {},
+                    () = cancel_token.cancelled() => break,
+                }
+            }
+        })
+    }
+}
+
 /// Helper function to build an announcement title.
 fn build_announcement_title(issue_number: i64, issue_title: &str) -> String {
     format!("{issue_title} #{issue_number} (vote closed)")
@@ -481,15 +555,17 @@ fn build_announcement_title(issue_number: i64, issue_title: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
+    use std::{sync::Arc, vec};
 
-    use super::*;
-    use crate::results::{Vote, REACTION_IN_FAVOR};
-    use crate::testutil::*;
-    use crate::{cfg::AllowedVoters, db::MockDB, github::*};
     use anyhow::format_err;
     use mockall::predicate::eq;
     use time::ext::NumericalDuration;
+
+    use crate::results::{Vote, REACTION_IN_FAVOR};
+    use crate::testutil::*;
+    use crate::{cfg::AllowedVoters, db::MockDB, github::*};
+
+    use super::*;
 
     #[tokio::test]
     async fn votes_processor_stops_when_requested() {
@@ -502,28 +578,28 @@ mod tests {
             .times(1)
             .returning(|| Box::pin(future::ready(Ok(vec![]))));
         let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let processor = votes_processor.start(cmds_tx, &cmds_rx, &stop_tx);
+        let cancel_token = CancellationToken::new();
+        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh), cmds_tx, cmds_rx);
+        let votes_processor_handle = votes_processor.run(&cancel_token);
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(processor.await.iter().all(Result::is_ok));
+        assert!(votes_processor_handle.await.iter().all(Result::is_ok));
     }
 
     #[tokio::test]
     async fn commands_handler_stops_when_requested() {
         let db = MockDB::new();
         let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
         let (_, cmds_rx) = async_channel::unbounded();
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let cmds_handler = votes_processor.commands_handler(cmds_rx.clone(), stop_tx.subscribe());
+        let cancel_token = CancellationToken::new();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        let cmds_handler_handle = cmds_handler.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(cmds_handler.await.is_ok());
+        assert!(cmds_handler_handle.await.is_ok());
     }
 
     #[tokio::test]
@@ -538,17 +614,17 @@ mod tests {
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
             .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
+        let cancel_token = CancellationToken::new();
         let event = setup_test_issue_event();
         let cmd = Command::CancelVote(CancelVoteInput::new(&Event::Issue(event)));
         cmds_tx.send(cmd).await.unwrap();
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx.clone());
+        let cmds_handler_handle = cmds_handler.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        let cmds_handler = votes_processor.commands_handler(cmds_rx.clone(), stop_tx.subscribe());
-        drop(stop_tx);
-        assert!(cmds_handler.await.is_ok());
+        assert!(cmds_handler_handle.await.is_ok());
         assert!(cmds_rx.is_empty());
     }
 
@@ -557,13 +633,13 @@ mod tests {
         let mut db = MockDB::new();
         db.expect_close_finished_vote().times(1).returning(|_| Box::pin(future::ready(Ok(None))));
         let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let votes_closer = votes_processor.votes_closer(stop_tx.subscribe());
+        let cancel_token = CancellationToken::new();
+        let votes_closer = VotesCloser::new(Arc::new(db), Arc::new(gh));
+        let votes_closer_handle = votes_closer.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(votes_closer.await.is_ok());
+        assert!(votes_closer_handle.await.is_ok());
     }
 
     #[tokio::test]
@@ -573,13 +649,13 @@ mod tests {
             .times(1)
             .returning(|_| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let votes_closer = votes_processor.votes_closer(stop_tx.subscribe());
+        let cancel_token = CancellationToken::new();
+        let votes_closer = VotesCloser::new(Arc::new(db), Arc::new(gh));
+        let votes_closer_handle = votes_closer.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(votes_closer.await.is_ok());
+        assert!(votes_closer_handle.await.is_ok());
     }
 
     #[tokio::test]
@@ -588,15 +664,14 @@ mod tests {
         db.expect_get_pending_status_checks()
             .times(1)
             .returning(|| Box::pin(future::ready(Ok(vec![]))));
-        let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let status_check_scheduler = votes_processor.status_checker(cmds_tx, stop_tx.subscribe());
+        let cancel_token = CancellationToken::new();
+        let status_checker = StatusChecker::new(Arc::new(db), cmds_tx);
+        let status_checker_handle = status_checker.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(status_check_scheduler.await.is_ok());
+        assert!(status_checker_handle.await.is_ok());
         assert!(cmds_rx.is_empty());
     }
 
@@ -612,15 +687,14 @@ mod tests {
         db.expect_get_pending_status_checks()
             .times(1)
             .returning(move || Box::pin(future::ready(Ok(vec![check_vote_input_copy.clone()]))));
-        let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let status_check_scheduler = votes_processor.status_checker(cmds_tx, stop_tx.subscribe());
+        let cancel_token = CancellationToken::new();
+        let status_checker = StatusChecker::new(Arc::new(db), cmds_tx);
+        let status_checker_handle = status_checker.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(status_check_scheduler.await.is_ok());
+        assert!(status_checker_handle.await.is_ok());
         assert_eq!(
             cmds_rx.recv().await.unwrap(),
             Command::CheckVote(check_vote_input)
@@ -633,15 +707,14 @@ mod tests {
         db.expect_get_pending_status_checks()
             .times(1)
             .returning(|| Box::pin(future::ready(Err(format_err!(ERROR)))));
-        let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let status_check_scheduler = votes_processor.status_checker(cmds_tx, stop_tx.subscribe());
+        let cancel_token = CancellationToken::new();
+        let status_checker = StatusChecker::new(Arc::new(db), cmds_tx);
+        let status_checker_handle = status_checker.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(status_check_scheduler.await.is_ok());
+        assert!(status_checker_handle.await.is_ok());
         assert!(cmds_rx.is_empty());
     }
 
@@ -652,13 +725,13 @@ mod tests {
             .times(1)
             .returning(|| Box::pin(future::ready(Ok(vec![]))));
         let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let votes_auto_closer = votes_processor.votes_auto_closer(stop_tx.subscribe());
+        let cancel_token = CancellationToken::new();
+        let votes_auto_closer = VotesAutoCloser::new(Arc::new(db), Arc::new(gh));
+        let votes_auto_closer_handle = votes_auto_closer.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(votes_auto_closer.await.is_ok());
+        assert!(votes_auto_closer_handle.await.is_ok());
     }
 
     #[tokio::test]
@@ -685,23 +758,22 @@ mod tests {
                 }])))
             });
         gh.expect_get_allowed_voters()
-            .with(
-                eq(INST_ID),
-                eq(setup_test_vote().cfg),
-                eq(ORG),
-                eq(REPO),
-                eq(Some(ORG.to_string())),
-            )
+            .withf(|inst_id, cfg, owner, repo, org| {
+                *inst_id == INST_ID
+                    && *cfg == setup_test_vote().cfg
+                    && owner == ORG
+                    && repo == REPO
+                    && *org == Some(ORG.to_string()).as_ref()
+            })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(vec![USER1.to_string()]))));
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
+        let cancel_token = CancellationToken::new();
+        let votes_auto_closer = VotesAutoCloser::new(Arc::new(db), Arc::new(gh));
+        let votes_auto_closer_handle = votes_auto_closer.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let votes_auto_closer = votes_processor.votes_auto_closer(stop_tx.subscribe());
-
-        drop(stop_tx);
-        assert!(votes_auto_closer.await.is_ok());
+        assert!(votes_auto_closer_handle.await.is_ok());
     }
 
     #[tokio::test]
@@ -711,13 +783,13 @@ mod tests {
             .times(1)
             .returning(|| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
 
-        let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-        let votes_auto_closer = votes_processor.votes_auto_closer(stop_tx.subscribe());
+        let cancel_token = CancellationToken::new();
+        let votes_auto_closer = VotesAutoCloser::new(Arc::new(db), Arc::new(gh));
+        let votes_auto_closer_handle = votes_auto_closer.run(cancel_token.clone());
+        cancel_token.cancel();
 
-        drop(stop_tx);
-        assert!(votes_auto_closer.await.is_ok());
+        assert!(votes_auto_closer_handle.await.is_ok());
     }
 
     #[tokio::test]
@@ -739,13 +811,11 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
-        let event = setup_test_issue_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .create_vote(&CreateVoteInput::new(None, &Event::Issue(event)))
-            .await
-            .unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_issue_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.create_vote(&CreateVoteInput::new(None, &Event::Issue(event))).await.unwrap();
     }
 
     #[tokio::test]
@@ -771,13 +841,11 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
-        let event = setup_test_issue_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .create_vote(&CreateVoteInput::new(None, &Event::Issue(event)))
-            .await
-            .unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_issue_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.create_vote(&CreateVoteInput::new(None, &Event::Issue(event))).await.unwrap();
     }
 
     #[tokio::test]
@@ -807,13 +875,11 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
-        let event = setup_test_issue_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .create_vote(&CreateVoteInput::new(None, &Event::Issue(event)))
-            .await
-            .unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_issue_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.create_vote(&CreateVoteInput::new(None, &Event::Issue(event))).await.unwrap();
     }
 
     #[tokio::test]
@@ -872,8 +938,9 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor.create_vote(&create_vote_input).await.unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.create_vote(&create_vote_input).await.unwrap();
     }
 
     #[tokio::test]
@@ -946,11 +1013,13 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor.create_vote(&create_vote_input).await.unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.create_vote(&create_vote_input).await.unwrap();
     }
 
     #[tokio::test]
+    #[should_panic(expected = "error checking if user is collaborator")]
     async fn cancel_vote_error_checking_if_user_is_collaborator() {
         let db = MockDB::new();
         let mut gh = MockGH::new();
@@ -958,13 +1027,14 @@ mod tests {
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
             .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
-        let event = setup_test_issue_comment_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_issue_comment_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler
             .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
             .await
-            .unwrap_err();
+            .unwrap();
     }
 
     #[tokio::test]
@@ -975,16 +1045,18 @@ mod tests {
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
             .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(false))));
-        let event = setup_test_issue_comment_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_issue_comment_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler
             .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap();
     }
 
     #[tokio::test]
+    #[should_panic(expected = "error cancelling vote")]
     async fn cancel_vote_error_cancelling() {
         let mut db = MockDB::new();
         db.expect_cancel_vote()
@@ -996,13 +1068,14 @@ mod tests {
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(USER))
             .times(1)
             .returning(|_, _, _, _| Box::pin(future::ready(Ok(true))));
-        let event = setup_test_issue_comment_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_issue_comment_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler
             .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
             .await
-            .unwrap_err();
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1028,10 +1101,11 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
-        let event = setup_test_issue_comment_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_issue_comment_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler
             .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap();
@@ -1064,10 +1138,11 @@ mod tests {
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
-        let event = setup_test_issue_comment_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_issue_comment_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler
             .cancel_vote(&CancelVoteInput::new(&Event::IssueComment(event)))
             .await
             .unwrap();
@@ -1114,16 +1189,15 @@ mod tests {
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
-        let event = setup_test_pr_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .cancel_vote(&CancelVoteInput::new(&Event::PullRequest(event)))
-            .await
-            .unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_pr_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.cancel_vote(&CancelVoteInput::new(&Event::PullRequest(event))).await.unwrap();
     }
 
     #[tokio::test]
+    #[should_panic(expected = "error getting open vote")]
     async fn check_vote_error_getting_vote() {
         let mut db = MockDB::new();
         db.expect_get_open_vote()
@@ -1131,13 +1205,11 @@ mod tests {
             .times(1)
             .returning(|_, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
-        let event = setup_test_pr_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .check_vote(&CheckVoteInput::new(&Event::PullRequest(event)))
-            .await
-            .unwrap_err();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_pr_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.check_vote(&CheckVoteInput::new(&Event::PullRequest(event))).await.unwrap();
     }
 
     #[tokio::test]
@@ -1148,13 +1220,11 @@ mod tests {
             .times(1)
             .returning(|_, _| Box::pin(future::ready(Ok(None))));
         let gh = MockGH::new();
-        let event = setup_test_pr_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .check_vote(&CheckVoteInput::new(&Event::PullRequest(event)))
-            .await
-            .unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_pr_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.check_vote(&CheckVoteInput::new(&Event::PullRequest(event))).await.unwrap();
     }
 
     #[tokio::test]
@@ -1178,13 +1248,11 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
-        let event = setup_test_pr_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .check_vote(&CheckVoteInput::new(&Event::PullRequest(event)))
-            .await
-            .unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_pr_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.check_vote(&CheckVoteInput::new(&Event::PullRequest(event))).await.unwrap();
     }
 
     #[tokio::test]
@@ -1212,13 +1280,13 @@ mod tests {
                 }])))
             });
         gh.expect_get_allowed_voters()
-            .with(
-                eq(INST_ID),
-                eq(setup_test_vote().cfg),
-                eq(ORG),
-                eq(REPO),
-                eq(Some(ORG.to_string())),
-            )
+            .withf(|inst_id, cfg, owner, repo, org| {
+                *inst_id == INST_ID
+                    && *cfg == setup_test_vote().cfg
+                    && owner == ORG
+                    && repo == REPO
+                    && *org == Some(ORG.to_string()).as_ref()
+            })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(vec![USER1.to_string()]))));
         gh.expect_post_comment()
@@ -1233,16 +1301,15 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
-        let event = setup_test_pr_event();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor
-            .check_vote(&CheckVoteInput::new(&Event::PullRequest(event)))
-            .await
-            .unwrap();
+        let (_, cmds_rx) = async_channel::unbounded();
+        let event = setup_test_pr_event();
+        let cmds_handler = CommandsHandler::new(Arc::new(db), Arc::new(gh), cmds_rx);
+        cmds_handler.check_vote(&CheckVoteInput::new(&Event::PullRequest(event))).await.unwrap();
     }
 
     #[tokio::test]
+    #[should_panic(expected = "error closing finished vote")]
     async fn close_finished_vote_error_closing() {
         let mut db = MockDB::new();
         db.expect_close_finished_vote()
@@ -1250,8 +1317,8 @@ mod tests {
             .returning(|_| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = MockGH::new();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor.close_finished_vote().await.unwrap_err();
+        let votes_closer = VotesCloser::new(Arc::new(db), Arc::new(gh));
+        votes_closer.close_finished_vote().await.unwrap();
     }
 
     #[tokio::test]
@@ -1260,8 +1327,8 @@ mod tests {
         db.expect_close_finished_vote().times(1).returning(|_| Box::pin(future::ready(Ok(None))));
         let gh = MockGH::new();
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor.close_finished_vote().await.unwrap();
+        let votes_closer = VotesCloser::new(Arc::new(db), Arc::new(gh));
+        votes_closer.close_finished_vote().await.unwrap();
     }
 
     #[tokio::test]
@@ -1307,8 +1374,8 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor.close_finished_vote().await.unwrap();
+        let votes_closer = VotesCloser::new(Arc::new(db), Arc::new(gh));
+        votes_closer.close_finished_vote().await.unwrap();
     }
 
     #[tokio::test]
@@ -1367,8 +1434,8 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor.close_finished_vote().await.unwrap();
+        let votes_closer = VotesCloser::new(Arc::new(db), Arc::new(gh));
+        votes_closer.close_finished_vote().await.unwrap();
     }
 
     #[tokio::test]
@@ -1431,7 +1498,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
-        let votes_processor = Processor::new(Arc::new(db), Arc::new(gh));
-        votes_processor.close_finished_vote().await.unwrap();
+        let votes_closer = VotesCloser::new(Arc::new(db), Arc::new(gh));
+        votes_closer.close_finished_vote().await.unwrap();
     }
 }

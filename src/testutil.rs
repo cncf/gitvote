@@ -1,11 +1,15 @@
+//! This modules defines some test utilities.
+
+use std::{collections::HashMap, fs, path::Path, time::Duration};
+
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use uuid::Uuid;
+
 use crate::{
     cfg::{AllowedVoters, Announcements, CfgProfile, DiscussionsAnnouncements},
     github::*,
     results::{UserVote, Vote, VoteOption, VoteResults},
 };
-use std::{collections::HashMap, fs, path::Path, time::Duration};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use uuid::Uuid;
 
 pub(crate) const BRANCH: &str = "main";
 pub(crate) const COMMENT_ID: i64 = 1234;
