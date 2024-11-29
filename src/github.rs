@@ -1,4 +1,7 @@
-use crate::cfg::CfgProfile;
+//! This module defines an abstraction layer over the GitHub API.
+
+use std::sync::Arc;
+
 use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
 use axum::http::HeaderValue;
@@ -9,8 +12,9 @@ use mockall::automock;
 use octocrab::{models::InstallationId, Octocrab, Page};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use thiserror::Error;
+
+use crate::cfg::CfgProfile;
 
 /// GitHub API base url.
 const GITHUB_API_URL: &str = "https://api.github.com";
@@ -56,6 +60,7 @@ pub struct CreateDiscussion;
 
 /// Trait that defines some operations a GH implementation must support.
 #[async_trait]
+#[allow(clippy::ref_option_ref)]
 #[cfg_attr(test, automock)]
 pub(crate) trait GH {
     /// Add labels to the provided issue.
@@ -96,7 +101,7 @@ pub(crate) trait GH {
         cfg: &CfgProfile,
         owner: &str,
         repo: &str,
-        org: &Option<String>,
+        org: Option<&String>,
     ) -> Result<Vec<UserName>>;
 
     /// Get all repository collaborators.
@@ -169,7 +174,7 @@ pub(crate) struct GHApi {
 }
 
 impl GHApi {
-    /// Create a new GHApi instance.
+    /// Create a new `GHApi` instance.
     pub(crate) fn new(app_client: Octocrab) -> Self {
         Self { app_client }
     }
@@ -270,7 +275,7 @@ impl GH for GHApi {
         cfg: &CfgProfile,
         owner: &str,
         repo: &str,
-        org: &Option<String>,
+        org: Option<&String>,
     ) -> Result<Vec<UserName>> {
         let mut allowed_voters: Vec<UserName> = vec![];
 

@@ -1,9 +1,13 @@
-use crate::github::{DynGH, File, TeamSlug, UserName};
+//! This module defines some types to represent the configuration.
+
+use std::{collections::HashMap, time::Duration};
+
 use anyhow::{bail, Result};
 use ignore::gitignore::GitignoreBuilder;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, time::Duration};
 use thiserror::Error;
+
+use crate::github::{DynGH, File, TeamSlug, UserName};
 
 /// Default configuration profile.
 const DEFAULT_PROFILE: &str = "default";
@@ -15,7 +19,7 @@ const ERR_TEAMS_NOT_ALLOWED: &str = "teams in allowed voters can only be used in
 /// Type alias to represent a profile name.
 type ProfileName = String;
 
-/// GitVote configuration.
+/// `GitVote` configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Cfg {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -24,7 +28,7 @@ pub(crate) struct Cfg {
 }
 
 impl Cfg {
-    /// Get the GitVote configuration for the repository provided.
+    /// Get the `GitVote` configuration for the repository provided.
     pub(crate) async fn get<'a>(
         gh: DynGH,
         inst_id: u64,
@@ -165,12 +169,15 @@ pub(crate) enum CfgError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::github::MockGH;
-    use crate::testutil::*;
+    use std::sync::Arc;
+
     use futures::future;
     use mockall::predicate::eq;
-    use std::sync::Arc;
+
+    use crate::github::MockGH;
+    use crate::testutil::*;
+
+    use super::*;
 
     #[test]
     fn automation_rule_matches() {

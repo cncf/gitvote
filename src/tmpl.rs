@@ -1,10 +1,13 @@
+//! This module defines the templates used for the GitHub comments.
+
+use askama::Template;
+
 use crate::{
     cfg::CfgProfile,
     cmd::CreateVoteInput,
     github::{TeamSlug, UserName},
     results::VoteResults,
 };
-use askama::Template;
 
 /// Template for the config not found comment.
 #[derive(Debug, Clone, Template)]
@@ -29,7 +32,7 @@ pub(crate) struct InvalidConfig<'a> {
 }
 
 impl<'a> InvalidConfig<'a> {
-    /// Create a new InvalidConfig template.
+    /// Create a new `InvalidConfig` template.
     pub(crate) fn new(reason: &'a str) -> Self {
         Self { reason }
     }
@@ -44,7 +47,7 @@ pub(crate) struct NoVoteInProgress<'a> {
 }
 
 impl<'a> NoVoteInProgress<'a> {
-    /// Create a new NoVoteInProgress template.
+    /// Create a new `NoVoteInProgress` template.
     pub(crate) fn new(user: &'a str, is_pull_request: bool) -> Self {
         Self {
             user,
@@ -62,7 +65,7 @@ pub(crate) struct VoteCancelled<'a> {
 }
 
 impl<'a> VoteCancelled<'a> {
-    /// Create a new VoteCancelled template.
+    /// Create a new `VoteCancelled` template.
     pub(crate) fn new(user: &'a str, is_pull_request: bool) -> Self {
         Self {
             user,
@@ -84,7 +87,7 @@ pub(crate) struct VoteClosed<'a> {
 }
 
 impl<'a> VoteClosed<'a> {
-    /// Create a new VoteClosed template.
+    /// Create a new `VoteClosed` template.
     pub(crate) fn new(results: &'a VoteResults) -> Self {
         Self { results }
     }
@@ -100,7 +103,7 @@ pub(crate) struct VoteClosedAnnouncement<'a> {
 }
 
 impl<'a> VoteClosedAnnouncement<'a> {
-    /// Create a new VoteClosedAnnouncement template.
+    /// Create a new `VoteClosedAnnouncement` template.
     pub(crate) fn new(issue_number: i64, issue_title: &'a str, results: &'a VoteResults) -> Self {
         Self {
             issue_number,
@@ -125,7 +128,7 @@ pub(crate) struct VoteCreated<'a> {
 }
 
 impl<'a> VoteCreated<'a> {
-    /// Create a new VoteCreated template.
+    /// Create a new `VoteCreated` template.
     pub(crate) fn new(input: &'a CreateVoteInput, cfg: &'a CfgProfile) -> Self {
         // Prepare teams and users allowed to vote
         let (mut teams, mut users): (&[TeamSlug], &[UserName]) = (&[], &[]);
@@ -166,7 +169,7 @@ pub(crate) struct VoteInProgress<'a> {
 }
 
 impl<'a> VoteInProgress<'a> {
-    /// Create a new VoteInProgress template.
+    /// Create a new `VoteInProgress` template.
     pub(crate) fn new(user: &'a str, is_pull_request: bool) -> Self {
         Self {
             user,
@@ -183,7 +186,7 @@ pub(crate) struct VoteRestricted<'a> {
 }
 
 impl<'a> VoteRestricted<'a> {
-    /// Create a new VoteRestricted template.
+    /// Create a new `VoteRestricted` template.
     pub(crate) fn new(user: &'a str) -> Self {
         Self { user }
     }
@@ -197,7 +200,7 @@ pub(crate) struct VoteStatus<'a> {
 }
 
 impl<'a> VoteStatus<'a> {
-    /// Create a new VoteStatus template.
+    /// Create a new `VoteStatus` template.
     pub(crate) fn new(results: &'a VoteResults) -> Self {
         Self { results }
     }
@@ -218,6 +221,7 @@ mod filters {
         let mut non_binding_votes: Vec<(UserName, UserVote)> =
             votes.iter().filter(|(_, v)| !v.binding).map(|(n, v)| (n.clone(), v.clone())).collect();
         non_binding_votes.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
+        #[allow(clippy::cast_possible_truncation)]
         Ok(non_binding_votes.into_iter().take(*max as usize).collect())
     }
 }

@@ -1,14 +1,8 @@
 #![warn(clippy::all, clippy::pedantic)]
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::doc_markdown,
-    clippy::wildcard_imports
-)]
+#![allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
 
-use crate::{db::PgDB, github::GHApi};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use config::{Config, File};
@@ -16,10 +10,12 @@ use deadpool_postgres::{Config as DbConfig, Runtime};
 use octocrab::Octocrab;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio::{net::TcpListener, signal, sync::broadcast};
+use tokio::{net::TcpListener, signal};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
+
+use crate::{db::PgDB, github::GHApi};
 
 mod cfg;
 mod cmd;
@@ -51,7 +47,6 @@ async fn main() -> Result<()> {
         .add_source(File::from(args.config))
         .build()
         .context("error setting up configuration")?;
-    let cfg = Arc::new(cfg);
 
     // Setup logging
     if std::env::var_os("RUST_LOG").is_none() {
@@ -80,9 +75,9 @@ async fn main() -> Result<()> {
 
     // Setup and launch votes processor
     let (cmds_tx, cmds_rx) = async_channel::unbounded();
-    let (stop_tx, _): (broadcast::Sender<()>, _) = broadcast::channel(1);
-    let votes_processor = processor::Processor::new(db.clone(), gh.clone());
-    let votes_processor_done = votes_processor.start(cmds_tx.clone(), &cmds_rx, &stop_tx);
+    let cancel_token = CancellationToken::new();
+    let votes_processor = processor::Processor::new(db.clone(), gh.clone(), cmds_tx.clone(), cmds_rx);
+    let votes_processor_tasks = votes_processor.run(&cancel_token);
     debug!("[votes processor] started");
 
     // Setup and launch HTTP server
@@ -93,8 +88,8 @@ async fn main() -> Result<()> {
     axum::serve(listener, router).with_graceful_shutdown(shutdown_signal()).await.unwrap();
 
     // Ask votes processor to stop and wait for it to finish
-    drop(stop_tx);
-    votes_processor_done.await;
+    cancel_token.cancel();
+    votes_processor_tasks.await;
     debug!("[votes processor] stopped");
     info!("gitvote service stopped");
 

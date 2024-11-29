@@ -1,13 +1,17 @@
+//! This module defines the logic to calculate vote results.
+
+use std::{collections::HashMap, fmt};
+
+use anyhow::{bail, Result};
+use serde::{Deserialize, Serialize};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use tokio_postgres::{types::Json, Row};
+use uuid::Uuid;
+
 use crate::{
     cfg::CfgProfile,
     github::{DynGH, UserName},
 };
-use anyhow::{bail, Result};
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use tokio_postgres::{types::Json, Row};
-use uuid::Uuid;
 
 /// Supported reactions.
 pub(crate) const REACTION_IN_FAVOR: &str = "+1";
@@ -133,7 +137,8 @@ pub(crate) async fn calculate<'a>(
     let reactions = gh.get_comment_reactions(inst_id, owner, repo, vote.vote_comment_id).await?;
 
     // Get list of allowed voters (users with binding votes)
-    let allowed_voters = gh.get_allowed_voters(inst_id, &vote.cfg, owner, repo, &vote.organization).await?;
+    let allowed_voters =
+        gh.get_allowed_voters(inst_id, &vote.cfg, owner, repo, vote.organization.as_ref()).await?;
 
     // Track users votes
     let mut votes: HashMap<UserName, UserVote> = HashMap::new();
@@ -186,6 +191,7 @@ pub(crate) async fn calculate<'a>(
     }
     let mut in_favor_percentage = 0.0;
     let mut against_percentage = 0.0;
+    #[allow(clippy::cast_precision_loss)]
     if !allowed_voters.is_empty() {
         in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
         against_percentage = against as f64 / allowed_voters.len() as f64 * 100.0;
@@ -212,12 +218,15 @@ pub(crate) async fn calculate<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::github::{MockGH, Reaction, User};
-    use crate::testutil::*;
+    use std::{sync::Arc, time::Duration};
+
     use futures::future::{self};
     use mockall::predicate::eq;
-    use std::{sync::Arc, time::Duration};
+
+    use crate::github::{MockGH, Reaction, User};
+    use crate::testutil::*;
+
+    use super::*;
 
     #[test]
     fn vote_option_from_reaction() {
@@ -277,7 +286,13 @@ mod tests {
                     .times(1)
                     .returning(|_, _, _, _| Box::pin(future::ready(Ok($reactions))));
                 gh.expect_get_allowed_voters()
-                    .with(eq(INST_ID), eq($cfg), eq(OWNER), eq(REPO), eq(Some(ORG.to_string())))
+                    .withf(|inst_id, cfg, owner, repo, org| {
+                        *inst_id == INST_ID
+                            && *cfg == $cfg
+                            && owner == OWNER
+                            && repo == REPO
+                            && *org == Some(ORG.to_string()).as_ref()
+                    })
                     .times(1)
                     .returning(|_, _, _, _, _| Box::pin(future::ready(Ok($allowed_voters))));
 
