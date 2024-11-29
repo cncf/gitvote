@@ -6,13 +6,13 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.91"
+anyhow = "1.0.93"
 askama = "0.12.1"
 askama_axum = "0.4.0"
 async-channel = "2.3.1"
 async-trait = "0.1.83"
-axum = { version = "0.7.7", features = ["macros"] }
-clap = { version = "4.5.20", features = ["derive"] }
+axum = { version = "0.7.9", features = ["macros"] }
+clap = { version = "4.5.21", features = ["derive"] }
 deadpool-postgres = { version = "0.14.0", features = ["serde"] }
 figment = { version = "0.10.19", features = ["yaml", "env"] }
 futures = "0.3.31"
@@ -29,14 +29,14 @@ octocrab = "=0.33.3"
 openssl = { version = "0.10.68", features = ["vendored"] }
 postgres-openssl = "0.5.0"
 regex = "1.11.1"
-reqwest = "0.12.8"
-serde = { version = "1.0.213", features = ["derive"] }
-serde_json = "1.0.132"
+reqwest = "0.12.9"
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0.133"
 serde_yaml = "0.9.34"
 sha2 = "0.10.8"
-thiserror = "1.0.65"
+thiserror = "2.0.3"
 time = { version = "0.3.36", features = ["serde"] }
-tokio = { version = "1.41.0", features = [
+tokio = { version = "1.41.1", features = [
     "macros",
     "rt-multi-thread",
     "signal",
@@ -49,12 +49,12 @@ tokio-postgres = { version = "0.7.12", features = [
 ] }
 tokio-util = { version = "0.7.12", features = ["rt"] }
 tower = { version = "0.5.1", features = ["util"] }
-tower-http = { version = "0.6.1", features = ["trace"] }
+tower-http = { version = "0.6.2", features = ["trace"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 uuid = { version = "1.11.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
 http-body = "1.0.1"
-hyper = "1.5.0"
-mockall = "0.13.0"
+hyper = "1.5.1"
+mockall = "0.13.1"
