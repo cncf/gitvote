@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use crate::{
-    cfg::{Cfg, CfgError},
+    cfg_repo::{Cfg, CfgError},
     github::{
         split_full_name, DynGH, Event, IssueCommentEventAction, IssueEventAction, PullRequestEventAction,
     },

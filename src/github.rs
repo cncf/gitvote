@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
 
-use crate::cfg::CfgProfile;
+use crate::cfg_repo::CfgProfile;
 
 /// GitHub API base url.
 const GITHUB_API_URL: &str = "https://api.github.com";

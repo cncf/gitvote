@@ -1,4 +1,6 @@
-//! This module defines some types to represent the configuration.
+//! This module defines some types and functionality to represent and process
+//! the `GitVote` configuration that GitHub repositories can use to enable and
+//! customize the service.
 
 use std::{collections::HashMap, time::Duration};
 

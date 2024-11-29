@@ -10,7 +10,6 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use config::{Config, ConfigError};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tower::ServiceBuilder;
@@ -18,6 +17,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{error, instrument, trace};
 
 use crate::{
+    cfg_svc::Cfg,
     cmd::Command,
     db::DynDB,
     github::{
@@ -44,21 +44,12 @@ struct RouterState {
 
 /// Setup HTTP server router.
 pub(crate) fn setup_router(
-    cfg: &Config,
+    cfg: &Cfg,
     db: DynDB,
     gh: DynGH,
     cmds_tx: async_channel::Sender<Command>,
-) -> Result<Router> {
-    // Setup webhook secret
-    let webhook_secret = cfg.get_string("github.webhookSecret")?;
-    let webhook_secret_fallback = match cfg.get_string("github.webhookSecretFallback") {
-        Ok(secret) => Some(secret),
-        Err(ConfigError::NotFound(_)) => None,
-        Err(err) => return Err(err.into()),
-    };
-
-    // Setup router
-    let router = Router::new()
+) -> Router {
+    Router::new()
         .route("/", get(index))
         .route("/api/events", post(event))
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()))
@@ -66,11 +57,9 @@ pub(crate) fn setup_router(
             db,
             gh,
             cmds_tx,
-            webhook_secret,
-            webhook_secret_fallback,
-        });
-
-    Ok(router)
+            webhook_secret: cfg.github.webhook_secret.clone(),
+            webhook_secret_fallback: cfg.github.webhook_secret_fallback.clone(),
+        })
 }
 
 /// Handler that returns the index document.
@@ -216,6 +205,7 @@ mod tests {
         body::{to_bytes, Body},
         http::{header::CONTENT_TYPE, Request},
     };
+    use figment::{providers::Serialized, Figment};
     use futures::future;
     use hyper::Response;
     use mockall::predicate::eq;
@@ -454,7 +444,7 @@ mod tests {
             .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
         let gh = Arc::new(gh);
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        let router = setup_router(&cfg, db, gh, cmds_tx).unwrap();
+        let router = setup_router(&cfg, db, gh, cmds_tx);
 
         let body = fs::read(Path::new(TESTDATA_PATH).join("event-pr-no-cmd.json")).unwrap();
         let response = router
@@ -618,11 +608,19 @@ mod tests {
         let db = Arc::new(MockDB::new());
         let gh = Arc::new(MockGH::new());
         let (cmds_tx, cmds_rx) = async_channel::unbounded();
-        (setup_router(&cfg, db, gh, cmds_tx).unwrap(), cmds_rx)
+        (setup_router(&cfg, db, gh, cmds_tx), cmds_rx)
     }
 
-    fn setup_test_config() -> Config {
-        Config::builder().set_default("github.webhookSecret", "secret").unwrap().build().unwrap()
+    fn setup_test_config() -> Cfg {
+        Figment::new()
+            .merge(Serialized::default("addr", "127.0.0.1:9000"))
+            .merge(Serialized::default("db.host", "127.0.0.1"))
+            .merge(Serialized::default("log.format", "pretty"))
+            .merge(Serialized::default("github.appId", 1234))
+            .merge(Serialized::default("github.appPrivateKey", "key"))
+            .merge(Serialized::default("github.webhookSecret", "secret"))
+            .extract()
+            .unwrap()
     }
 
     async fn get_body(response: Response<Body>) -> Bytes {

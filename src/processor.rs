@@ -12,7 +12,7 @@ use tracing::{debug, error, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-    cfg::{CfgError, CfgProfile},
+    cfg_repo::{CfgError, CfgProfile},
     cmd::{CancelVoteInput, CheckVoteInput, Command, CreateVoteInput},
     db::DynDB,
     github::{split_full_name, CheckDetails, DynGH},
@@ -563,7 +563,7 @@ mod tests {
 
     use crate::results::{Vote, REACTION_IN_FAVOR};
     use crate::testutil::*;
-    use crate::{cfg::AllowedVoters, db::MockDB, github::*};
+    use crate::{cfg_repo::AllowedVoters, db::MockDB, github::*};
 
     use super::*;
 

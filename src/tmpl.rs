@@ -3,7 +3,7 @@
 use askama::Template;
 
 use crate::{
-    cfg::CfgProfile,
+    cfg_repo::CfgProfile,
     cmd::CreateVoteInput,
     github::{TeamSlug, UserName},
     results::VoteResults,
