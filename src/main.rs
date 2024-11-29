@@ -5,8 +5,7 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use config::{Config, File};
-use deadpool_postgres::{Config as DbConfig, Runtime};
+use deadpool_postgres::Runtime;
 use octocrab::Octocrab;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
@@ -15,9 +14,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
 
-use crate::{db::PgDB, github::GHApi};
+use crate::{
+    cfg_svc::{Cfg, LogFormat},
+    db::PgDB,
+    github::GHApi,
+};
 
-mod cfg;
+mod cfg_repo;
+mod cfg_svc;
 mod cmd;
 mod db;
 mod github;
@@ -41,34 +45,28 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Setup configuration
-    let cfg = Config::builder()
-        .set_default("log.format", "pretty")?
-        .set_default("addr", "127.0.0.1:9000")?
-        .add_source(File::from(args.config))
-        .build()
-        .context("error setting up configuration")?;
+    let cfg = Cfg::new(&args.config).context("error setting up configuration")?;
 
     // Setup logging
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "gitvote=debug");
     }
-    let s = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env());
-    match cfg.get_string("log.format").as_deref() {
-        Ok("json") => s.json().init(),
-        _ => s.init(),
+    let ts = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env());
+    match cfg.log.format {
+        LogFormat::Json => ts.json().init(),
+        LogFormat::Pretty => ts.init(),
     };
 
     // Setup database
     let mut builder = SslConnector::builder(SslMethod::tls())?;
     builder.set_verify(SslVerifyMode::NONE);
     let connector = MakeTlsConnector::new(builder.build());
-    let db_cfg: DbConfig = cfg.get("db")?;
-    let pool = db_cfg.create_pool(Some(Runtime::Tokio1), connector)?;
+    let pool = cfg.db.create_pool(Some(Runtime::Tokio1), connector)?;
     let db = Arc::new(PgDB::new(pool));
 
     // Setup GitHub client
-    let app_id = cfg.get_int("github.appID")? as u64;
-    let app_private_key = cfg.get_string("github.appPrivateKey")?;
+    let app_id = cfg.github.app_id as u64;
+    let app_private_key = cfg.github.app_private_key.clone();
     let app_private_key = jsonwebtoken::EncodingKey::from_rsa_pem(app_private_key.as_bytes())?;
     let app_client = Octocrab::builder().app(app_id.into(), app_private_key).build()?;
     let gh = Arc::new(GHApi::new(app_client));
@@ -81,8 +79,8 @@ async fn main() -> Result<()> {
     debug!("[votes processor] started");
 
     // Setup and launch HTTP server
-    let router = handlers::setup_router(&cfg, db, gh, cmds_tx)?;
-    let addr: SocketAddr = cfg.get_string("addr")?.parse()?;
+    let router = handlers::setup_router(&cfg, db, gh, cmds_tx);
+    let addr: SocketAddr = cfg.addr.parse()?;
     let listener = TcpListener::bind(addr).await?;
     info!(%addr, "gitvote service started");
     axum::serve(listener, router).with_graceful_shutdown(shutdown_signal()).await.unwrap();

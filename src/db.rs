@@ -11,7 +11,7 @@ use tokio_postgres::types::Json;
 use uuid::Uuid;
 
 use crate::{
-    cfg::CfgProfile,
+    cfg_repo::CfgProfile,
     cmd::{CheckVoteInput, CreateVoteInput},
     github::{self, split_full_name, DynGH},
     results::{self, Vote, VoteResults},

@@ -9,7 +9,7 @@ use tokio_postgres::{types::Json, Row};
 use uuid::Uuid;
 
 use crate::{
-    cfg::CfgProfile,
+    cfg_repo::CfgProfile,
     github::{DynGH, UserName},
 };
 

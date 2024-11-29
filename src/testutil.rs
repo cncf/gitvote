@@ -6,7 +6,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::{
-    cfg::{AllowedVoters, Announcements, CfgProfile, DiscussionsAnnouncements},
+    cfg_repo::{AllowedVoters, Announcements, CfgProfile, DiscussionsAnnouncements},
     github::*,
     results::{UserVote, Vote, VoteOption, VoteResults},
 };
