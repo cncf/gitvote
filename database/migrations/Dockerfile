@@ -4,7 +4,7 @@ RUN apk --no-cache add git
 RUN go install github.com/jackc/tern@latest
 
 # Build final image
-FROM alpine:3.20.3
+FROM alpine:3.21.0
 RUN addgroup -S gitvote && adduser -S gitvote -G gitvote
 USER gitvote
 WORKDIR /home/gitvote
