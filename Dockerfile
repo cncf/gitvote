@@ -10,7 +10,7 @@ WORKDIR /gitvote/src
 RUN cargo build --release
 
 # Final stage
-FROM alpine:3.20.3
+FROM alpine:3.21.0
 RUN apk --no-cache add ca-certificates && addgroup -S gitvote && adduser -S gitvote -G gitvote
 USER gitvote
 WORKDIR /home/gitvote
