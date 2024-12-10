@@ -6,13 +6,13 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.94"
 askama = "0.12.1"
 askama_axum = "0.4.0"
 async-channel = "2.3.1"
 async-trait = "0.1.83"
 axum = { version = "0.7.9", features = ["macros"] }
-clap = { version = "4.5.21", features = ["derive"] }
+clap = { version = "4.5.23", features = ["derive"] }
 deadpool-postgres = { version = "0.14.0", features = ["serde"] }
 figment = { version = "0.10.19", features = ["yaml", "env"] }
 futures = "0.3.31"
@@ -34,9 +34,9 @@ serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
 serde_yaml = "0.9.34"
 sha2 = "0.10.8"
-thiserror = "2.0.3"
-time = { version = "0.3.36", features = ["serde"] }
-tokio = { version = "1.41.1", features = [
+thiserror = "2.0.6"
+time = { version = "0.3.37", features = ["serde"] }
+tokio = { version = "1.42.0", features = [
     "macros",
     "rt-multi-thread",
     "signal",
@@ -47,11 +47,11 @@ tokio-postgres = { version = "0.7.12", features = [
     "with-serde_json-1",
     "with-time-0_3",
 ] }
-tokio-util = { version = "0.7.12", features = ["rt"] }
+tokio-util = { version = "0.7.13", features = ["rt"] }
 tower = { version = "0.5.1", features = ["util"] }
 tower-http = { version = "0.6.2", features = ["trace"] }
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 uuid = { version = "1.11.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
