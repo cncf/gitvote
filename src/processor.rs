@@ -132,6 +132,7 @@ impl CommandsHandler {
                     Ok(cmd) = self.cmds_rx.recv() => {
                         match cmd {
                             Command::CreateVote(input) => {
+                                debug!(repo=input.repository_full_name, issue=input.issue_number, "processing create vote command");
                                 _ = self.create_vote(&input).await;
                             }
                             Command::CancelVote(input) => {

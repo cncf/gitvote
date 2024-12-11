@@ -103,7 +103,7 @@ async fn event(
         Err(EventError::InvalidBody(err)) => {
             return Err((StatusCode::BAD_REQUEST, EventError::InvalidBody(err).to_string()))
         }
-        Err(EventError::UnsupportedEvent) => return Ok(()),
+        Err(EventError::UnsupportedEvent) => return Ok("unsupported event"),
     };
     trace!(?event, "event received");
 
@@ -112,6 +112,7 @@ async fn event(
         Some(cmd) => {
             trace!(?cmd, "command detected");
             cmds_tx.send(cmd).await.unwrap();
+            return Ok("command queued");
         }
         None => {
             if let Event::PullRequest(event) = event {
@@ -123,7 +124,7 @@ async fn event(
         }
     };
 
-    Ok(())
+    Ok("no command detected")
 }
 
 /// Verify that the signature provided is valid.
