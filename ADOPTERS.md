@@ -2,12 +2,23 @@
 
 If your organization is using GitVote, please consider adding it to this list by submitting a pull request.
 
-
 - [AsyncAPI](https://github.com/asyncapi/community/blob/master/voting.md)
-- [AWS Labs](https://github.com/awslabs)
 - [CNCF](https://cncf.io)
+- [DevRel Foundation](https://dev-rel.org/)
+- [Fintech Open Source Foundation](www.finos.org)
+- [JSON Schema](https://json-schema.org)
+- [K8sGateway](https://k8sgateway.io)
+- [KServe](https://kserve.github.io/website/latest/)
+- [Kuadrant](https://kuadrant.io)
 - [Kuma](https://kuma.io)
+- [NFDI4Health](https://github.com/nfdi4health)
 - [Open Component Model](https://ocm.software)
+- [OpenGemini](https://opengemini.org)
+- [OpenSSF](https://openssf.org)
 - [ORAS](https://oras.land)
+- [OSCAL Compass](https://github.com/oscal-compass)
+- [Ratify Project](https://ratify.dev)
 - [ResBaz Arizona](https://researchbazaar.arizona.edu)
+- [TODO Group](https://todogroup.org)
 - [Universal Blue](https://universal-blue.org)
+- [WasmEdge](https://wasmedge.org/)
