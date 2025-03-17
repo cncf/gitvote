@@ -2,11 +2,12 @@
 //! supported endpoints.
 
 use anyhow::{format_err, Error, Result};
+use askama::Template;
 use axum::{
     body::Bytes,
     extract::{FromRef, State},
     http::{HeaderMap, HeaderValue, StatusCode},
-    response::IntoResponse,
+    response::{Html, IntoResponse},
     routing::{get, post},
     Router,
 };
@@ -65,7 +66,11 @@ pub(crate) fn setup_router(
 /// Handler that returns the index document.
 #[allow(clippy::unused_async)]
 async fn index() -> impl IntoResponse {
-    tmpl::Index {}
+    let template = tmpl::Index {};
+    match template.render() {
+        Ok(html) => Ok(Html(html)),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
 /// Handler that processes webhook events from GitHub.
