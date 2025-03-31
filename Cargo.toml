@@ -12,8 +12,8 @@ askama = { git = "https://github.com/askama-rs/askama", rev = "70531eb", feature
 askama_axum = "0.4.0"
 async-channel = "2.3.1"
 async-trait = "0.1.88"
-axum = { version = "0.8.1", features = ["macros"] }
-clap = { version = "4.5.32", features = ["derive"] }
+axum = { version = "0.8.3", features = ["macros"] }
+clap = { version = "4.5.34", features = ["derive"] }
 deadpool-postgres = { version = "0.14.1", features = ["serde"] }
 figment = { version = "0.10.19", features = ["yaml", "env"] }
 futures = "0.3.31"
@@ -26,17 +26,17 @@ humantime-serde = "1.1.1"
 ignore = "0.4.23"
 jsonwebtoken = "9.3.1"
 lazy_static = "1.5.0"
-octocrab = "=0.33.3"
+octocrab = "=0.44.0"
 openssl = { version = "0.10.71", features = ["vendored"] }
 postgres-openssl = "0.5.1"
 regex = "1.11.1"
-reqwest = "0.12.14"
+reqwest = "0.12.15"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 serde_yaml = "0.9.34"
 sha2 = "0.10.8"
 thiserror = "2.0.12"
-time = { version = "0.3.39", features = ["serde"] }
+time = { version = "0.3.41", features = ["serde"] }
 tokio = { version = "1.44.1", features = [
     "macros",
     "rt-multi-thread",
