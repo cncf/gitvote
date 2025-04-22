@@ -11,6 +11,7 @@ If your organization is using GitVote, please consider adding it to this list by
 - [KServe](https://kserve.github.io/website/latest/)
 - [Kuadrant](https://kuadrant.io)
 - [Kuma](https://kuma.io)
+- [Microcks](https://microcks.io/)
 - [NFDI4Health](https://github.com/nfdi4health)
 - [Open Component Model](https://ocm.software)
 - [OpenGemini](https://opengemini.org)
