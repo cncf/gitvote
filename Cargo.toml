@@ -7,13 +7,13 @@ edition = "2021"
 rust-version = "1.85"
 
 [dependencies]
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 askama = { git = "https://github.com/askama-rs/askama", rev = "70531eb", features = ["serde_json"] }
-askama_axum = "0.4.0"
+askama_axum = "0.5.0"
 async-channel = "2.3.1"
 async-trait = "0.1.88"
-axum = { version = "0.8.1", features = ["macros"] }
-clap = { version = "4.5.32", features = ["derive"] }
+axum = { version = "0.8.3", features = ["macros"] }
+clap = { version = "4.5.37", features = ["derive"] }
 deadpool-postgres = { version = "0.14.1", features = ["serde"] }
 figment = { version = "0.10.19", features = ["yaml", "env"] }
 futures = "0.3.31"
@@ -26,18 +26,18 @@ humantime-serde = "1.1.1"
 ignore = "0.4.23"
 jsonwebtoken = "9.3.1"
 lazy_static = "1.5.0"
-octocrab = "=0.33.3"
-openssl = { version = "0.10.71", features = ["vendored"] }
+octocrab = "=0.44.0"
+openssl = { version = "0.10.72", features = ["vendored"] }
 postgres-openssl = "0.5.1"
 regex = "1.11.1"
-reqwest = "0.12.14"
+reqwest = "0.12.15"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 serde_yaml = "0.9.34"
 sha2 = "0.10.8"
 thiserror = "2.0.12"
-time = { version = "0.3.39", features = ["serde"] }
-tokio = { version = "1.44.1", features = [
+time = { version = "0.3.41", features = ["serde"] }
+tokio = { version = "1.44.2", features = [
     "macros",
     "rt-multi-thread",
     "signal",
@@ -48,7 +48,7 @@ tokio-postgres = { version = "0.7.13", features = [
     "with-serde_json-1",
     "with-time-0_3",
 ] }
-tokio-util = { version = "0.7.14", features = ["rt"] }
+tokio-util = { version = "0.7.15", features = ["rt"] }
 tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.6.2", features = ["trace"] }
 tracing = "0.1.40"
