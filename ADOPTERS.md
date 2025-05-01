@@ -3,6 +3,7 @@
 If your organization is using GitVote, please consider adding it to this list by submitting a pull request.
 
 - [AsyncAPI](https://github.com/asyncapi/community/blob/master/voting.md)
+- [CloudNativePG](https://cloudnative-pg.io)
 - [CNCF](https://cncf.io)
 - [DevRel Foundation](https://dev-rel.org/)
 - [Fintech Open Source Foundation](www.finos.org)
@@ -11,6 +12,7 @@ If your organization is using GitVote, please consider adding it to this list by
 - [KServe](https://kserve.github.io/website/latest/)
 - [Kuadrant](https://kuadrant.io)
 - [Kuma](https://kuma.io)
+- [Kyverno](https://kyverno.io)
 - [Microcks](https://microcks.io/)
 - [NFDI4Health](https://github.com/nfdi4health)
 - [Open Component Model](https://ocm.software)
