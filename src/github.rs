@@ -191,7 +191,7 @@ impl GH for GHApi {
         issue_number: i64,
         labels: &[&str],
     ) -> Result<()> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let labels = labels.iter().map(ToString::to_string).collect::<Vec<String>>();
         client.issues(owner, repo).add_labels(issue_number as u64, &labels).await?;
         Ok(())
@@ -206,7 +206,7 @@ impl GH for GHApi {
         issue_number: i64,
         check_details: &CheckDetails,
     ) -> Result<()> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let pr = client.pulls(owner, repo).get(issue_number as u64).await?;
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs");
         let mut body = json!({
@@ -220,7 +220,7 @@ impl GH for GHApi {
         });
         if let Some(conclusion) = &check_details.conclusion {
             body["conclusion"] = json!(conclusion);
-        };
+        }
         let _: Value = client.post(url, Some(&body)).await?;
         Ok(())
     }
@@ -235,7 +235,7 @@ impl GH for GHApi {
         title: &str,
         body: &str,
     ) -> Result<()> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
 
         // Fetch some repository details needed to create a discussion
         let response: graphql_client::Response<announcement_repo_query::ResponseData> = client
@@ -326,7 +326,7 @@ impl GH for GHApi {
 
     /// [GH::get_collaborators]
     async fn get_collaborators(&self, inst_id: u64, owner: &str, repo: &str) -> Result<Vec<UserName>> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators");
         let first_page: Page<User> = client.get(url, None::<&()>).await?;
         let collaborators = client.all_pages(first_page).await?.into_iter().map(|u| u.login).collect();
@@ -341,7 +341,7 @@ impl GH for GHApi {
         repo: &str,
         comment_id: i64,
     ) -> Result<Vec<Reaction>> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",);
         let first_page: Page<Reaction> = client.get(url, None::<&()>).await?;
         let reactions = client.all_pages(first_page).await?;
@@ -350,20 +350,19 @@ impl GH for GHApi {
 
     /// [GH::get_config_file]
     async fn get_config_file(&self, inst_id: u64, owner: &str, repo: &str) -> Option<String> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let Ok(client) = self.app_client.installation(InstallationId(inst_id)) else {
+            return None;
+        };
 
         // Try to get the config file from the repository. Otherwise try
         // getting the organization wide config file in the .github repo.
         let mut content: Option<String> = None;
         for repo in &[repo, ORG_CONFIG_REPO] {
-            match client.repos(owner, *repo).get_content().path(CONFIG_FILE).send().await {
-                Ok(resp) => {
-                    if resp.items.len() == 1 {
-                        content = resp.items[0].decoded_content();
-                        break;
-                    }
+            if let Ok(resp) = client.repos(owner, *repo).get_content().path(CONFIG_FILE).send().await {
+                if resp.items.len() == 1 {
+                    content = resp.items[0].decoded_content();
+                    break;
                 }
-                Err(_) => continue,
             }
         }
 
@@ -372,7 +371,7 @@ impl GH for GHApi {
 
     /// [GH::get_pr_files]
     async fn get_pr_files(&self, inst_id: u64, owner: &str, repo: &str, pr_number: i64) -> Result<Vec<File>> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}/files");
         let first_page: Page<File> = client.get(url, None::<&()>).await?;
         let files: Vec<File> = client.all_pages(first_page).await?;
@@ -387,7 +386,7 @@ impl GH for GHApi {
         team: &str,
         exclude_maintainers: bool,
     ) -> Result<Vec<UserName>> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let url = format!("{GITHUB_API_URL}/orgs/{org}/teams/{team}/members");
         let first_page: Page<User> = client
             .get(
@@ -404,7 +403,7 @@ impl GH for GHApi {
 
     /// [GH::is_check_required]
     async fn is_check_required(&self, inst_id: u64, owner: &str, repo: &str, branch: &str) -> Result<bool> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/branches/{branch}");
         let branch: Branch = client.get(url, None::<&()>).await?;
         let is_check_required = if let Some(required_checks) =
@@ -426,7 +425,7 @@ impl GH for GHApi {
         issue_number: i64,
         body: &str,
     ) -> Result<i64> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let comment = client.issues(owner, repo).create_comment(issue_number as u64, body).await?;
         Ok(comment.id.0 as i64)
     }
@@ -440,14 +439,14 @@ impl GH for GHApi {
         issue_number: i64,
         label: &str,
     ) -> Result<()> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         client.issues(owner, repo).remove_label(issue_number as u64, label).await?;
         Ok(())
     }
 
     /// [GH::user_is_collaborator]
     async fn user_is_collaborator(&self, inst_id: u64, owner: &str, repo: &str, user: &str) -> Result<bool> {
-        let client = self.app_client.installation(InstallationId(inst_id));
+        let client = self.app_client.installation(InstallationId(inst_id))?;
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators/{user}",);
         let resp = client._get(url).await?;
         if resp.status() == StatusCode::NO_CONTENT {
