@@ -216,6 +216,7 @@ mod filters {
     #[allow(clippy::trivially_copy_pass_by_ref, clippy::unnecessary_wraps)]
     pub(crate) fn non_binding(
         votes: &HashMap<UserName, UserVote>,
+        _: &dyn askama::Values,
         max: &i64,
     ) -> askama::Result<Vec<(UserName, UserVote)>> {
         let mut non_binding_votes: Vec<(UserName, UserVote)> =

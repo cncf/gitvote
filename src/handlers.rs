@@ -97,7 +97,7 @@ async fn event(
     .is_err()
     {
         return Err((StatusCode::BAD_REQUEST, "no valid signature found".to_string()));
-    };
+    }
 
     // Parse event
     let event = match Event::try_from((headers.get(GITHUB_EVENT_HEADER), &body[..])) {
@@ -127,7 +127,7 @@ async fn event(
                 })?;
             }
         }
-    };
+    }
 
     Ok("no command detected")
 }
@@ -196,7 +196,7 @@ async fn set_check_status(db: DynDB, gh: DynGH, event: &PullRequestEvent) -> Res
             gh.create_check_run(inst_id, owner, repo, pr, &check_details).await?;
         }
         PullRequestEventAction::Other => {}
-    };
+    }
 
     Ok(())
 }
