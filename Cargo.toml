@@ -12,7 +12,7 @@ askama = { version = "0.14.0", features = ["serde_json"] }
 async-channel = "2.3.1"
 async-trait = "0.1.88"
 axum = { version = "0.8.4", features = ["macros"] }
-clap = { version = "4.5.37", features = ["derive"] }
+clap = { version = "4.5.39", features = ["derive"] }
 deadpool-postgres = { version = "0.14.1", features = ["serde"] }
 figment = { version = "0.10.19", features = ["yaml", "env"] }
 futures = "0.3.31"
@@ -25,7 +25,7 @@ humantime-serde = "1.1.1"
 ignore = "0.4.23"
 jsonwebtoken = "9.3.1"
 octocrab = "0.44.1"
-openssl = { version = "0.10.72", features = ["vendored"] }
+openssl = { version = "0.10.73", features = ["vendored"] }
 postgres-openssl = "0.5.1"
 regex = "1.11.1"
 reqwest = "0.12.15"
@@ -35,7 +35,7 @@ serde_yaml = "0.9.34"
 sha2 = "0.10.9"
 thiserror = "2.0.12"
 time = { version = "0.3.41", features = ["serde"] }
-tokio = { version = "1.45.0", features = [
+tokio = { version = "1.45.1", features = [
     "macros",
     "rt-multi-thread",
     "signal",
@@ -48,10 +48,10 @@ tokio-postgres = { version = "0.7.13", features = [
 ] }
 tokio-util = { version = "0.7.15", features = ["rt"] }
 tower = { version = "0.5.2", features = ["util"] }
-tower-http = { version = "0.6.3", features = ["trace"] }
+tower-http = { version = "0.6.5", features = ["trace"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
-uuid = { version = "1.16.0", features = ["serde", "v4"] }
+uuid = { version = "1.17.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
 http-body = "1.0.1"
