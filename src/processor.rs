@@ -219,7 +219,13 @@ impl CommandsHandler {
             self.gh.create_check_run(inst_id, owner, repo, i.issue_number, &check_details).await?;
         }
 
-        // Add "vote open" label to issue/pr
+        // Update issue/pr labels
+        //
+        // We try to remove the vote closed and result labels just in case they
+        // were left from a previous vote that was closed
+        self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_CLOSED_LABEL).await?;
+        self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_PASSED_LABEL).await?;
+        self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_FAILED_LABEL).await?;
         self.gh
             .add_labels(
                 inst_id,
@@ -283,7 +289,6 @@ impl CommandsHandler {
 
             // Update issue/pr labels
             self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_OPEN_LABEL).await?;
-            self.gh.add_labels(inst_id, owner, repo, i.issue_number, &[VOTE_CLOSED_LABEL]).await?;
         }
 
         Ok(())
@@ -947,6 +952,36 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_CLOSED_LABEL),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_PASSED_LABEL),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_FAILED_LABEL),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_add_labels()
             .withf(|inst_id, owner, repo, issue_number, labels| {
                 *inst_id == INST_ID
@@ -1019,6 +1054,36 @@ mod tests {
                     conclusion: None,
                     summary: "Vote open".to_string(),
                 }),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_CLOSED_LABEL),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_PASSED_LABEL),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
+        gh.expect_remove_label()
+            .with(
+                eq(INST_ID),
+                eq(ORG),
+                eq(REPO),
+                eq(ISSUE_NUM),
+                eq(VOTE_FAILED_LABEL),
             )
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
@@ -1158,16 +1223,6 @@ mod tests {
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
-        gh.expect_add_labels()
-            .withf(|inst_id, owner, repo, issue_number, labels| {
-                *inst_id == INST_ID
-                    && owner == ORG
-                    && repo == REPO
-                    && *issue_number == ISSUE_NUM
-                    && labels == vec![VOTE_CLOSED_LABEL]
-            })
-            .times(1)
-            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
         let (_, cmds_rx) = async_channel::unbounded();
         let event = setup_test_issue_comment_event();
@@ -1217,16 +1272,6 @@ mod tests {
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
         gh.expect_remove_label()
             .with(eq(INST_ID), eq(ORG), eq(REPO), eq(ISSUE_NUM), eq(VOTE_OPEN_LABEL))
-            .times(1)
-            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
-        gh.expect_add_labels()
-            .withf(|inst_id, owner, repo, issue_number, labels| {
-                *inst_id == INST_ID
-                    && owner == ORG
-                    && repo == REPO
-                    && *issue_number == ISSUE_NUM
-                    && labels == vec![VOTE_CLOSED_LABEL]
-            })
             .times(1)
             .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(()))));
 
