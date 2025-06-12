@@ -13,6 +13,7 @@ use octocrab::{models::InstallationId, Octocrab, Page};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
+use tracing_subscriber::field::debug;
 
 use crate::cfg_repo::CfgProfile;
 
@@ -440,8 +441,19 @@ impl GH for GHApi {
         label: &str,
     ) -> Result<()> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        client.issues(owner, repo).remove_label(issue_number as u64, label).await?;
-        Ok(())
+        let result = client.issues(owner, repo).remove_label(issue_number as u64, label).await;
+        match result {
+            Ok(_) => Ok(()),
+            Err(octocrab::Error::GitHub { source, backtrace: _ })
+                if source.message == "Label does not exist" =>
+            {
+                Ok(())
+            }
+            Err(e) => {
+                println!("error removing label: {e:?}");
+                Err(e.into())
+            }
+        }
     }
 
     /// [GH::user_is_collaborator]
