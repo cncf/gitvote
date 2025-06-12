@@ -223,9 +223,9 @@ impl CommandsHandler {
         //
         // We try to remove the vote closed and result labels just in case they
         // were left from a previous vote that was closed
-        self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_CLOSED_LABEL).await?;
-        self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_PASSED_LABEL).await?;
-        self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_FAILED_LABEL).await?;
+        _ = self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_CLOSED_LABEL).await;
+        _ = self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_PASSED_LABEL).await;
+        _ = self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_FAILED_LABEL).await;
         self.gh
             .add_labels(
                 inst_id,
@@ -288,7 +288,7 @@ impl CommandsHandler {
             }
 
             // Update issue/pr labels
-            self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_OPEN_LABEL).await?;
+            _ = self.gh.remove_label(inst_id, owner, repo, i.issue_number, VOTE_OPEN_LABEL).await;
         }
 
         Ok(())
@@ -471,7 +471,7 @@ impl VotesCloser {
                 labels_to_add.push(VOTE_FAILED_LABEL);
             }
         }
-        self.gh.remove_label(inst_id, owner, repo, vote.issue_number, VOTE_OPEN_LABEL).await?;
+        _ = self.gh.remove_label(inst_id, owner, repo, vote.issue_number, VOTE_OPEN_LABEL).await;
         self.gh.add_labels(inst_id, owner, repo, vote.issue_number, &labels_to_add).await?;
 
         debug!("closed");
