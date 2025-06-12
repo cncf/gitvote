@@ -45,16 +45,16 @@ const AUTO_CLOSE_FREQUENCY: Duration = Duration::from_secs(60 * 60 * 24);
 const GITVOTE_LABEL: &str = "gitvote";
 
 /// Label used to tag issues/prs where a vote is open.
-const VOTE_OPEN_LABEL: &str = "gitvote/vote-open";
+const VOTE_OPEN_LABEL: &str = "gitvote/open";
 
 /// Label used to tag issues/prs where a vote is closed.
-const VOTE_CLOSED_LABEL: &str = "gitvote/vote-closed";
+const VOTE_CLOSED_LABEL: &str = "gitvote/closed";
 
 /// Label used to tag issues/prs where a vote passed.
-const VOTE_PASSED_LABEL: &str = "gitvote/vote-passed";
+const VOTE_PASSED_LABEL: &str = "gitvote/passed";
 
 /// Label used to tag issues/prs where a vote failed.
-const VOTE_FAILED_LABEL: &str = "gitvote/vote-failed";
+const VOTE_FAILED_LABEL: &str = "gitvote/failed";
 
 /// A votes processor is in charge of creating the requested votes, stopping
 /// them at the scheduled time and publishing results, etc. It relies on some
