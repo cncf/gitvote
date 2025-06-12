@@ -440,8 +440,15 @@ impl GH for GHApi {
         label: &str,
     ) -> Result<()> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        client.issues(owner, repo).remove_label(issue_number as u64, label).await?;
-        Ok(())
+        match client.issues(owner, repo).remove_label(issue_number as u64, label).await {
+            Ok(_) => Ok(()),
+            Err(octocrab::Error::GitHub { source, backtrace: _ })
+                if source.message == "Label does not exist" =>
+            {
+                Ok(())
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     /// [GH::user_is_collaborator]
