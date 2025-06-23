@@ -1,0 +1,33 @@
+
+
+## Vote closed
+
+The vote **passed**! 🎉
+
+`80.00%` of the users with binding vote were in favor and `20.00%` were against (passing threshold: `50%`).
+### Summary
+
+|        In favor        |        Against        |       Abstain        |        Not voted        |
+| :--------------------: | :-------------------: | :------------------: | :---------------------: |
+| 4 | 1 | 0 | 0 |
+
+
+### Binding votes (5)
+| User | Vote  | Timestamp |
+| ---- | :---: | :-------: |
+| @alice | In favor | 2023-01-01 10:00:00.0 +00:00:00 |
+| @bob | In favor | 2023-01-01 11:00:00.0 +00:00:00 |
+| @charlie | Against | 2023-01-01 12:00:00.0 +00:00:00 |
+| @dave | In favor | 2023-01-01 13:00:00.0 +00:00:00 |
+| @eve | In favor | 2023-01-01 14:00:00.0 +00:00:00 |
+<details>
+      <summary><h3>Non-binding votes (2)</h3></summary>
+
+      
+| User | Vote  | Timestamp |
+| ---- | :---: | :-------: |
+| @supporter1 | In favor | 2023-01-01 15:00:00.0 +00:00:00 |
+| @supporter2 | In favor | 2023-01-01 16:00:00.0 +00:00:00 |
+</details>
+  
+

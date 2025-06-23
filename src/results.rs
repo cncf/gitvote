@@ -1,6 +1,6 @@
 //! This module defines the logic to calculate vote results.
 
-use std::{collections::HashMap, fmt};
+use std::{collections::BTreeMap, fmt};
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -113,7 +113,7 @@ pub(crate) struct VoteResults {
     pub binding: i64,
     pub non_binding: i64,
     pub allowed_voters: i64,
-    pub votes: HashMap<UserName, UserVote>,
+    pub votes: BTreeMap<UserName, UserVote>,
     pub pending_voters: Vec<UserName>,
 }
 
@@ -141,7 +141,7 @@ pub(crate) async fn calculate<'a>(
         gh.get_allowed_voters(inst_id, &vote.cfg, owner, repo, vote.organization.as_ref()).await?;
 
     // Track users votes
-    let mut votes: HashMap<UserName, UserVote> = HashMap::new();
+    let mut votes: BTreeMap<UserName, UserVote> = BTreeMap::new();
     let mut multiple_options_voters: Vec<UserName> = Vec::new();
     for reaction in reactions {
         // Get vote option from reaction
@@ -345,7 +345,7 @@ mod tests {
                 not_voted: 0,
                 binding: 1,
                 non_binding: 0,
-                votes: HashMap::from([
+                votes: BTreeMap::from([
                     (
                         USER1.to_string(),
                         UserVote {
@@ -393,7 +393,7 @@ mod tests {
                 not_voted: 1,
                 binding: 0,
                 non_binding: 0,
-                votes: HashMap::new(),
+                votes: BTreeMap::new(),
                 allowed_voters: 1,
                 pending_voters: vec![USER1.to_string()],
             }
@@ -445,7 +445,7 @@ mod tests {
                 not_voted: 1,
                 binding: 3,
                 non_binding: 1,
-                votes: HashMap::from([
+                votes: BTreeMap::from([
                     (
                         USER1.to_string(),
                         UserVote {
@@ -525,7 +525,7 @@ mod tests {
                 not_voted: 1,
                 binding: 3,
                 non_binding: 0,
-                votes: HashMap::from([
+                votes: BTreeMap::from([
                     (
                         USER1.to_string(),
                         UserVote {
