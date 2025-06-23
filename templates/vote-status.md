@@ -19,14 +19,13 @@ So far `{{ "{:.2}"|format(results.in_favor_percentage) }}%` of the users with bi
 {% endfor -%}
 {%- for user in results.pending_voters ~%}
   | @{{ user }} | *Pending* | {{ "|" -}}
-{% endfor -%}
-
+{%- endfor %}
 {% if results.non_binding > 0 ~%}
   <details>
     <summary><h3>Non-binding votes ({{ results.non_binding }})</h3></summary>
 
-    {% let max_non_binding = 300 -%}
-    {% if results.non_binding > max_non_binding %}
+    {%~ let max_non_binding = 300 %}
+    {%- if results.non_binding > max_non_binding %}
       <i>(displaying only the first {{ max_non_binding }} non-binding votes)</i>
     {% endif %}
 

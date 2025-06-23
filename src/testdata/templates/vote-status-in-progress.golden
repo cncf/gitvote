@@ -15,10 +15,10 @@ So far `33.33%` of the users with binding vote are in favor and `0.00%` are agai
 | alice | In favor | 2023-01-03 10:00:00.0 +00:00:00 |
 | bob | Abstain | 2023-01-03 11:00:00.0 +00:00:00 |
 | @charlie | *Pending* | |
+
 <details>
     <summary><h3>Non-binding votes (1)</h3></summary>
 
-    
 | User | Vote  | Timestamp |
 | ---- | :---: | :-------: |
 | supporter | In favor | 2023-01-03 12:00:00.0 +00:00:00 |

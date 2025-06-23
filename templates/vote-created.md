@@ -2,7 +2,7 @@
 
 **@{{ creator }}** has called for a vote on `{{ issue_title }}` (#{{ issue_number }}).
 
-{% if !teams.is_empty() || !users.is_empty() %}
+{%- if !teams.is_empty() || !users.is_empty() %}
   {% if !teams.is_empty() ~%}
     The members of the following teams have binding votes:
 
@@ -24,9 +24,9 @@
   {% endif -%}
 
 {% else ~%}
+  {{ " " ~}}
   All repository collaborators have binding votes.
 {% endif %}
-
 Non-binding votes are also appreciated as a sign of support!
 
 ## How to vote
