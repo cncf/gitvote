@@ -1,0 +1,22 @@
+## Vote closed
+
+The vote **did not pass**.
+
+`40.00%` of the users with binding vote were in favor and `60.00%` were against (passing threshold: `50%`).
+
+### Summary
+
+|        In favor        |        Against        |       Abstain        |        Not voted        |
+| :--------------------: | :-------------------: | :------------------: | :---------------------: |
+| 2 | 3 | 0 | 0 |
+
+### Binding votes (5)
+    
+| User | Vote  | Timestamp |
+| ---- | :---: | :-------: |
+| @alice | Against | 2023-01-02 10:00:00.0 +00:00:00 |
+| @bob | In favor | 2023-01-02 11:00:00.0 +00:00:00 |
+| @charlie | Against | 2023-01-02 12:00:00.0 +00:00:00 |
+| @dave | In favor | 2023-01-02 13:00:00.0 +00:00:00 |
+| @eve | Against | 2023-01-02 14:00:00.0 +00:00:00 |
+  

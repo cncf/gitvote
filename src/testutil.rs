@@ -1,6 +1,6 @@
 //! This modules defines some test utilities.
 
-use std::{collections::HashMap, fs, path::Path, time::Duration};
+use std::{collections::BTreeMap, fs, path::Path, time::Duration};
 
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use uuid::Uuid;
@@ -166,7 +166,7 @@ pub(crate) fn setup_test_vote_results() -> VoteResults {
         not_voted: 0,
         binding: 1,
         non_binding: 0,
-        votes: HashMap::from([(
+        votes: BTreeMap::from([(
             USER1.to_string(),
             UserVote {
                 vote_option: VoteOption::InFavor,

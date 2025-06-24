@@ -1,0 +1,22 @@
+The vote for "**Implement RFC-42** (**#123**)" is now closed.
+
+## Vote results
+
+The vote **passed**! 🎉
+
+`66.67%` of the users with binding vote were in favor and `0.00%` were against (passing threshold: `50%`).
+
+### Summary
+
+|        In favor        |        Against        |       Abstain        |        Not voted        |
+| :--------------------: | :-------------------: | :------------------: | :---------------------: |
+| 2 | 0 | 1 | 0 |
+
+### Binding votes (3)
+    
+| User | Vote  | Timestamp |
+| ---- | :---: | :-------: |
+| @alice | In favor | 2023-01-04 10:00:00.0 +00:00:00 |
+| @bob | In favor | 2023-01-04 11:00:00.0 +00:00:00 |
+| @charlie | Abstain | 2023-01-04 12:00:00.0 +00:00:00 |
+  
