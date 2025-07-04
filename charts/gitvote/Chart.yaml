@@ -2,7 +2,7 @@ apiVersion: v2
 name: gitvote
 description: GitVote is a GitHub application that allows holding a vote on issues and pull requests
 type: application
-version: 1.4.0
+version: 1.4.1-0
 appVersion: 1.4.0
 kubeVersion: ">= 1.19.0-0"
 home: https://gitvote.dev
