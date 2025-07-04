@@ -13,12 +13,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Login to AWS Public ECR
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: public.ecr.aws
-          username: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          password: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract tag name
         id: extract_tag_name
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
@@ -26,17 +26,17 @@ jobs:
         run: |
           docker build \
             -f database/migrations/Dockerfile \
-            -t public.ecr.aws/g6m3a0y9/gitvote-dbmigrator:${{steps.extract_tag_name.outputs.tag}} \
-            -t public.ecr.aws/g6m3a0y9/gitvote-dbmigrator:latest \
+            -t ghcr.io/${{ github.repository }}/dbmigrator:${{steps.extract_tag_name.outputs.tag}} \
+            -t ghcr.io/${{ github.repository }}/dbmigrator:latest \
           .
-          docker push --all-tags public.ecr.aws/g6m3a0y9/gitvote-dbmigrator
+          docker push --all-tags ghcr.io/${{ github.repository }}/dbmigrator
       - name: Build and push gitvote image
         run: |
           docker build \
-            -t public.ecr.aws/g6m3a0y9/gitvote:${{steps.extract_tag_name.outputs.tag}} \
-            -t public.ecr.aws/g6m3a0y9/gitvote:latest \
+            -t ghcr.io/${{ github.repository }}:${{steps.extract_tag_name.outputs.tag}} \
+            -t ghcr.io/${{ github.repository }}:latest \
           .
-          docker push --all-tags public.ecr.aws/g6m3a0y9/gitvote
+          docker push --all-tags ghcr.io/${{ github.repository }}
 
   package-and-publish-helm-chart:
     needs:
