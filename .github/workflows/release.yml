@@ -10,6 +10,8 @@ permissions: read-all
 jobs:
   build-and-publish-images:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,10 +35,10 @@ jobs:
       - name: Build and push gitvote image
         run: |
           docker build \
-            -t ghcr.io/${{ github.repository }}:${{steps.extract_tag_name.outputs.tag}} \
-            -t ghcr.io/${{ github.repository }}:latest \
+            -t ghcr.io/${{ github.repository }}/server:${{steps.extract_tag_name.outputs.tag}} \
+            -t ghcr.io/${{ github.repository }}/server:latest \
           .
-          docker push --all-tags ghcr.io/${{ github.repository }}
+          docker push --all-tags ghcr.io/${{ github.repository }}/server
 
   package-and-publish-helm-chart:
     needs:

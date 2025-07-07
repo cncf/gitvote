@@ -41,9 +41,9 @@ annotations:
   artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/images: |
     - name: dbmigrator
-      image: ghcr.io/cncf/gitvote/dbmigrator:v1.4.0
+      image: ghcr.io/cncf/gitvote/dbmigrator:v1.4.1
     - name: gitvote
-      image: ghcr.io/cncf/gitvote:v1.4.0
+      image: ghcr.io/cncf/gitvote/server:v1.4.1
   artifacthub.io/links: |
     - name: source
       url: https://github.com/cncf/gitvote

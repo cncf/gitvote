@@ -74,7 +74,7 @@ gitvote:
   deploy:
     replicaCount: 1
     image:
-      repository: ghcr.io/cncf/gitvote
+      repository: ghcr.io/cncf/gitvote/server
     resources: {}
 
 # PostgreSQL configuration
