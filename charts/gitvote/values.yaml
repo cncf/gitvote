@@ -36,7 +36,7 @@ dbmigrator:
   job:
     image:
       # Database migrator image repository (without the tag)
-      repository: public.ecr.aws/g6m3a0y9/gitvote-dbmigrator
+      repository: ghcr.io/cncf/gitvote/dbmigrator
 
 # GitVote service configuration
 gitvote:
@@ -74,7 +74,7 @@ gitvote:
   deploy:
     replicaCount: 1
     image:
-      repository: public.ecr.aws/g6m3a0y9/gitvote
+      repository: ghcr.io/cncf/gitvote/server
     resources: {}
 
 # PostgreSQL configuration

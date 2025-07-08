@@ -2,7 +2,7 @@ apiVersion: v2
 name: gitvote
 description: GitVote is a GitHub application that allows holding a vote on issues and pull requests
 type: application
-version: 1.4.0
+version: 1.4.1
 appVersion: 1.4.0
 kubeVersion: ">= 1.19.0-0"
 home: https://gitvote.dev
@@ -41,9 +41,9 @@ annotations:
   artifacthub.io/containsSecurityUpdates: "true"
   artifacthub.io/images: |
     - name: dbmigrator
-      image: public.ecr.aws/g6m3a0y9/gitvote-dbmigrator:v1.4.0
+      image: ghcr.io/cncf/gitvote/dbmigrator:v1.4.1
     - name: gitvote
-      image: public.ecr.aws/g6m3a0y9/gitvote:v1.4.0
+      image: ghcr.io/cncf/gitvote/server:v1.4.1
   artifacthub.io/links: |
     - name: source
       url: https://github.com/cncf/gitvote
