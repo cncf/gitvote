@@ -1,15 +1,15 @@
 //! This module defines the handlers used to process HTTP requests to the
 //! supported endpoints.
 
-use anyhow::{format_err, Error, Result};
+use anyhow::{Error, Result, format_err};
 use askama::Template;
 use axum::{
+    Router,
     body::Bytes,
     extract::{FromRef, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse},
     routing::{get, post},
-    Router,
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -22,7 +22,7 @@ use crate::{
     cmd::Command,
     db::DynDB,
     github::{
-        split_full_name, CheckDetails, DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction,
+        CheckDetails, DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction, split_full_name,
     },
     tmpl,
 };
@@ -103,10 +103,10 @@ async fn event(
     let event = match Event::try_from((headers.get(GITHUB_EVENT_HEADER), &body[..])) {
         Ok(event) => event,
         Err(EventError::MissingHeader) => {
-            return Err((StatusCode::BAD_REQUEST, EventError::MissingHeader.to_string()))
+            return Err((StatusCode::BAD_REQUEST, EventError::MissingHeader.to_string()));
         }
         Err(EventError::InvalidBody(err)) => {
-            return Err((StatusCode::BAD_REQUEST, EventError::InvalidBody(err).to_string()))
+            return Err((StatusCode::BAD_REQUEST, EventError::InvalidBody(err).to_string()));
         }
         Err(EventError::UnsupportedEvent) => return Ok("unsupported event"),
     };
@@ -208,10 +208,10 @@ mod tests {
 
     use async_channel::Receiver;
     use axum::{
-        body::{to_bytes, Body},
-        http::{header::CONTENT_TYPE, Request},
+        body::{Body, to_bytes},
+        http::{Request, header::CONTENT_TYPE},
     };
-    use figment::{providers::Serialized, Figment};
+    use figment::{Figment, providers::Serialized};
     use futures::future;
     use hyper::Response;
     use mockall::predicate::eq;

@@ -233,7 +233,7 @@ mod tests {
     use std::{collections::BTreeMap, env, fs};
 
     use askama::Template;
-    use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+    use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
     use crate::{
         cmd::CreateVoteInput,

@@ -2,10 +2,10 @@
 
 use std::{collections::BTreeMap, fmt};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use tokio_postgres::{types::Json, Row};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use tokio_postgres::{Row, types::Json};
 use uuid::Uuid;
 
 use crate::{
