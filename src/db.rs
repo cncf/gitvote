@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::{
     cfg_repo::CfgProfile,
     cmd::{CheckVoteInput, CreateVoteInput},
-    github::{self, split_full_name, DynGH},
+    github::{self, DynGH, split_full_name},
     results::{self, Vote, VoteResults},
 };
 
@@ -114,7 +114,7 @@ impl PgDB {
 
 #[async_trait]
 impl DB for PgDB {
-    /// [DB::cancel_vote]
+    /// [`DB::cancel_vote`]
     async fn cancel_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<Option<Uuid>> {
         let db = self.pool.get().await?;
         let cancelled_vote_id = db
@@ -133,7 +133,7 @@ impl DB for PgDB {
         Ok(cancelled_vote_id)
     }
 
-    /// [DB::close_finished_vote]
+    /// [`DB::close_finished_vote`]
     async fn close_finished_vote(&self, gh: DynGH) -> Result<Option<(Vote, Option<VoteResults>)>> {
         // Get pending finished vote (if any) from database
         let mut db = self.pool.get().await?;
@@ -164,7 +164,7 @@ impl DB for PgDB {
         Ok(Some((vote, results)))
     }
 
-    /// [DB::get_open_vote]
+    /// [`DB::get_open_vote`]
     async fn get_open_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<Option<Vote>> {
         let db = self.pool.get().await?;
         let vote = db
@@ -183,7 +183,7 @@ impl DB for PgDB {
         Ok(vote)
     }
 
-    /// [DB::get_open_votes_with_close_on_passing]
+    /// [`DB::get_open_votes_with_close_on_passing`]
     async fn get_open_votes_with_close_on_passing(&self) -> Result<Vec<Vote>> {
         let db = self.pool.get().await?;
         let votes = db
@@ -210,7 +210,7 @@ impl DB for PgDB {
         Ok(votes)
     }
 
-    /// [DB::get_pending_status_checks]
+    /// [`DB::get_pending_status_checks`]
     async fn get_pending_status_checks(&self) -> Result<Vec<CheckVoteInput>> {
         let db = self.pool.get().await?;
         let inputs = db
@@ -241,7 +241,7 @@ impl DB for PgDB {
         Ok(inputs)
     }
 
-    /// [DB::has_vote]
+    /// [`DB::has_vote`]
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
         let has_vote = db
@@ -260,7 +260,7 @@ impl DB for PgDB {
         Ok(has_vote)
     }
 
-    /// [DB::has_vote_open]
+    /// [`DB::has_vote_open`]
     async fn has_vote_open(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
         let has_vote_open = db
@@ -280,7 +280,7 @@ impl DB for PgDB {
         Ok(has_vote_open)
     }
 
-    /// [DB::store_vote]
+    /// [`DB::store_vote`]
     async fn store_vote(
         &self,
         vote_comment_id: i64,
@@ -338,7 +338,7 @@ impl DB for PgDB {
         Ok(vote_id)
     }
 
-    /// [DB::update_vote_ends_at]
+    /// [`DB::update_vote_ends_at`]
     async fn update_vote_ends_at(&self, vote_id: Uuid) -> Result<()> {
         let db = self.pool.get().await?;
         db.execute(
@@ -353,7 +353,7 @@ impl DB for PgDB {
         Ok(())
     }
 
-    /// [DB::update_vote_last_check]
+    /// [`DB::update_vote_last_check`]
     async fn update_vote_last_check(&self, vote_id: Uuid) -> Result<()> {
         let db = self.pool.get().await?;
         db.execute(
