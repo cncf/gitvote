@@ -10,7 +10,7 @@ use tracing::error;
 use crate::{
     cfg_repo::{Cfg, CfgError},
     github::{
-        split_full_name, DynGH, Event, IssueCommentEventAction, IssueEventAction, PullRequestEventAction,
+        DynGH, Event, IssueCommentEventAction, IssueEventAction, PullRequestEventAction, split_full_name,
     },
 };
 
@@ -75,21 +75,21 @@ impl Command {
         };
 
         // Create a new command from the content (if possible)
-        if let Some(content) = content {
-            if let Some(captures) = CMD.captures(content) {
-                let cmd = captures.get(1)?.as_str();
-                let profile = match captures.get(2)?.as_str() {
-                    "" => None,
-                    profile => Some(profile),
-                };
-                match cmd {
-                    CMD_CREATE_VOTE => {
-                        return Some(Command::CreateVote(CreateVoteInput::new(profile, event)))
-                    }
-                    CMD_CANCEL_VOTE => return Some(Command::CancelVote(CancelVoteInput::new(event))),
-                    CMD_CHECK_VOTE => return Some(Command::CheckVote(CheckVoteInput::new(event))),
-                    _ => return None,
+        if let Some(content) = content
+            && let Some(captures) = CMD.captures(content)
+        {
+            let cmd = captures.get(1)?.as_str();
+            let profile = match captures.get(2)?.as_str() {
+                "" => None,
+                profile => Some(profile),
+            };
+            match cmd {
+                CMD_CREATE_VOTE => {
+                    return Some(Command::CreateVote(CreateVoteInput::new(profile, event)));
                 }
+                CMD_CANCEL_VOTE => return Some(Command::CancelVote(CancelVoteInput::new(event))),
+                CMD_CHECK_VOTE => return Some(Command::CheckVote(CheckVoteInput::new(event))),
+                _ => return None,
             }
         }
 
