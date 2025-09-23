@@ -15,7 +15,7 @@ use crate::{
     cfg_repo::{CfgError, CfgProfile},
     cmd::{CancelVoteInput, CheckVoteInput, Command, CreateVoteInput},
     db::DynDB,
-    github::{split_full_name, CheckDetails, DynGH},
+    github::{CheckDetails, DynGH, split_full_name},
     results, tmpl,
 };
 
@@ -295,7 +295,7 @@ impl CommandsHandler {
     }
 
     /// Check the status of a vote. The vote must be open and not have been
-    /// checked in MAX_VOTE_CHECK_FREQUENCY.
+    /// checked in `MAX_VOTE_CHECK_FREQUENCY`.
     #[instrument(fields(vote_id), skip_all, err(Debug))]
     async fn check_vote(&self, i: &CheckVoteInput) -> Result<()> {
         // Get open vote (if any) from database
@@ -314,13 +314,13 @@ impl CommandsHandler {
         // Check if the vote has already been checked recently
         let inst_id = vote.installation_id as u64;
         let (owner, repo) = split_full_name(&vote.repository_full_name);
-        if let Some(checked_at) = vote.checked_at {
-            if OffsetDateTime::now_utc() - checked_at < MAX_VOTE_CHECK_FREQUENCY {
-                // Post comment on the issue/pr and return
-                let body = tmpl::VoteCheckedRecently {}.render()?;
-                self.gh.post_comment(inst_id, owner, repo, vote.issue_number, &body).await?;
-                return Ok(());
-            }
+        if let Some(checked_at) = vote.checked_at
+            && OffsetDateTime::now_utc() - checked_at < MAX_VOTE_CHECK_FREQUENCY
+        {
+            // Post comment on the issue/pr and return
+            let body = tmpl::VoteCheckedRecently {}.render()?;
+            self.gh.post_comment(inst_id, owner, repo, vote.issue_number, &body).await?;
+            return Ok(());
         }
 
         // Calculate results
@@ -547,10 +547,10 @@ impl VotesAutoCloser {
                             match results::calculate(self.gh.clone(), owner, repo, vote).await {
                                 Ok(results) => {
                                     // If the vote has already passed, update its ending timestamp
-                                    if results.passed {
-                                        if let Err(err) = self.db.update_vote_ends_at(vote_id).await {
-                                            error!(?err, ?vote.vote_id, "error updating vote ends at");
-                                        }
+                                    if results.passed
+                                        && let Err(err) = self.db.update_vote_ends_at(vote_id).await
+                                    {
+                                        error!(?err, ?vote.vote_id, "error updating vote ends at");
                                     }
                                 }
                                 Err(err) => error!(?err, ?vote_id, "error calculating results"),
@@ -586,7 +586,7 @@ mod tests {
     use mockall::predicate::eq;
     use time::ext::NumericalDuration;
 
-    use crate::results::{Vote, REACTION_IN_FAVOR};
+    use crate::results::{REACTION_IN_FAVOR, Vote};
     use crate::testutil::*;
     use crate::{cfg_repo::AllowedVoters, db::MockDB, github::*};
 

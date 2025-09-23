@@ -4,7 +4,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use ignore::gitignore::GitignoreBuilder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -120,14 +120,12 @@ impl CfgProfile {
     fn validate(&self, is_org: bool) -> Result<()> {
         // Only repositories that belong to some organization can use teams in
         // the allowed voters configuration section.
-        if !is_org {
-            if let Some(teams) =
+        if !is_org
+            && let Some(teams) =
                 self.allowed_voters.as_ref().and_then(|allowed_voters| allowed_voters.teams.as_ref())
-            {
-                if !teams.is_empty() {
-                    bail!(ERR_TEAMS_NOT_ALLOWED);
-                }
-            }
+            && !teams.is_empty()
+        {
+            bail!(ERR_TEAMS_NOT_ALLOWED);
         }
 
         Ok(())
@@ -187,16 +185,18 @@ mod tests {
             patterns: vec!["*.md".to_string(), "file.txt".to_string()],
             profile: "default".to_string(),
         };
-        assert!(rule
-            .matches(&[File {
+        assert!(
+            rule.matches(&[File {
                 filename: "README.md".to_string()
             }])
-            .unwrap());
-        assert!(rule
-            .matches(&[File {
+            .unwrap()
+        );
+        assert!(
+            rule.matches(&[File {
                 filename: "path/file.txt".to_string()
             }])
-            .unwrap());
+            .unwrap()
+        );
     }
 
     #[test]
@@ -205,16 +205,20 @@ mod tests {
             patterns: vec!["path/image.svg".to_string()],
             profile: "default".to_string(),
         };
-        assert!(!rule
-            .matches(&[File {
-                filename: "README.md".to_string()
-            }])
-            .unwrap());
-        assert!(!rule
-            .matches(&[File {
-                filename: "image.svg".to_string()
-            }])
-            .unwrap());
+        assert!(
+            !rule
+                .matches(&[File {
+                    filename: "README.md".to_string()
+                }])
+                .unwrap()
+        );
+        assert!(
+            !rule
+                .matches(&[File {
+                    filename: "image.svg".to_string()
+                }])
+                .unwrap()
+        );
     }
 
     #[tokio::test]
