@@ -2,11 +2,15 @@
 
 If your organization is using GitVote, please consider adding it to this list by submitting a pull request.
 
+- [A2A Protocol](https://a2a-protocol.org)
 - [AsyncAPI](https://github.com/asyncapi/community/blob/master/voting.md)
 - [CloudNativePG](https://cloudnative-pg.io)
 - [CNCF](https://cncf.io)
 - [DevRel Foundation](https://dev-rel.org/)
+- [Dragonfly](https://d7y.io)
 - [Fintech Open Source Foundation](www.finos.org)
+- [Hiero Ledger](https://hiero.org/)
+- [Jeandle](https://github.com/jeandle)
 - [JSON Schema](https://json-schema.org)
 - [K8sGateway](https://k8sgateway.io)
 - [KServe](https://kserve.github.io/website/latest/)
