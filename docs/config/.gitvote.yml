@@ -6,6 +6,22 @@
 #   - At the root of the .github repository, for organization wide configuration
 #
 
+# Audit (optional)
+#
+# The audit page lists all the votes recorded for the repository. It can be
+# useful to provide transparency on the voting history of a repository. By
+# default, the audit page is disabled. To enable it, the audit section must be
+# included in the configuration file, with the `enabled` field set to true.
+#
+# Please note that this page is publicly accessible, so anyone will be able
+# to see all the repository votes.
+#
+# audit:
+#   enabled: true
+#
+audit:
+  enabled: false
+
 # Automation (optional)
 #
 # Create votes automatically on PRs when any of the files affected by the PR

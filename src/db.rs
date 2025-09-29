@@ -45,6 +45,9 @@ pub(crate) trait DB {
     /// Check if the issue/pr provided already has a vote open.
     async fn has_vote_open(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
 
+    /// List all votes stored for the provided repository.
+    async fn list_votes(&self, repository_full_name: &str) -> Result<Vec<Vote>>;
+
     /// Store the vote provided in the database.
     async fn store_vote(
         &self,
@@ -278,6 +281,26 @@ impl DB for PgDB {
             .await?
             .get(0);
         Ok(has_vote_open)
+    }
+
+    /// [`DB::list_votes`]
+    async fn list_votes(&self, repository_full_name: &str) -> Result<Vec<Vote>> {
+        let db = self.pool.get().await?;
+        let votes = db
+            .query(
+                "
+                select *
+                from vote
+                where repository_full_name = $1::text
+                order by created_at desc
+                ",
+                &[&repository_full_name],
+            )
+            .await?
+            .iter()
+            .map(Vote::from)
+            .collect();
+        Ok(votes)
     }
 
     /// [`DB::store_vote`]
