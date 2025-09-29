@@ -348,19 +348,25 @@ impl GH for GHApi {
             return None;
         };
 
-        // Try to get the config file from the repository. Otherwise try
-        // getting the organization wide config file in the .github repo.
-        let mut content: Option<String> = None;
-        for repo in &[repo, ORG_CONFIG_REPO] {
-            if let Ok(resp) = client.repos(owner, *repo).get_content().path(CONFIG_FILE).send().await
+        // Check possible locations for configuration file in order of precedence
+        let config_path = format!(".github/{CONFIG_FILE}");
+        let candidates = [
+            // Check repository root.
+            (repo, CONFIG_FILE),
+            // Check repository `.github` directory.
+            (repo, config_path.as_str()),
+            // Check organization-wide `.github` repository.
+            (ORG_CONFIG_REPO, CONFIG_FILE),
+        ];
+        for (repo, path) in candidates {
+            if let Ok(resp) = client.repos(owner, repo).get_content().path(path).send().await
                 && resp.items.len() == 1
             {
-                content = resp.items[0].decoded_content();
-                break;
+                return resp.items[0].decoded_content();
             }
         }
 
-        content
+        None
     }
 
     /// [`GH::get_pr_files`]

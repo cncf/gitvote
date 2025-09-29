@@ -15,6 +15,7 @@ Once the application has been installed we can proceed with its configuration.
 To create votes, you'll first need to add a [.gitvote.yml](https://github.com/cncf/gitvote/blob/main/docs/config/.gitvote.yml) configuration file. GitVote will look for it in the following locations (in order of precedence):
 
 - At the root of the repository where the vote was created
+- In the `.github` directory of the repository where the vote was created
 - At the root of the `.github` repository, for organization wide configuration
 
 > [!IMPORTANT]
