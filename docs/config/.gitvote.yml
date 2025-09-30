@@ -14,7 +14,14 @@
 # included in the configuration file, with the `enabled` field set to true.
 #
 # Please note that this page is publicly accessible, so anyone will be able
-# to see all the repository votes.
+# to see all votes recorded for the repository.
+#
+# Once you have enabled it, the audit page will be available at:
+#
+#   https://gitvote.com/audit/OWNER/REPO
+#
+# (it can take up to 15 minutes for the audit page to be available after
+# enabling it)
 #
 # audit:
 #   enabled: true
