@@ -184,7 +184,7 @@ async fn event(
 
 /// Check whether the audit page is enabled for the provided repository.
 #[cached(
-    time = 86_400,
+    time = 3600,
     key = "String",
     convert = r#"{ repository_full_name.clone() }"#,
     result = true
