@@ -188,6 +188,7 @@ async fn event(
     time = 900, // 15 minutes
     key = "String",
     convert = r#"{ repository_full_name.clone() }"#,
+    sync_writes = "by_key",
     result = true
 )]
 async fn audit_is_enabled(gh: DynGH, repository_full_name: String) -> Result<bool> {
