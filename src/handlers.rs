@@ -26,7 +26,8 @@ use crate::{
     cmd::Command,
     db::DynDB,
     github::{
-        CheckDetails, DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction, split_full_name,
+        self, CheckDetails, DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction,
+        split_full_name,
     },
     tmpl,
 };
@@ -191,7 +192,15 @@ async fn event(
 )]
 async fn audit_is_enabled(gh: DynGH, repository_full_name: String) -> Result<bool> {
     let (owner, repo) = split_full_name(&repository_full_name);
-    let inst_id = gh.get_repository_installation_id(owner, repo).await?;
+    let inst_id = match gh.get_repository_installation_id(owner, repo).await {
+        Ok(inst_id) => inst_id,
+        Err(err) => {
+            if github::is_not_found_error(&err) {
+                return Ok(false);
+            }
+            return Err(err);
+        }
+    };
     let cfg = match RepoCfg::get(gh, inst_id, owner, repo).await {
         Ok(cfg) => cfg,
         Err(CfgError::ConfigNotFound) => return Ok(false),
