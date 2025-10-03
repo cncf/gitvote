@@ -80,8 +80,9 @@
             }
 
             main {
-                max-width: 72rem;
+                max-width: 75rem;
                 margin: 2rem auto;
+                padding: 0 1.5rem;
             }
 
             h1 {
@@ -478,6 +479,203 @@
                 color: #374151;
             }
 
+            @media (max-width: 1024px) {
+                .topbar__inner {
+                    padding: 1rem;
+                }
+
+                main {
+                    margin: 1.5rem auto;
+                    padding: 0 1rem;
+                }
+
+                .table-card {
+                    border: none;
+                    background: transparent;
+                }
+
+                .table--interactive thead {
+                    display: none;
+                }
+
+                .table--interactive tbody {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
+                    padding: 0;
+                }
+
+                .table--interactive tbody tr {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) auto auto;
+                    gap: 0.75rem;
+                    border: 1px solid var(--border);
+                    border-radius: 1rem;
+                    padding: 1rem;
+                    background: #ffffff;
+                    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+                    position: relative;
+                }
+
+                .table--interactive tbody tr:hover td {
+                    background: transparent;
+                }
+
+                .table--interactive tbody td {
+                    padding: 0;
+                    border: 0;
+                    background: transparent;
+                }
+
+                .table--interactive tbody td + td {
+                    margin-top: 0;
+                }
+
+                .table--interactive tbody .change {
+                    grid-column: 1;
+                    grid-row: 1;
+                }
+
+                .change-stack {
+                    gap: 0.5rem;
+                }
+
+                .change-stack .type-vote {
+                    order: -1;
+                    background: #f9fafb;
+                    border: 1px solid var(--border-300);
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 0.125rem 0.5rem;
+                    border-radius: 0.5rem;
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    width: fit-content;
+                    color: #374151;
+                    text-transform: none;
+                }
+
+                .table--interactive tbody .cell-author,
+                .table--interactive tbody .cell-created,
+                .table--interactive tbody .cell-closed {
+                    display: flex;
+                    align-items: baseline;
+                    gap: 0.5rem;
+                    font-size: 0.8125rem;
+                    font-weight: 600;
+                    color: #111827;
+                    grid-column: 1 / -1;
+                }
+
+                .table--interactive tbody .cell-author::before,
+                .table--interactive tbody .cell-created::before,
+                .table--interactive tbody .cell-closed::before {
+                    content: attr(data-label);
+                    color: var(--muted);
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    letter-spacing: 0;
+                    text-transform: none;
+                    width: 4.5rem;
+                }
+
+                .table--interactive tbody .cell-created .date-wrap,
+                .table--interactive tbody .cell-closed .date-wrap {
+                    display: inline-flex;
+                    gap: 0.5rem;
+                    align-items: baseline;
+                }
+
+                .table--interactive tbody .cell-created .date,
+                .table--interactive tbody .cell-closed .date {
+                    margin-bottom: 0;
+                }
+
+                .table--interactive tbody .cell-created .time,
+                .table--interactive tbody .cell-closed .time {
+                    font-size: 0.75rem;
+                }
+
+                .table--interactive tbody .cell-status,
+                .table--interactive tbody .cell-outcome {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: flex-end;
+                    gap: 0.5rem;
+                    grid-row: 1;
+                    align-self: start;
+                }
+
+                .table--interactive tbody .cell-outcome {
+                    margin-top: 0;
+                }
+
+                .table--interactive tbody .cell-status,
+                .table--interactive tbody .cell-outcome {
+                    justify-self: end;
+                }
+
+                .table--interactive tbody .cell-status {
+                    grid-column: 2;
+                }
+
+                .table--interactive tbody .cell-outcome {
+                    grid-column: 3;
+                }
+
+                .table--interactive tbody .cell-status::before,
+                .table--interactive tbody .cell-outcome::before {
+                    display: none;
+                }
+
+                .table--interactive tbody .cell-status,
+                .table--interactive tbody .cell-outcome {
+                    padding-top: 0;
+                }
+
+                .table--interactive tbody .cell-status .badge,
+                .table--interactive tbody .cell-outcome .badge {
+                    font-size: 0.75rem;
+                }
+
+                .table-placeholder-row {
+                    display: block;
+                    border: 1px solid var(--border);
+                    border-radius: 1rem;
+                    padding: 1rem;
+                    background: #ffffff;
+                }
+
+                .table-placeholder-row td {
+                    border: 0;
+                    padding: 0;
+                    text-align: center;
+                }
+            }
+
+            @media (max-width: 640px) {
+                h1 {
+                    font-size: 1.25rem;
+                }
+
+                .meta .row {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+
+                .meta .row + .row {
+                    margin-bottom: 0.75rem;
+                }
+
+                .results-line .passing-threshold {
+                    display: none;
+                }
+
+                .modal-table .cell-date {
+                    display: none;
+                }
+            }
+
             .footer {
                 padding: 1.25rem 1.5rem 1.5rem;
                 border-top: 1px solid var(--border);
@@ -583,17 +781,17 @@
                                                 </div>
                                             </div>
                                         </td>
-                                        <td class="nowrap">@{{ vote.created_by }}</td>
-                                        <td class="nowrap">{% call format_date(vote.created_at) -%}</td>
-                                            <td class="nowrap">{% call format_date(vote.ends_at) -%}</td>
-                                                <td class="nowrap">
+                                        <td class="nowrap cell-author" data-label="Created by">@{{ vote.created_by }}</td>
+                                        <td class="nowrap cell-created" data-label="Created">{% call format_date(vote.created_at) -%}</td>
+                                            <td class="nowrap cell-closed" data-label="Closed">{% call format_date(vote.ends_at) -%}</td>
+                                                <td class="nowrap cell-status">
                                                     {% if vote.closed %}
                                                         <span class="badge">Closed</span>
                                                     {% else %}
                                                         <span class="badge">Open</span>
                                                     {% endif %}
                                                 </td>
-                                                <td class="nowrap">
+                                                <td class="nowrap cell-outcome">
                                                     {% match vote.results %}
                                                     {% when Some with (result) %}
                                                     {% if result.passed %}
@@ -678,7 +876,7 @@
                                                 {% else %}
                                                     <span class="badge fail">Failed</span>
                                                 {% endif %}
-                                                <span class="muted">Passing threshold: {{ result.pass_threshold }}%</span>
+                                                <span class="muted passing-threshold">Passing threshold: {{ result.pass_threshold }}%</span>
                                             </div>
                                             <div class="progress" aria-hidden="true">
                                                 <!-- djlint:off H008 -->
@@ -719,7 +917,7 @@
                                                         <tr>
                                                             <th>USER</th>
                                                             <th>VOTE</th>
-                                                            <th>DATE</th>
+                                                            <th class="cell-date">DATE</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -730,7 +928,7 @@
                                                                     <td>
                                                                         <span class="vote-chip {% match user_vote.vote_option -%}{% when crate::results::VoteOption::InFavor %}favor{% when crate::results::VoteOption::Against %}against{% when crate::results::VoteOption::Abstain %}abstain{% endmatch %}">{{ user_vote.vote_option }}</span>
                                                                     </td>
-                                                                    <td class="muted-700">{{ user_vote.timestamp }}</td>
+                                                                    <td class="muted-700 cell-date">{{ user_vote.timestamp }}</td>
                                                                 </tr>
                                                             {% endif %}
                                                         {% endfor -%}
@@ -741,7 +939,7 @@
                                                                     <td>
                                                                         <span class="vote-chip pending">Pending</span>
                                                                     </td>
-                                                                    <td class="muted-700"></td>
+                                                                    <td class="muted-700 cell-date"></td>
                                                                 </tr>
                                                             {% endfor -%}
                                                         {% endif %}
