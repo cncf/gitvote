@@ -255,12 +255,6 @@
                 color: var(--chip-fail-text);
             }
 
-            .badge.neutral {
-                background: #eef2ff;
-                border-color: #c7d2fe;
-                color: #4338ca;
-            }
-
             .overlay {
                 position: fixed;
                 inset: 0;
@@ -497,7 +491,7 @@
                 color: var(--chip-fail-text);
             }
 
-            .vote-chip.no-voted {
+            .vote-chip.not-voted {
                 background: #fef3c7;
                 border-color: #fcd34d;
                 color: #92400e;
@@ -954,13 +948,13 @@
                                                 <h3>Results</h3>
                                                 <div class="box">
                                                     <div class="results-line">
-                                                        <span class="muted-700">In favor: {{ "{:.0}"|format(results.in_favor_percentage) }}%</span>
+                                                        <span class="muted-700">In favor: <span class="badge">{{ "{:.0}"|format(results.in_favor_percentage) }}%</span></span>
                                                         {% if results.passed %}
                                                             <span class="badge pass">Passed</span>
                                                         {% else %}
                                                             <span class="badge fail">Failed</span>
                                                         {% endif %}
-                                                        <span class="muted passing-threshold">Passing threshold: {{ results.pass_threshold }}%</span>
+                                                        <span class="muted passing-threshold">Passing threshold: <span class="badge">{{ results.pass_threshold }}%</span></span>
                                                     </div>
                                                     <div class="progress" aria-hidden="true">
                                                         <!-- djlint:off H008 -->
@@ -1022,7 +1016,7 @@
                                                                         <tr>
                                                                             <td>@{{ user }}</td>
                                                                             <td>
-                                                                                <span class="vote-chip no-voted">No voted</span>
+                                                                                <span class="vote-chip not-voted">Not voted</span>
                                                                             </td>
                                                                             <td class="muted-700 cell-date"></td>
                                                                         </tr>
