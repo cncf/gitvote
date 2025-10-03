@@ -150,8 +150,9 @@
                 background: #ffffff;
             }
 
-            .change {
-                min-width: 17.5rem;
+            .cell-vote {
+                width: 25rem;
+                max-width: 25rem;
             }
 
             .change-stack {
@@ -159,6 +160,12 @@
                 flex-direction: column;
                 gap: 0.5rem;
                 min-width: 0;
+            }
+
+            .change-stack .vote-meta {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
             }
 
             .change-stack .title {
@@ -169,6 +176,22 @@
               font-size: 0.85rem;
               color: var(--muted);
               text-transform: uppercase;
+            }
+
+            .change-stack .status-badges {
+                display: none;
+                align-items: center;
+                gap: 0.5rem;
+                margin-left: auto;
+            }
+
+            .table--interactive tbody .cell-author {
+              max-width: 290px;
+            }
+
+            .table--interactive tbody .cell-author .truncate {
+                display: inline-block;
+                max-width: 100%;
             }
 
             .badge,
@@ -183,7 +206,7 @@
 
             .link {
                 display: inline-flex;
-                align-items: center;
+                align-items: baseline;
                 gap: 0.375rem;
                 min-width: 0;
                 max-width: 100%;
@@ -336,12 +359,6 @@
                 word-break: break-word;
             }
 
-            .inline-link {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.375rem;
-            }
-
             .inline-link:hover {
                 text-decoration: underline;
             }
@@ -350,6 +367,8 @@
                 width: 0.75rem;
                 height: 0.75rem;
                 fill: #6b7280;
+                top: 0.15rem;
+                position: relative;
             }
 
             .results-line {
@@ -508,7 +527,7 @@
 
                 .table--interactive tbody tr {
                     display: grid;
-                    grid-template-columns: minmax(0, 1fr) auto auto;
+                    grid-template-columns: minmax(0, 1fr);
                     gap: 0.75rem;
                     border: 1px solid var(--border);
                     border-radius: 1rem;
@@ -532,13 +551,16 @@
                     margin-top: 0;
                 }
 
-                .table--interactive tbody .change {
+                .table--interactive tbody .cell-vote {
                     grid-column: 1;
                     grid-row: 1;
+                    width: 100%;
+                    max-width: 100%;
                 }
 
                 .change-stack {
                     gap: 0.5rem;
+                    flex-direction: column-reverse;
                 }
 
                 .change-stack .type-vote {
@@ -566,6 +588,7 @@
                     font-weight: 600;
                     color: #111827;
                     grid-column: 1 / -1;
+                    max-width: 100%;
                 }
 
                 .table--interactive tbody .cell-author::before,
@@ -585,6 +608,11 @@
                     display: inline-flex;
                     gap: 0.5rem;
                     align-items: baseline;
+                }
+
+                .table--interactive tbody .cell-author .truncate {
+                    flex: 1;
+                    min-width: 0;
                 }
 
                 .table--interactive tbody .cell-created .date,
@@ -651,6 +679,14 @@
                     border: 0;
                     padding: 0;
                     text-align: center;
+                }
+                .table--interactive tbody td.cell-status,
+                .table--interactive tbody td.cell-outcome {
+                    display: none;
+                }
+
+                .change-stack .status-badges {
+                    display: inline-flex;
                 }
             }
 
@@ -755,7 +791,7 @@
                     <table class="table--interactive" aria-label="Vote history">
                         <thead>
                             <tr>
-                                <th class="change">Vote</th>
+                                <th class="cell-vote">Vote</th>
                                 <th>Created by</th>
                                 <th>Created</th>
                                 <th>Closed</th>
@@ -772,7 +808,7 @@
                                 <!-- Votes row -->
                                 {% for vote in votes %}
                                     <tr data-modal-id="modal-{{ vote.vote_id }}">
-                                        <td class="change">
+                                        <td class="cell-vote">
                                             <div class="change-stack">
                                                 <div class="title truncate">
                                                     {% if let Some(title) = vote.issue_title -%}
@@ -781,16 +817,36 @@
                                                         #{{ vote.issue_number }}
                                                     {% endif -%}
                                                 </div>
-                                                <div class="type-vote">
-                                                    {% if vote.is_pull_request %}
-                                                        Pull request
-                                                    {% else %}
-                                                        Issue
-                                                    {% endif %}
+                                                <div class="vote-meta">
+                                                    <div class="type-vote">
+                                                        {% if vote.is_pull_request %}
+                                                            Pull request
+                                                        {% else %}
+                                                            Issue
+                                                        {% endif %}
+                                                    </div>
+                                                    <div class="status-badges">
+                                                        {% if vote.closed %}
+                                                            <span class="badge">Closed</span>
+                                                        {% else %}
+                                                            <span class="badge">Open</span>
+                                                        {% endif %}
+                                                        {% if let Some(result) = vote.results %}
+                                                            {% if result.passed %}
+                                                                <span class="badge pass">Passed</span>
+                                                            {% else %}
+                                                                <span class="badge fail">Failed</span>
+                                                            {% endif %}
+                                                        {% else %}
+                                                            <span class="badge">Pending</span>
+                                                        {% endif %}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td class="nowrap cell-author" data-label="Created by">@{{ vote.created_by }}</td>
+                                        <td class="nowrap cell-author" data-label="Created by">
+                                            <span class="truncate">@{{ vote.created_by }}</span>
+                                        </td>
                                         <td class="nowrap cell-created" data-label="Created">{% call format_date(vote.created_at) -%}</td>
                                             <td class="nowrap cell-closed" data-label="Closed">{% call format_date(vote.ends_at) -%}</td>
                                                 <td class="nowrap cell-status">
@@ -860,7 +916,7 @@
                                                 </div>
                                                 <div class="row">
                                                     <div class="label">Created by</div>
-                                                    <div class="value">{{ vote.created_by }}</div>
+                                                    <div class="value">@{{ vote.created_by }}</div>
                                                 </div>
                                                 <div class="row">
                                                     <div class="label">Created</div>
