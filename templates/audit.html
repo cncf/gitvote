@@ -404,6 +404,14 @@
                 transition: width 0.5s ease;
             }
 
+            .bar.passed {
+                background: #16a34a;
+            }
+
+            .bar.failed {
+                background: #dc2626;
+            }
+
             .summary {
                 display: grid;
                 grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -956,7 +964,7 @@
                                                     </div>
                                                     <div class="progress" aria-hidden="true">
                                                         <!-- djlint:off H008 -->
-                                                        <div class="bar"
+                                                        <div class="bar {% if results.passed -%}passed{% else -%}failed{% endif -%}"
                                                              style='width:{{ "{:.2}"|format(results.in_favor_percentage) }}%'>
                                                         </div>
                                                         <!-- djlint:on H008 -->
