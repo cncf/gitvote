@@ -1,8 +1,6 @@
 //! This module defines the handlers used to process HTTP requests to the
 //! supported endpoints.
 
-use std::time::Duration;
-
 use anyhow::{Error, Result, format_err};
 use askama::Template;
 use axum::{
@@ -13,6 +11,10 @@ use axum::{
     response::{Html, IntoResponse},
     routing::{get, post},
 };
+#[cfg(not(test))]
+use std::time::Duration;
+
+#[cfg(not(test))]
 use cached::proc_macro::cached;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -184,12 +186,15 @@ async fn event(
 // Helpers.
 
 /// Check whether the audit page is enabled for the provided repository.
-#[cached(
-    time = 900, // 15 minutes
-    key = "String",
-    convert = r#"{ repository_full_name.clone() }"#,
-    sync_writes = "by_key",
-    result = true
+#[cfg_attr(
+    not(test),
+    cached(
+        time = 900, // 15 minutes
+        key = "String",
+        convert = r#"{ repository_full_name.clone() }"#,
+        sync_writes = "by_key",
+        result = true
+    )
 )]
 async fn audit_is_enabled(gh: DynGH, repository_full_name: String) -> Result<bool> {
     let (owner, repo) = split_full_name(&repository_full_name);
