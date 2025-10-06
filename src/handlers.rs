@@ -403,7 +403,7 @@ profiles:
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
-        assert_eq!(get_body(response).await, "");
+        assert!(!get_body(response).await.is_empty());
     }
 
     #[tokio::test]
