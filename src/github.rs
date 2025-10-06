@@ -123,6 +123,9 @@ pub(crate) trait GH {
     /// Get pull request files.
     async fn get_pr_files(&self, inst_id: u64, owner: &str, repo: &str, pr_number: i64) -> Result<Vec<File>>;
 
+    /// Get repository installation identifier.
+    async fn get_repository_installation_id(&self, owner: &str, repo: &str) -> Result<u64>;
+
     /// Get all members of the provided team.
     #[allow(dead_code)]
     async fn get_team_members(
@@ -376,6 +379,12 @@ impl GH for GHApi {
         let first_page: Page<File> = client.get(url, None::<&()>).await?;
         let files: Vec<File> = client.all_pages(first_page).await?;
         Ok(files)
+    }
+
+    /// [`GH::get_repository_installation_id`]
+    async fn get_repository_installation_id(&self, owner: &str, repo: &str) -> Result<u64> {
+        let inst = self.app_client.apps().get_repository_installation(owner, repo).await?;
+        Ok(inst.id.0)
     }
 
     /// [`GH::get_team_members`]

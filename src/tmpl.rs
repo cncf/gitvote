@@ -6,8 +6,17 @@ use crate::{
     cfg_repo::CfgProfile,
     cmd::CreateVoteInput,
     github::{TeamSlug, UserName},
-    results::VoteResults,
+    results::{Vote, VoteResults},
 };
+
+/// Template for the audit page.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Template)]
+#[template(path = "audit.html")]
+pub(crate) struct Audit {
+    pub repository_full_name: String,
+    pub votes: Vec<Vote>,
+}
 
 /// Template for the config not found comment.
 #[derive(Debug, Clone, Template)]

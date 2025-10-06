@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html lang="en">
+    <!-- Document head and styles -->
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{{ repository_full_name }} audit</title>
+        <style>
+            :root {
+                --page: #f8fafc;
+                --bg: #ffffff;
+                --text: #171717;
+                --muted: #6b7280;
+                --muted-700: #374151;
+                --border: #e5e7eb;
+                --border-300: #d1d5db;
+                --ink-800: #1f2937;
+                --chip-pass-bg: #ecfdf5;
+                --chip-pass-border: #a7f3d0;
+                --chip-pass-text: #065f46;
+                --chip-fail-bg: #fef2f2;
+                --chip-fail-border: #fecaca;
+                --chip-fail-text: #b91c1c;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                background: var(--page);
+                color: var(--text);
+                font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,
+                    Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+                font-size: 1rem;
+                font-weight: 300;
+                height: 100%;
+                width: 100%;
+            }
+
+            a {
+                color: inherit;
+                text-decoration: none;
+            }
+
+            .nowrap {
+                white-space: nowrap;
+            }
+
+            .truncate {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .topbar {
+                background: #0088ff;
+                color: #ffffff;
+            }
+
+            .topbar__inner {
+                max-width: 75rem;
+                margin: 0 auto;
+                padding: 1rem 1.5rem;
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+            }
+
+            .brand {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+
+            .brand__icon {
+                width: 105px;
+            }
+
+            main {
+                max-width: 75rem;
+                margin: 2rem auto;
+                padding: 0 1.5rem;
+            }
+
+            h1 {
+                font-size: 1.875rem;
+                font-weight: 600;
+                margin-bottom: 2rem;
+            }
+
+            .table-card {
+                border: 1px solid var(--border);
+                border-radius: 1rem;
+                background: #ffffff;
+                overflow: hidden;
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                border-spacing: 0;
+                font-size: 0.875rem;
+            }
+
+            thead {
+                color: var(--muted);
+            }
+
+            th {
+                padding: 0.75rem 1rem;
+                text-align: left;
+                text-transform: uppercase;
+                font-size: 0.75rem;
+                letter-spacing: 0.06em;
+                font-weight: 600;
+                border-bottom: 2px solid var(--border);
+            }
+
+            tbody td {
+                padding: 0.75rem 1rem;
+                border-top: 1px solid var(--border);
+                vertical-align: middle;
+                background: #ffffff;
+                color: var(--ink-800);
+            }
+
+            .table--interactive tbody tr[data-modal-id] {
+                cursor: pointer;
+                transition: background-color 0.15s ease;
+            }
+
+            .table--interactive tbody tr[data-modal-id]:hover td {
+                background: rgba(0, 0, 0, 0.01);
+            }
+
+            .table-placeholder-row {
+                cursor: default;
+            }
+
+            .table-placeholder-row td {
+                text-align: center;
+                font-weight: 500;
+                color: var(--muted-700);
+            }
+
+            .table-placeholder-row:hover td {
+                background: #ffffff;
+            }
+
+            .cell-vote {
+                width: 25rem;
+                max-width: 25rem;
+            }
+
+            .change-stack {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                min-width: 0;
+            }
+
+            .change-stack .vote-meta {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+
+            .change-stack .title {
+              font-weight: 600;
+            }
+
+            .change-stack .type-vote {
+              font-size: 0.85rem;
+              color: var(--muted);
+              text-transform: uppercase;
+            }
+
+            .change-stack .status-badges {
+                display: none;
+                align-items: center;
+                gap: 0.5rem;
+                margin-left: auto;
+            }
+
+            .table--interactive tbody .cell-author {
+              max-width: 290px;
+            }
+
+            .table--interactive tbody .cell-author .truncate {
+                display: inline-block;
+                max-width: 100%;
+            }
+
+            .badge,
+            .vote-chip {
+                display: inline-flex;
+                align-items: center;
+                padding: 0.125rem 0.5rem;
+                border-radius: 0.5rem;
+                font-size: 0.75rem;
+                font-weight: 500;
+            }
+
+            .link {
+                display: inline-flex;
+                align-items: baseline;
+                gap: 0.375rem;
+                min-width: 0;
+                max-width: 100%;
+            }
+
+            .ext {
+                width: 0.75rem;
+                height: 0.75rem;
+                fill: #6b7280;
+                flex: none;
+            }
+
+            .date-wrap {
+                display: inline-block;
+            }
+
+            .date {
+                display: block;
+                font-weight: 600;
+                color: #111827;
+                margin-bottom: 0.5rem;
+            }
+
+            .time {
+                display: block;
+                font-size: 0.85rem;
+                color: var(--muted);
+            }
+
+            .badge {
+                border: 1px solid var(--border-300);
+                background: #fafafa;
+                color: #374151;
+            }
+
+            .badge.pass {
+                background: var(--chip-pass-bg);
+                border-color: var(--chip-pass-border);
+                color: var(--chip-pass-text);
+            }
+
+            .badge.fail {
+                background: var(--chip-fail-bg);
+                border-color: var(--chip-fail-border);
+                color: var(--chip-fail-text);
+            }
+
+            .overlay {
+                position: fixed;
+                inset: 0;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                padding: 1rem;
+                background: rgba(0, 0, 0, 0.4);
+                z-index: 1000;
+            }
+
+            .overlay.open {
+                display: flex;
+            }
+
+            .modal {
+                width: 100%;
+                max-width: 64rem;
+                background: var(--bg);
+                border-radius: 1rem;
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+                border: 1px solid rgba(0, 0, 0, 0.1);
+                display: flex;
+                flex-direction: column;
+                max-height: calc(100vh - 3rem);
+            }
+
+            .modal-content {
+                flex: 1;
+                overflow: auto;
+                padding-bottom: 1.75rem;
+            }
+
+            .header {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 1rem;
+                padding: 1.25rem 1.5rem;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .modal h2 {
+                margin-bottom: 0.25rem;
+                font-size: 1.25rem;
+                font-weight: 600;
+            }
+
+            .close-x {
+              background: transparent;
+              border: 0;
+              padding: 0 0.25rem;
+              font-size: 1.75rem;
+              color: #475569;
+              opacity: 0.75;
+              transition: opacity 0.15s ease;
+              cursor: pointer;
+            }
+
+            .close-x:hover {
+                opacity: 1;
+            }
+
+            section {
+                padding: 1.75rem 1.5rem 0;
+            }
+
+            h3 {
+                margin: 0 0 0.75rem;
+                font-size: 0.875rem;
+                font-weight: 500;
+            }
+
+            .box {
+                border: 1px solid var(--border);
+                border-radius: 0.75rem;
+                padding: 1rem;
+                background: var(--bg);
+            }
+
+            .meta .row {
+                display: flex;
+                gap: 0.5rem;
+                font-size: 0.875rem;
+                margin: 0.5rem 0;
+            }
+
+            .meta .label {
+                width: 5rem;
+                color: var(--muted);
+                user-select: none;
+            }
+
+            .meta .value {
+                flex: 1;
+                font-weight: 500;
+                color: #1f2937;
+                word-break: break-word;
+            }
+
+            .inline-link:hover {
+                text-decoration: underline;
+            }
+
+            .ext-sm {
+                width: 0.75rem;
+                height: 0.75rem;
+                fill: #6b7280;
+                top: 0.15rem;
+                position: relative;
+            }
+
+            .results-line {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                font-size: 0.875rem;
+            }
+
+            .muted {
+                color: var(--muted);
+            }
+
+            .muted-700 {
+                color: var(--muted-700);
+            }
+
+            .progress {
+                height: 0.5rem;
+                width: 100%;
+                border-radius: 999px;
+                background: #e5e7eb;
+                overflow: hidden;
+                margin-top: 1rem;
+                margin-bottom: 0.25rem;
+            }
+
+            .bar {
+                height: 100%;
+                background: #1f2937;
+                transition: width 0.5s ease;
+            }
+
+            .bar.passed {
+                background: #16a34a;
+            }
+
+            .bar.failed {
+                background: #dc2626;
+            }
+
+            .summary {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 0.75rem;
+            }
+
+            @media (max-width: 40rem) {
+                .summary {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+            }
+
+            .stat {
+                border: 1px solid var(--border);
+                border-radius: 0.75rem;
+                padding: 0.75rem;
+                background: var(--bg);
+            }
+
+            .stat .label {
+                font-size: 0.75rem;
+                color: var(--muted);
+                text-transform: uppercase;
+            }
+
+            .stat .value {
+                margin-top: 0.25rem;
+                font-size: 2rem;
+                font-weight: 600;
+                color: var(--ink-800);
+            }
+
+            .table-wrap {
+                border: 1px solid var(--border);
+                border-radius: 0.75rem;
+                overflow: hidden;
+            }
+
+            .modal-table table {
+                width: 100%;
+                border-collapse: separate;
+                border-spacing: 0;
+                font-size: 0.875rem;
+            }
+
+            .modal-table thead th {
+                background: rgba(255, 255, 255, 0.95);
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                text-align: left;
+                padding: 0.5rem 0.75rem;
+                border-bottom: 2px solid var(--border);
+                color: var(--muted);
+            }
+
+            .modal-table tbody td {
+                padding: 0.75rem 1rem;
+                border-bottom: 1px solid var(--border);
+                border-top: 0;
+                background: #ffffff;
+                cursor: default;
+            }
+
+            .modal-table tbody tr:last-child td {
+                border-bottom: none;
+            }
+
+            .vote-chip {
+                text-transform: capitalize;
+                border: 1px solid transparent;
+            }
+
+            .vote-chip.favor {
+                background: var(--chip-pass-bg);
+                border-color: var(--chip-pass-border);
+                color: var(--chip-pass-text);
+            }
+
+            .vote-chip.against {
+                background: var(--chip-fail-bg);
+                border-color: var(--chip-fail-border);
+                color: var(--chip-fail-text);
+            }
+
+            .vote-chip.not-voted {
+                background: #fef3c7;
+                border-color: #fcd34d;
+                color: #92400e;
+            }
+
+            .vote-chip.abstain {
+                background: #fafafa;
+                border-color: var(--border-300);
+                color: #374151;
+            }
+
+            @media (max-width: 1024px) {
+                .topbar__inner {
+                    padding: 1rem;
+                }
+
+                main {
+                    margin: 1.5rem auto;
+                    padding: 0 1rem;
+                }
+
+                .table-card {
+                    border: none;
+                    background: transparent;
+                }
+
+                .table--interactive thead {
+                    display: none;
+                }
+
+                .table--interactive tbody {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
+                    padding: 0;
+                }
+
+                .table--interactive tbody tr {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr);
+                    gap: 0.75rem;
+                    border: 1px solid var(--border);
+                    border-radius: 1rem;
+                    padding: 1rem;
+                    background: #ffffff;
+                    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+                    position: relative;
+                }
+
+                .table--interactive tbody tr:hover td {
+                    background: transparent;
+                }
+
+                .table--interactive tbody td {
+                    padding: 0;
+                    border: 0;
+                    background: transparent;
+                }
+
+                .table--interactive tbody td + td {
+                    margin-top: 0;
+                }
+
+                .table--interactive tbody .cell-vote {
+                    grid-column: 1;
+                    grid-row: 1;
+                    width: 100%;
+                    max-width: 100%;
+                }
+
+                .change-stack {
+                    gap: 0.5rem;
+                    flex-direction: column-reverse;
+                }
+
+                .change-stack .type-vote {
+                    order: -1;
+                    background: #f9fafb;
+                    border: 1px solid var(--border-300);
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 0.125rem 0.5rem;
+                    border-radius: 0.5rem;
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    width: fit-content;
+                    color: #374151;
+                    text-transform: none;
+                }
+
+                .table--interactive tbody .cell-author,
+                .table--interactive tbody .cell-created,
+                .table--interactive tbody .cell-closed {
+                    display: flex;
+                    align-items: baseline;
+                    gap: 0.5rem;
+                    font-size: 0.8125rem;
+                    font-weight: 600;
+                    color: #111827;
+                    grid-column: 1 / -1;
+                    max-width: 100%;
+                }
+
+                .table--interactive tbody .cell-author::before,
+                .table--interactive tbody .cell-created::before,
+                .table--interactive tbody .cell-closed::before {
+                    content: attr(data-label);
+                    color: var(--muted);
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    letter-spacing: 0;
+                    text-transform: none;
+                    width: 4.5rem;
+                }
+
+                .table--interactive tbody .cell-created .date-wrap,
+                .table--interactive tbody .cell-closed .date-wrap {
+                    display: inline-flex;
+                    gap: 0.5rem;
+                    align-items: baseline;
+                }
+
+                .table--interactive tbody .cell-author .truncate {
+                    flex: 1;
+                    min-width: 0;
+                }
+
+                .table--interactive tbody .cell-created .date,
+                .table--interactive tbody .cell-closed .date {
+                    margin-bottom: 0;
+                }
+
+                .table--interactive tbody .cell-created .time,
+                .table--interactive tbody .cell-closed .time {
+                    font-size: 0.75rem;
+                }
+
+                .table--interactive tbody .cell-status,
+                .table--interactive tbody .cell-outcome {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: flex-end;
+                    gap: 0.5rem;
+                    grid-row: 1;
+                    align-self: start;
+                }
+
+                .table--interactive tbody .cell-outcome {
+                    margin-top: 0;
+                }
+
+                .table--interactive tbody .cell-status,
+                .table--interactive tbody .cell-outcome {
+                    justify-self: end;
+                }
+
+                .table--interactive tbody .cell-status {
+                    grid-column: 2;
+                }
+
+                .table--interactive tbody .cell-outcome {
+                    grid-column: 3;
+                }
+
+                .table--interactive tbody .cell-status::before,
+                .table--interactive tbody .cell-outcome::before {
+                    display: none;
+                }
+
+                .table--interactive tbody .cell-status,
+                .table--interactive tbody .cell-outcome {
+                    padding-top: 0;
+                }
+
+                .table--interactive tbody .cell-status .badge,
+                .table--interactive tbody .cell-outcome .badge {
+                    font-size: 0.75rem;
+                }
+
+                .table-placeholder-row {
+                    display: block;
+                    border: 1px solid var(--border);
+                    border-radius: 1rem;
+                    padding: 1rem;
+                    background: #ffffff;
+                }
+
+                .table-placeholder-row td {
+                    border: 0;
+                    padding: 0;
+                    text-align: center;
+                }
+                .table--interactive tbody td.cell-status,
+                .table--interactive tbody td.cell-outcome {
+                    display: none;
+                }
+
+                .change-stack .status-badges {
+                    display: inline-flex;
+                }
+            }
+
+            @media (max-width: 640px) {
+                h1 {
+                    font-size: 1.25rem;
+                    margin-bottom: 1.5rem;
+                }
+
+                .meta .row {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+
+                .meta .row + .row {
+                    margin-bottom: 0.75rem;
+                }
+
+                .results-line .passing-threshold {
+                    display: none;
+                }
+
+                .modal-table .cell-date {
+                    display: none;
+                }
+            }
+
+            .footer {
+                padding: 1.25rem 1.5rem 1.5rem;
+                border-top: 1px solid var(--border);
+                display: flex;
+                justify-content: flex-end;
+            }
+
+            .btn {
+                border: 1px solid var(--border-300);
+                background: #ffffff;
+                border-radius: 0.5rem;
+                padding: 0.625rem 1.25rem;
+                font-size: 0.875rem;
+                font-weight: 600;
+                color: #1f2937;
+                cursor: pointer;
+            }
+
+            .btn:hover {
+                background: #f8fafc;
+            }
+        </style>
+    </head>
+    <!-- /Document head and styles -->
+    <body>
+        <!-- Header -->
+        <header class="topbar">
+            <div class="topbar__inner">
+                <div class="brand">
+                    <div class="brand__icon">
+                        <!-- Logo -->
+                        {# djlint:off H021 -#}
+                        <svg xmlns:xlink="http://www.w3.org/1999/xlink"
+                             xmlns="http://www.w3.org/2000/svg"
+                             viewBox="0,0,3300,1200"
+                             style="enable-background:new 0 0 3300 1200"
+                             version="1.1">
+                            <g id="layer0">
+                            <path d="M951.372,232.476C951.372,232.476 920.34,278.693 903.866,305.037C889.438,328.109 842.392,389.772 800.461,418.114C694.396,489.805 576.149,555.261 447.876,575.97C433.047,578.365 413.214,575.857 404.549,563.588C392.757,546.892 392.8,515.616 408.382,502.386C462.335,456.576 470.505,495.985 564.207,383.143C593.179,348.253 571.457,341.175 555.982,333.34C514.262,312.218 435.066,324.923 415.719,330.728C396.371,336.532 356.132,360.342 351.489,378.528C350.511,380.393 188.628,377.64 188.628,377.64C188.628,377.64 252.174,252.907 279.084,225.395C307.534,196.309 326.096,166.596 372.515,158.568C418.934,150.54 563.009,130.208 591.793,128.876C629.265,127.143 675.48,113.298 697.438,105.181C719.396,97.0633 779.52,44.8748 779.52,44.8748L951.372,232.476Z" fill="#FFFFFF" />
+                            </g>
+                            <g id="layer1">
+                            <g transform="matrix(1 0 0 1 150 230)">
+                            <path d="M2037.45,714.063L1971.94,714.063L1860.24,297.473L1919.03,297.473L2005.54,655.27L2007.22,655.27L2089.53,297.473L2146.64,297.473L2037.45,714.063Z" fill="#F7FBFF" />
+                            <path d="M2491,506.608C2491,539.644 2487.64,569.6 2480.92,596.477C2474.2,623.354 2464.68,646.591 2452.36,666.189C2440.05,685.786 2424.79,700.904 2406.59,711.543C2388.39,722.182 2368.09,727.501 2345.7,727.501C2323.3,727.501 2303.14,722.182 2285.23,711.543C2267.31,700.904 2252.05,685.786 2239.45,666.189C2226.85,646.591 2217.19,623.354 2210.47,596.477C2203.75,569.6 2200.4,539.644 2200.4,506.608C2200.4,473.572 2203.61,443.335 2210.05,415.899C2216.49,388.462 2225.87,364.945 2238.19,345.347C2250.51,325.749 2265.77,310.631 2283.97,299.993C2302.16,289.354 2322.74,284.035 2345.7,284.035C2368.09,284.035 2388.39,289.354 2406.59,299.993C2424.79,310.631 2440.05,325.749 2452.36,345.347C2464.68,364.945 2474.2,388.462 2480.92,415.899C2487.64,443.335 2491,473.572 2491,506.608L2491,506.608ZM2433.89,505.768C2433.89,481.131 2432.07,458.174 2428.43,436.896C2424.79,415.619 2419.33,397.281 2412.05,381.883C2404.77,366.485 2395.67,354.306 2384.75,345.347C2373.83,336.388 2360.82,331.909 2345.7,331.909C2330.58,331.909 2317.42,336.388 2306.22,345.347C2295.02,354.306 2285.92,366.485 2278.93,381.883C2271.93,397.281 2266.61,415.619 2262.97,436.896C2259.33,458.174 2257.51,481.131 2257.51,505.768C2257.51,530.405 2259.33,553.082 2262.97,573.8C2266.61,594.517 2271.93,612.715 2278.93,628.393C2285.92,644.071 2295.02,656.25 2306.22,664.929C2317.42,673.608 2330.58,677.947 2345.7,677.947C2360.82,677.947 2373.97,673.608 2385.17,664.929C2396.37,656.25 2405.47,644.071 2412.47,628.393C2419.47,612.715 2424.79,594.517 2428.43,573.8C2432.07,553.082 2433.89,530.405 2433.89,505.768L2433.89,505.768Z" fill="#F7FBFF" />
+                            <path d="M2730.37,714.063C2724.21,716.862 2716.65,719.382 2707.69,721.622C2698.74,723.862 2689.5,724.981 2679.98,724.981C2650.86,724.981 2630.28,714.903 2618.24,694.745C2606.21,674.588 2600.19,647.711 2600.19,614.115L2600.19,342.827L2545.59,342.827L2545.59,297.473L2599.35,297.473L2599.35,182.407L2653.94,182.407L2653.94,297.473L2727.85,297.473L2727.85,342.827L2653.94,342.827L2653.94,604.036C2653.94,629.233 2657.58,647.571 2664.86,659.049C2672.14,670.528 2683.06,676.267 2697.62,676.267C2702.65,676.267 2707.97,675.567 2713.57,674.168C2719.17,672.768 2723.93,671.228 2727.85,669.548L2730.37,714.063L2730.37,714.063Z" fill="#F7FBFF" />
+                            <path d="M2836.2,517.526C2836.2,540.484 2838.16,561.621 2842.08,580.939C2846,600.256 2851.74,617.054 2859.3,631.333C2866.85,645.611 2876.37,656.81 2887.85,664.929C2899.33,673.048 2912.91,677.107 2928.59,677.107C2948.75,677.107 2964.98,670.948 2977.3,658.629C2989.62,646.311 2999.14,631.473 3005.86,614.115L3047.85,638.472C3037.77,663.669 3022.8,684.806 3002.92,701.884C2983.04,718.962 2957.7,727.501 2926.91,727.501C2880.43,727.501 2844.32,707.904 2818.56,668.708C2792.8,629.513 2779.93,575.479 2779.93,506.608C2779.93,474.132 2783.29,444.175 2790,416.739C2796.72,389.302 2806.38,365.785 2818.98,346.187C2831.58,326.589 2846.98,311.331 2865.18,300.413C2883.37,289.494 2903.67,284.035 2926.07,284.035C2950.7,284.035 2971.56,289.354 2988.64,299.993C3005.72,310.631 3019.58,325.19 3030.22,343.667C3040.85,362.145 3048.55,383.703 3053.31,408.34C3058.07,432.977 3060.45,459.293 3060.45,487.29L3060.45,517.526L2836.2,517.526ZM3004.18,471.332C3004.18,429.337 2997.74,395.601 2984.86,370.124C2971.98,344.647 2951.82,331.909 2924.39,331.909C2908.15,331.909 2894.57,336.808 2883.65,346.607C2872.73,356.406 2863.78,368.444 2856.78,382.723C2849.78,397.001 2844.74,412.259 2841.66,428.497C2838.58,444.735 2837.04,459.013 2837.04,471.332L3004.18,471.332Z" fill="#F7FBFF" />
+                            </g>
+                            </g>
+                            <g id="layer2">
+                            <g transform="matrix(1 0 0 1 100 230)">
+                            <path d="M1271.63,310.809C1301.86,310.809 1336.83,303.249 1376.51,288.131L1376.51,385.457C1367.69,388.607 1355.09,392.072 1338.72,395.851C1343.76,410.34 1346.28,423.884 1346.28,436.483C1346.28,476.799 1334.15,511.919 1309.9,541.841C1285.64,571.763 1254.3,589.559 1215.88,595.229C1190.68,599.009 1178.08,612.552 1178.08,635.86C1178.08,644.05 1182.17,652.239 1190.36,660.428C1201.07,672.397 1216.82,679.957 1237.61,683.106C1327.69,696.965 1372.73,734.447 1372.73,795.551C1372.73,893.193 1314.46,942.014 1197.92,942.014C1150.05,942.014 1110.68,933.509 1079.81,916.501C1040.75,895.083 1021.22,861.381 1021.22,815.395C1021.22,762.479 1050.52,726.258 1109.1,706.729L1109.1,704.839C1087.68,691.61 1076.97,671.452 1076.97,644.365C1076.97,609.088 1087.05,587.04 1107.21,578.22L1107.21,576.331C1087.05,569.401 1069.1,553.652 1053.35,529.085C1035.71,502.627 1026.89,474.279 1026.89,444.042C1026.89,398.686 1042.96,360.889 1075.08,330.652C1105.95,302.304 1142.8,288.131 1185.64,288.131C1216.51,288.131 1245.17,295.69 1271.63,310.809L1271.63,310.809ZM1129.89,444.987C1129.89,488.453 1149.73,510.186 1189.42,510.186C1227.85,510.186 1247.06,488.138 1247.06,444.042C1247.06,425.774 1242.65,410.025 1233.83,396.796C1223.12,382.307 1208.32,375.063 1189.42,375.063C1149.73,375.063 1129.89,398.371 1129.89,444.987L1129.89,444.987ZM1275.41,807.835C1275.41,775.708 1248.95,759.645 1196.03,759.645C1145.01,759.645 1119.49,776.338 1119.49,809.725C1119.49,842.482 1147.21,858.861 1202.65,858.861C1251.15,858.861 1275.41,841.852 1275.41,807.835L1275.41,807.835Z" fill="#FFFFFF" />
+                            <path d="M1486.12,219.152C1467.85,219.152 1452.26,212.222 1439.35,198.363C1426.44,184.505 1419.98,168.126 1419.98,149.228C1419.98,129.699 1426.44,113.006 1439.35,99.147C1452.26,85.2882 1467.85,78.3588 1486.12,78.3588C1503.76,78.3588 1519.04,85.2882 1531.95,99.147C1544.87,113.006 1551.32,129.699 1551.32,149.228C1551.32,168.126 1544.87,184.505 1531.95,198.363C1519.04,212.222 1503.76,219.152 1486.12,219.152L1486.12,219.152ZM1432.26,712.399C1433.52,699.8 1434.15,678.382 1434.15,648.144L1434.15,354.275C1434.15,324.667 1433.52,304.194 1432.26,292.855L1539.04,292.855C1537.78,304.824 1537.15,324.667 1537.15,352.385L1537.15,642.475C1537.15,674.602 1537.78,697.91 1539.04,712.399L1432.26,712.399Z" fill="#FFFFFF" />
+                            <path d="M1739.36,292.855L1821.57,292.855L1821.57,384.512C1818.42,384.512 1812.59,384.197 1804.09,383.567C1795.58,382.937 1787.55,382.622 1779.99,382.622L1739.36,382.622L1739.36,558.377C1739.36,600.583 1753.22,621.687 1780.94,621.687C1800.47,621.687 1818.1,616.332 1833.85,605.623L1833.85,700.115C1810.54,712.714 1782.51,719.013 1749.75,719.013C1703.77,719.013 1671.96,702.635 1654.32,669.877C1641.09,645.31 1634.47,606.568 1634.47,553.652L1634.47,384.512L1635.42,384.512L1635.42,382.622L1621.25,381.677C1613.06,381.677 1602.35,382.622 1589.12,384.512L1589.12,292.855L1635.42,292.855L1635.42,256.003C1635.42,238.365 1634.47,224.191 1632.59,213.482L1742.2,213.482C1740.31,225.451 1739.36,238.995 1739.36,254.114L1739.36,292.855Z" fill="#FFFFFF" />
+                            </g>
+                            </g>
+                            <g id="layer3">
+                            <path d="M461.566,416.106L172.332,412.671L173.441,849.84L94.1297,849.84L67.4302,945.892C358.49,945.892 644.32,945.892 932.57,945.892L905.261,849.84L833.396,849.84L831.829,453.819L785.955,477.644L785.41,894.276C603.428,894.276 403.576,894.276 209.843,894.276L209.497,452.814L403.099,452.814L461.566,416.106Z" fill="#FFFFFF" />
+                            </g>
+                            <g id="layer4">
+                            <path d="M368.001,695.144L414.563,648.515L464.495,703.77L587.446,588.396L631.999,636.814L464.495,800.344L368.001,695.144Z" fill="#FFFFFF" />
+                            </g>
+                        </svg>
+                        {# djlint:on H021 #}
+                        <!-- /Logo -->
+                    </div>
+                </div>
+            </div>
+        </header>
+        <!-- /Header -->
+        <!-- Audit content -->
+        <main>
+            <h1>{{ repository_full_name }}</h1>
+            <!-- Vote list table -->
+            <div class="table-card">
+                <div>
+                    <table class="table--interactive" aria-label="Vote history">
+                        <thead>
+                            <tr>
+                                <th class="cell-vote">Vote</th>
+                                <th>Created by</th>
+                                <th>Created</th>
+                                <th>Closed</th>
+                                <th>Status</th>
+                                <th>Outcome</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if votes.is_empty() %}
+                                <tr class="table-placeholder-row">
+                                    <td colspan="6">No votes recorded for this repository.</td>
+                                </tr>
+                            {% else %}
+                                <!-- Votes row -->
+                                {% for vote in votes %}
+                                    {% let results = vote.results -%}
+                                    <tr {% if !results.is_none() -%}data-modal-id="modal-{{ vote.vote_id }}"{% endif -%}>
+                                        <td class="cell-vote">
+                                            <div class="change-stack">
+                                                <div class="title truncate">
+                                                    {% if let Some(title) = vote.issue_title -%}
+                                                        {{ title }} (#{{ vote.issue_number }})
+                                                    {% else -%}
+                                                        #{{ vote.issue_number }}
+                                                    {% endif -%}
+                                                </div>
+                                                <div class="vote-meta">
+                                                    <div class="type-vote">
+                                                        {% if vote.is_pull_request %}
+                                                            Pull request
+                                                        {% else %}
+                                                            Issue
+                                                        {% endif %}
+                                                    </div>
+                                                    <div class="status-badges">
+                                                        {% if vote.closed %}
+                                                            <span class="badge">Closed</span>
+                                                        {% else %}
+                                                            <span class="badge">Open</span>
+                                                        {% endif %}
+                                                        {% if let Some(results) = results -%}
+                                                            {% if results.passed -%}
+                                                                <span class="badge pass">Passed</span>
+                                                            {% else -%}
+                                                                <span class="badge fail">Failed</span>
+                                                            {% endif -%}
+                                                        {% else %}
+                                                            <span class="badge pending">Pending</span>
+                                                        {% endif -%}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="nowrap cell-author" data-label="Created by">
+                                            <span class="truncate">@{{ vote.created_by }}</span>
+                                        </td>
+                                        <td class="nowrap cell-created" data-label="Created">{% call format_date(vote.created_at) -%}</td>
+                                            <td class="nowrap cell-closed" data-label="Closed">
+                                                {% if vote.closed -%}
+                                                    {% call format_date(vote.ends_at) -%}
+                                                    {% endif -%}
+                                                </td>
+                                                <td class="nowrap cell-status">
+                                                    {% if vote.closed %}
+                                                        <span class="badge">Closed</span>
+                                                    {% else %}
+                                                        <span class="badge">Open</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="nowrap cell-outcome">
+                                                    {% if let Some(results) = results -%}
+                                                        {% if results.passed %}
+                                                            <span class="badge pass">Passed</span>
+                                                        {% else %}
+                                                            <span class="badge fail">Failed</span>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        <span class="badge">Pending</span>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                        <!--/Votes row -->
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- /Vote list table -->
+                    {% if !votes.is_empty() %}
+                        <!-- Vote detail modal -->
+                        {% for vote in votes %}
+                            {% if let Some(results) = vote.results -%}
+                                <div class="overlay" id="modal-{{ vote.vote_id }}" aria-hidden="true">
+                                    <div class="modal" role="dialog" aria-modal="true">
+                                        <div class="header">
+                                            <h2>Vote</h2>
+                                            <button class="close-x" data-modal-close aria-label="Close modal">✕</button>
+                                        </div>
+                                        <div class="modal-content">
+                                            <!-- Vote metadata section -->
+                                            <section class="meta">
+                                                <h3>Vote details</h3>
+                                                <div class="box">
+                                                    <div class="row">
+                                                        <div class="label">
+                                                            {% if vote.is_pull_request %}
+                                                                PR
+                                                            {% else %}
+                                                                Issue
+                                                            {% endif %}
+                                                        </div>
+                                                        <div class="value">
+                                                            <a class="inline-link"
+                                                               href="https://github.com/{{ vote.repository_full_name }}/{%- if vote.is_pull_request -%}pull{%- else -%}issues{%- endif -%}/{{ vote.issue_number }}"
+                                                               target="_blank"
+                                                               rel="noopener noreferrer">
+                                                                {% if let Some(title) = vote.issue_title -%}
+                                                                    {{ title }} (#{{ vote.issue_number }})
+                                                                {% else -%}
+                                                                    #{{ vote.issue_number }}
+                                                                {% endif -%}
+                                                                <svg class="ext-sm" viewBox="0 0 24 24" aria-hidden="true">
+                                                                    <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z" />
+                                                                </svg>
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="label">Created by</div>
+                                                        <div class="value">@{{ vote.created_by }}</div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="label">Created</div>
+                                                        <div class="value">{{ vote.created_at }}</div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="label">Closed</div>
+                                                        <div class="value">
+                                                            {% if let Some(closed_at) = vote.closed_at %}
+                                                                {{ closed_at }}
+                                                            {% endif -%}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </section>
+                                            <!-- Vote results data -->
+                                            <section>
+                                                <h3>Results</h3>
+                                                <div class="box">
+                                                    <div class="results-line">
+                                                        <span class="muted-700">In favor: <span class="badge">{{ "{:.0}"|format(results.in_favor_percentage) }}%</span></span>
+                                                        {% if results.passed %}
+                                                            <span class="badge pass">Passed</span>
+                                                        {% else %}
+                                                            <span class="badge fail">Failed</span>
+                                                        {% endif %}
+                                                        <span class="muted passing-threshold">Passing threshold: <span class="badge">{{ results.pass_threshold }}%</span></span>
+                                                    </div>
+                                                    <div class="progress" aria-hidden="true">
+                                                        <!-- djlint:off H008 -->
+                                                        <div class="bar {% if results.passed -%}passed{% else -%}failed{% endif -%}"
+                                                             style='width:{{ "{:.2}"|format(results.in_favor_percentage) }}%'>
+                                                        </div>
+                                                        <!-- djlint:on H008 -->
+                                                    </div>
+                                                </div>
+                                            </section>
+                                            <section>
+                                                <h3>Summary</h3>
+                                                <div class="summary">
+                                                    <div class="stat">
+                                                        <div class="label">In favor</div>
+                                                        <div class="value">{{ results.in_favor }}</div>
+                                                    </div>
+                                                    <div class="stat">
+                                                        <div class="label">Against</div>
+                                                        <div class="value">{{ results.against }}</div>
+                                                    </div>
+                                                    <div class="stat">
+                                                        <div class="label">Abstain</div>
+                                                        <div class="value">{{ results.abstain }}</div>
+                                                    </div>
+                                                    <div class="stat">
+                                                        <div class="label">Not voted</div>
+                                                        <div class="value">{{ results.not_voted }}</div>
+                                                    </div>
+                                                </div>
+                                            </section>
+                                            <section class="votes">
+                                                <h3>Binding votes</h3>
+                                                <div class="table-wrap">
+                                                    <!-- Vote breakdown table -->
+                                                    <div class="modal-table">
+                                                        <table aria-label="Binding votes table">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>USER</th>
+                                                                    <th>VOTE</th>
+                                                                    <th class="cell-date">DATE</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {% for (user, user_vote) in results.votes -%}
+                                                                    {% if user_vote.binding %}
+                                                                        <tr>
+                                                                            <td>@{{ user }}</td>
+                                                                            <td>
+                                                                                <span class="vote-chip {% match user_vote.vote_option -%}{% when crate::results::VoteOption::InFavor %}favor{% when crate::results::VoteOption::Against %}against{% when crate::results::VoteOption::Abstain %}abstain{% endmatch %}">{{ user_vote.vote_option }}</span>
+                                                                            </td>
+                                                                            <td class="muted-700 cell-date">{{ user_vote.timestamp }}</td>
+                                                                        </tr>
+                                                                    {% endif %}
+                                                                {% endfor -%}
+                                                                {% if !results.pending_voters.is_empty() -%}
+                                                                    {% for user in results.pending_voters -%}
+                                                                        <tr>
+                                                                            <td>@{{ user }}</td>
+                                                                            <td>
+                                                                                <span class="vote-chip not-voted">Not voted</span>
+                                                                            </td>
+                                                                            <td class="muted-700 cell-date"></td>
+                                                                        </tr>
+                                                                    {% endfor -%}
+                                                                {% endif %}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                    <!-- /Vote breakdown table -->
+                                                </div>
+                                            </section>
+                                            <!-- /Vote results data -->
+                                        </div>
+                                        <div class="footer">
+                                            <button class="btn" data-modal-close>Close</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endif -%}
+                        {% endfor %}
+                        <!-- /Vote detail modal -->
+                    {% endif %}
+                </main>
+                <!-- /Audit content -->
+                <!-- Modal interaction script -->
+                <script>
+            (function () {
+                const body = document.body;
+                const overlays = new Map();
+                document.querySelectorAll('.overlay').forEach((overlay) => {
+                    overlays.set(overlay.id, overlay);
+                });
+                const openModal = (overlay) => {
+                    if (!overlay.classList.contains('open')) {
+                        overlay.classList.add('open');
+                        overlay.setAttribute('aria-hidden', 'false');
+                        body.style.overflow = 'hidden';
+                    }
+                };
+                const closeModal = (overlay) => {
+                    overlay.classList.remove('open');
+                    overlay.setAttribute('aria-hidden', 'true');
+                    body.style.overflow = '';
+                };
+                document.querySelectorAll('tr[data-modal-id]').forEach((row) => {
+                    row.addEventListener('click', () => {
+                        const overlay = overlays.get(row.dataset.modalId);
+                        if (overlay) {
+                            openModal(overlay);
+                        }
+                    });
+                });
+                document.querySelectorAll('[data-modal-close]').forEach((el) => {
+                    el.addEventListener('click', (event) => {
+                        const overlay = event.target.closest('.overlay');
+                        if (overlay) {
+                            closeModal(overlay);
+                        }
+                    });
+                });
+                document.querySelectorAll('.overlay').forEach((overlay) => {
+                    overlay.addEventListener('click', (event) => {
+                        if (event.target === overlay) {
+                            closeModal(overlay);
+                        }
+                    });
+                });
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') {
+                        const visible = document.querySelector('.overlay.open');
+                        if (visible) {
+                            closeModal(visible);
+                        }
+                    }
+                });
+            })();
+                </script>
+                <!-- /Modal interaction script -->
+            </body>
+        </html>
+        {# Date formatting macro -#}
+        {% macro format_date(date) -%}
+            <div class="date-wrap">
+                <div class="date">{{ date.date() }}</div>
+                <div class="time">{{ date.time() }}</div>
+            </div>
+        {% endmacro -%}
+        {# End date formatting macro -#}

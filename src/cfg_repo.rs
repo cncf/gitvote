@@ -24,9 +24,12 @@ type ProfileName = String;
 /// `GitVote` configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Cfg {
+    pub profiles: HashMap<ProfileName, CfgProfile>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audit: Option<Audit>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation: Option<Automation>,
-    pub profiles: HashMap<ProfileName, CfgProfile>,
 }
 
 impl Cfg {
@@ -46,6 +49,12 @@ impl Cfg {
             None => Err(CfgError::ConfigNotFound),
         }
     }
+}
+
+/// Audit configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub(crate) struct Audit {
+    pub enabled: bool,
 }
 
 /// Automation configuration.
