@@ -1,6 +1,6 @@
 //! This modules defines some test utilities.
 
-use std::{collections::BTreeMap, fs, path::Path, time::Duration};
+use std::{collections::BTreeMap, fs, path::Path, sync::Arc, time::Duration};
 
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::{
     cfg_repo::{AllowedVoters, Announcements, CfgProfile, DiscussionsAnnouncements},
     github::*,
-    results::{UserVote, Vote, VoteOption, VoteResults},
+    results::{UserVote, Vote, VoteOption, VoteResults, calculate},
 };
 
 pub(crate) const BRANCH: &str = "main";
@@ -177,4 +177,33 @@ pub(crate) fn setup_test_vote_results() -> VoteResults {
         allowed_voters: 1,
         pending_voters: vec![],
     }
+}
+
+pub(crate) fn setup_test_vote_with_calculated_results(
+    created_at: &str,
+    allowed_voters: Vec<UserName>,
+    reactions: Vec<Reaction>,
+) -> Vote {
+    // Setup GitHub mock
+    let mut gh = MockGH::new();
+    gh.expect_get_comment_reactions().return_once(move |_, _, _, _| {
+        Box::pin(async move { Ok::<Vec<Reaction>, anyhow::Error>(reactions) })
+    });
+    gh.expect_get_allowed_voters().return_once(move |_, _, _, _, _| {
+        Box::pin(async move { Ok::<Vec<UserName>, anyhow::Error>(allowed_voters) })
+    });
+
+    // Setup vote
+    let mut vote = setup_test_vote();
+    let created_at_ts = OffsetDateTime::parse(created_at, &Rfc3339).expect("valid created_at timestamp");
+    vote.created_at = created_at_ts;
+
+    // Calculate results and attach to vote
+    let runtime = tokio::runtime::Runtime::new().expect("runtime creation should succeed");
+    let results = runtime
+        .block_on(calculate(Arc::new(gh), OWNER, REPO, &vote))
+        .expect("vote calculation should succeed");
+    vote.results = Some(results);
+
+    vote
 }

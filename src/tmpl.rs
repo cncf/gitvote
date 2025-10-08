@@ -1,21 +1,120 @@
 //! This module defines the templates used for the GitHub comments.
 
+use std::collections::BTreeMap;
+
 use askama::Template;
+use serde::Serialize;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
     cfg_repo::CfgProfile,
     cmd::CreateVoteInput,
     github::{TeamSlug, UserName},
-    results::{Vote, VoteResults},
+    results::{Vote, VoteOption, VoteResults},
 };
+
+/// Date since when votes participation is tracked.
+const PARTICIPATION_TRACKING_START: &str = "2024-01-01T00:00:00Z";
 
 /// Template for the audit page.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Template)]
 #[template(path = "audit.html")]
 pub(crate) struct Audit {
+    pub participation_stats: AuditParticipationStats,
     pub repository_full_name: String,
     pub votes: Vec<Vote>,
+}
+
+impl Audit {
+    /// Create a new `Audit` template.
+    pub(crate) fn new(repository_full_name: String, votes: Vec<Vote>) -> Self {
+        let participation_stats = Self::calculate_participation_stats(&votes);
+
+        Self {
+            participation_stats,
+            repository_full_name,
+            votes,
+        }
+    }
+
+    /// Calculate the participation statistics from the provided votes.
+    fn calculate_participation_stats(votes: &[Vote]) -> AuditParticipationStats {
+        let tracking_start = OffsetDateTime::parse(PARTICIPATION_TRACKING_START, &Rfc3339).unwrap();
+
+        // Aggregate stats per year and user based on votes provided
+        let mut stats: AuditParticipationStats = BTreeMap::new();
+        for vote in votes {
+            // Ignore votes created before the tracking start date
+            if vote.created_at < tracking_start {
+                continue;
+            }
+
+            // Ignore votes without results
+            let Some(results) = &vote.results else {
+                continue;
+            };
+
+            // Get or create the year stats entry
+            let year = vote.created_at.year();
+            let stats_year = stats.entry(year).or_default();
+
+            // Update stats based on votes
+            for (user, user_vote) in &results.votes {
+                // Ignore non-binding votes
+                if !user_vote.binding {
+                    continue;
+                }
+
+                // Get or create the year-user stats entry
+                let stats_year_user = stats_year.entry(user.clone()).or_default();
+
+                // Update stats based on the vote option
+                match user_vote.vote_option {
+                    VoteOption::InFavor => stats_year_user.votes_in_favor += 1,
+                    VoteOption::Against => stats_year_user.votes_against += 1,
+                    VoteOption::Abstain => stats_year_user.votes_abstain += 1,
+                }
+            }
+
+            // Update stats not voted count based on pending voters
+            for user in &results.pending_voters {
+                stats_year.entry(user.clone()).or_default().not_voted += 1;
+            }
+        }
+
+        // Calculate and set participation percentage for each voter
+        for voters in stats.values_mut() {
+            for voter in voters.values_mut() {
+                let voted_count = voter.votes_abstain + voter.votes_against + voter.votes_in_favor;
+                let total = voted_count + voter.not_voted;
+
+                #[allow(clippy::cast_precision_loss)]
+                {
+                    voter.participation_percentage = if total == 0 {
+                        0.0
+                    } else {
+                        (voted_count as f64 / total as f64) * 100.0
+                    };
+                }
+            }
+        }
+
+        stats
+    }
+}
+
+/// Nested map with participation statistics per year and user.
+pub(crate) type AuditParticipationStats = BTreeMap<i32, BTreeMap<UserName, AuditParticipationStatsUser>>;
+
+/// User participation statistics.
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct AuditParticipationStatsUser {
+    pub not_voted: i64,
+    pub participation_percentage: f64,
+    pub votes_abstain: i64,
+    pub votes_against: i64,
+    pub votes_in_favor: i64,
 }
 
 /// Template for the config not found comment.
@@ -242,38 +341,177 @@ mod tests {
     use std::{collections::BTreeMap, env, fs};
 
     use askama::Template;
+    use serde_json::json;
     use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
     use crate::{
         cmd::CreateVoteInput,
-        github::Event,
-        results::{UserVote, VoteOption, VoteResults},
+        github::{Event, Reaction, User},
+        results::{REACTION_ABSTAIN, REACTION_AGAINST, REACTION_IN_FAVOR, UserVote, VoteOption, VoteResults},
         testutil::*,
     };
 
     use super::*;
 
-    fn golden_file_path(name: &str) -> String {
-        format!("{TESTDATA_PATH}/templates/{name}.golden")
-    }
+    #[allow(clippy::too_many_lines)]
+    #[test]
+    fn test_calculate_participation() {
+        // Setup test votes.
+        let votes = vec![
+            setup_test_vote_with_calculated_results(
+                "2024-02-01T12:00:00Z",
+                vec!["alice".to_string(), "bob".to_string(), "carol".to_string()],
+                vec![
+                    Reaction {
+                        content: REACTION_IN_FAVOR.to_string(),
+                        created_at: "2024-02-01T12:00:00Z".to_string(),
+                        user: User {
+                            login: "alice".to_string(),
+                        },
+                    },
+                    Reaction {
+                        content: REACTION_AGAINST.to_string(),
+                        created_at: "2024-02-01T12:00:00Z".to_string(),
+                        user: User {
+                            login: "bob".to_string(),
+                        },
+                    },
+                    Reaction {
+                        content: REACTION_IN_FAVOR.to_string(),
+                        created_at: "2024-02-01T12:00:00Z".to_string(),
+                        user: User {
+                            login: "dave".to_string(),
+                        },
+                    },
+                ],
+            ),
+            setup_test_vote_with_calculated_results(
+                "2024-05-15T10:00:00Z",
+                vec!["alice".to_string(), "bob".to_string(), "carol".to_string()],
+                vec![
+                    Reaction {
+                        content: REACTION_ABSTAIN.to_string(),
+                        created_at: "2024-05-15T10:00:00Z".to_string(),
+                        user: User {
+                            login: "alice".to_string(),
+                        },
+                    },
+                    Reaction {
+                        content: REACTION_IN_FAVOR.to_string(),
+                        created_at: "2024-05-15T10:00:00Z".to_string(),
+                        user: User {
+                            login: "carol".to_string(),
+                        },
+                    },
+                ],
+            ),
+            setup_test_vote_with_calculated_results(
+                "2025-03-10T09:30:00Z",
+                vec!["alice".to_string(), "bob".to_string(), "carol".to_string()],
+                vec![
+                    Reaction {
+                        content: REACTION_ABSTAIN.to_string(),
+                        created_at: "2025-03-10T09:30:00Z".to_string(),
+                        user: User {
+                            login: "alice".to_string(),
+                        },
+                    },
+                    Reaction {
+                        content: REACTION_IN_FAVOR.to_string(),
+                        created_at: "2025-03-10T09:30:00Z".to_string(),
+                        user: User {
+                            login: "carol".to_string(),
+                        },
+                    },
+                ],
+            ),
+            setup_test_vote_with_calculated_results(
+                "2025-06-20T15:45:00Z",
+                vec!["alice".to_string(), "bob".to_string(), "carol".to_string()],
+                vec![
+                    Reaction {
+                        content: REACTION_IN_FAVOR.to_string(),
+                        created_at: "2025-06-20T15:45:00Z".to_string(),
+                        user: User {
+                            login: "alice".to_string(),
+                        },
+                    },
+                    Reaction {
+                        content: REACTION_AGAINST.to_string(),
+                        created_at: "2025-06-20T15:45:00Z".to_string(),
+                        user: User {
+                            login: "bob".to_string(),
+                        },
+                    },
+                ],
+            ),
+            setup_test_vote_with_calculated_results(
+                "2023-12-15T09:30:00Z",
+                vec!["alice".to_string(), "carol".to_string()],
+                vec![Reaction {
+                    content: REACTION_AGAINST.to_string(),
+                    created_at: "2023-12-15T09:30:00Z".to_string(),
+                    user: User {
+                        login: "alice".to_string(),
+                    },
+                }],
+            ),
+        ];
 
-    fn read_golden_file(name: &str) -> String {
-        let path = golden_file_path(name);
-        fs::read_to_string(&path).unwrap_or_else(|_| panic!("error reading golden file: {path}"))
-    }
+        // Calculate participation
+        let participation = Audit::calculate_participation_stats(&votes);
 
-    fn write_golden_file(name: &str, content: &str) {
-        let path = golden_file_path(name);
-        fs::write(&path, content).expect("write golden file should succeed");
-    }
-
-    fn check_golden_file(name: &str, actual: &str) {
-        if env::var("REGENERATE_GOLDEN_FILES").is_ok() {
-            write_golden_file(name, actual);
-        } else {
-            let expected = read_golden_file(name);
-            assert_eq!(actual, expected, "output does not match golden file ({name})");
-        }
+        // Check results match expected values
+        let actual = serde_json::to_value(&participation).unwrap();
+        let expected = json!({
+            "2024": {
+                "alice": {
+                    "not_voted": 0,
+                    "participation_percentage": 100.0,
+                    "votes_abstain": 1,
+                    "votes_against": 0,
+                    "votes_in_favor": 1
+                },
+                "bob": {
+                    "not_voted": 1,
+                    "participation_percentage": 50.0,
+                    "votes_abstain": 0,
+                    "votes_against": 1,
+                    "votes_in_favor": 0
+                },
+                "carol": {
+                    "not_voted": 1,
+                    "participation_percentage": 50.0,
+                    "votes_abstain": 0,
+                    "votes_against": 0,
+                    "votes_in_favor": 1
+                }
+            },
+            "2025": {
+                "alice": {
+                    "not_voted": 0,
+                    "participation_percentage": 100.0,
+                    "votes_abstain": 1,
+                    "votes_against": 0,
+                    "votes_in_favor": 1
+                },
+                "bob": {
+                    "not_voted": 1,
+                    "participation_percentage": 50.0,
+                    "votes_abstain": 0,
+                    "votes_against": 1,
+                    "votes_in_favor": 0
+                },
+                "carol": {
+                    "not_voted": 1,
+                    "participation_percentage": 50.0,
+                    "votes_abstain": 0,
+                    "votes_against": 0,
+                    "votes_in_favor": 1
+                }
+            }
+        });
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -685,5 +923,30 @@ mod tests {
         // Test with limit larger than available non-binding votes
         let filtered = filters::non_binding(&votes, &dummy_values, &10).unwrap();
         assert_eq!(filtered.len(), 5);
+    }
+
+    // Helpers.
+
+    fn golden_file_path(name: &str) -> String {
+        format!("{TESTDATA_PATH}/templates/{name}.golden")
+    }
+
+    fn read_golden_file(name: &str) -> String {
+        let path = golden_file_path(name);
+        fs::read_to_string(&path).unwrap_or_else(|_| panic!("error reading golden file: {path}"))
+    }
+
+    fn write_golden_file(name: &str, content: &str) {
+        let path = golden_file_path(name);
+        fs::write(&path, content).expect("write golden file should succeed");
+    }
+
+    fn check_golden_file(name: &str, actual: &str) {
+        if env::var("REGENERATE_GOLDEN_FILES").is_ok() {
+            write_golden_file(name, actual);
+        } else {
+            let expected = read_golden_file(name);
+            assert_eq!(actual, expected, "output does not match golden file ({name})");
+        }
     }
 }
