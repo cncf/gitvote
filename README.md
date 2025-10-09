@@ -104,6 +104,15 @@ announcements:
 > [!NOTE]
 > This feature requires some extra permissions to be able to read and write discussions in your repositories. If you installed the GitVote GitHub application before this feature was available (June 2024), you should receive an email from GitHub requesting you to approve these new permissions. Please note that announcements won't be created until those permissions are granted.
 
+### Audit
+
+The audit page publishes the history of votes and some participation stats for a repository. It is disabled by default; to enable it, add the `audit` section with `enabled: true` to your `.gitvote.yml` (see the reference configuration in [`docs/config/.gitvote.yml`](docs/config/.gitvote.yml) for more details).
+
+Once the audit feature is on, GitVote serves the page at `https://gitvote.dev/audit/OWNER/REPO`. The page is public, so anyone can review the voting log.
+
+> [!NOTE]
+> It can take up to 15 minutes after enabling the option for the audit page to become available.
+
 ## Adopters
 
 Please see [ADOPTERS.md](./ADOPTERS.md) for more details.
