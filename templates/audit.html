@@ -39,6 +39,8 @@
                 font-weight: 300;
                 height: 100%;
                 width: 100%;
+                min-height: 100%;
+                overflow-y: auto;
             }
 
             a {
@@ -54,6 +56,18 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
+            }
+
+            .percentage {
+                padding-left: 0.15rem;
+            }
+
+            .percentage-full {
+                display: inline;
+            }
+
+            .percentage-mobile {
+                display: none;
             }
 
             .topbar {
@@ -84,6 +98,7 @@
                 max-width: 75rem;
                 margin: 2rem auto;
                 padding: 0 1.5rem;
+                margin-bottom: 2rem;
             }
 
             h1 {
@@ -99,11 +114,105 @@
                 overflow: hidden;
             }
 
+            .tabs {
+                margin-top: 0;
+            }
+
+            .tab-list {
+                display: flex;
+                gap: 0.5rem;
+                border-bottom: 1px solid var(--border);
+                margin-bottom: 2rem;
+            }
+
+            .tab-button {
+                border: 1px solid transparent;
+                border-bottom: none;
+                border-radius: 0.75rem 0.75rem 0 0;
+                background: transparent;
+                color: var(--muted-700);
+                font-size: 0.875rem;
+                font-weight: 600;
+                padding: 0.75rem 1.25rem;
+                cursor: pointer;
+                transition: color 0.2s ease, background 0.2s ease;
+            }
+
+            .tab-button:hover {
+                color: var(--ink-800);
+            }
+
+            .tab-button.active {
+                background: #ffffff;
+                border-color: var(--border) var(--border) #ffffff var(--border);
+                color: var(--ink-800);
+            }
+
+            .tab-panels {
+                position: relative;
+            }
+
+            .tab-panel {
+                display: block;
+            }
+
+            .tab-panel[hidden] {
+                display: none;
+            }
+
+            .tab-panel-placeholder {
+                padding: 1.5rem;
+                color: var(--muted-700);
+                font-size: 0.875rem;
+            }
+
             table {
                 width: 100%;
                 border-collapse: collapse;
                 border-spacing: 0;
                 font-size: 0.875rem;
+            }
+
+            .participation {
+                display: flex;
+                flex-direction: column;
+                gap: 2rem;
+            }
+
+            .participation-year {
+                display: flex;
+                flex-direction: column;
+            }
+
+            .participation-year__title {
+                margin: 0;
+                font-size: 1.25rem;
+                font-weight: 600;
+                color: var(--ink-800);
+                text-align: center;
+            }
+
+            .participation-year__table {
+                overflow-x: auto;
+                margin-top: 2rem;
+            }
+
+            .participation-table {
+                min-width: 32rem;
+            }
+
+            .participation-table th.numeric,
+            .participation-table td.numeric {
+                text-align: right;
+            }
+
+            .participation-table tbody td:first-child,
+            .participation-table tbody td.participation-percentage {
+                font-weight: 600;
+            }
+
+            .participation-table tbody td.numeric {
+                font-variant-numeric: tabular-nums;
             }
 
             thead {
@@ -532,7 +641,7 @@
                 .table--interactive tbody tr {
                     display: grid;
                     grid-template-columns: minmax(0, 1fr);
-                    gap: 0.75rem;
+                    gap: 0.35rem;
                     border: 1px solid var(--border);
                     border-radius: 1rem;
                     padding: 1rem;
@@ -563,7 +672,7 @@
                 }
 
                 .change-stack {
-                    gap: 0.5rem;
+                    gap: 1rem;
                     flex-direction: column-reverse;
                 }
 
@@ -671,6 +780,10 @@
                     font-size: 0.75rem;
                 }
 
+                .table--interactive tbody tr[data-modal-id]:hover td {
+                    background: white;
+                }
+
                 .table-placeholder-row {
                     display: block;
                     border: 1px solid var(--border);
@@ -684,6 +797,53 @@
                     padding: 0;
                     text-align: center;
                 }
+
+                .participation-table tbody td {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    text-align: left;
+                    padding: 0.35rem 0.5rem;
+                    border: 0;
+                }
+
+                .participation-table tbody td[data-label] {
+                    border-left: 1px solid var(--border);
+                    border-right: 1px solid var(--border);
+                    border-bottom: 1px solid var(--border);
+                }
+
+                .participation-table tbody tr > td[data-label="Voted"],
+                .participation-table tbody tr > td[data-label="In favor"] {
+                    border-top: 1px solid var(--border);
+                }
+
+                .participation-table tbody tr > td[data-label="In favor"],
+                .participation-table tbody tr > td[data-label="Against"],
+                .participation-table tbody tr > td[data-label="Abstain"] {
+                    border-left: 0;
+                    border-right: 1px solid var(--border);
+                }
+
+                .participation-table tbody td:not([data-label]) {
+                    justify-content: flex-start;
+                    padding: 0 0.35rem 0.5rem 0.35rem;
+                    margin-bottom: 0.25rem;
+                }
+
+                .participation-table tbody td[data-label]::before {
+                    content: attr(data-label);
+                    color: var(--muted);
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    letter-spacing: 0;
+                    text-transform: none;
+                    min-width: 90px;
+                }
+
+                .participation-table tbody td.numeric {
+                    text-align: left;
+                }
                 .table--interactive tbody td.cell-status,
                 .table--interactive tbody td.cell-outcome {
                     display: none;
@@ -692,12 +852,84 @@
                 .change-stack .status-badges {
                     display: inline-flex;
                 }
+
+                .change-stack {
+                    margin-bottom: 0.5rem;
+                }
+
+                .participation-table tbody tr {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    grid-template-areas:
+                        "user user"
+                        "voted favor"
+                        "not-voted against"
+                        "participation abstain";
+                    column-gap: 0;
+                    row-gap: 0;
+                    border: 1px solid var(--border);
+                    border-radius: 1rem;
+                    background: #ffffff;
+                }
+
+                .participation-table tbody tr > td:first-child {
+                    grid-area: user;
+                }
+
+                .participation-table tbody tr > td[data-label="In favor"] {
+                    grid-area: favor;
+                }
+
+                .participation-table tbody tr > td[data-label="Against"] {
+                    grid-area: against;
+                }
+
+                .participation-table tbody tr > td[data-label="Abstain"] {
+                    grid-area: abstain;
+                }
+
+                .participation-table tbody tr > td[data-label="Voted"] {
+                    grid-area: voted;
+                }
+
+                .participation-table tbody tr > td[data-label="Not voted"] {
+                    grid-area: not-voted;
+                }
+
+                .participation-table tbody tr > td[data-label="Participation"] {
+                    grid-area: participation;
+                }
+
             }
 
             @media (max-width: 640px) {
                 h1 {
                     font-size: 1.25rem;
                     margin-bottom: 1.5rem;
+                }
+
+                .tab-list {
+                    margin-bottom: 1.5rem;
+                }
+
+                .participation {
+                    gap: 1.5rem;
+                }
+
+                .participation-year__table {
+                    margin-top: 1.5rem;
+                }
+
+                .participation-table {
+                    min-width: 100%;
+                }
+
+                .percentage-full {
+                    display: none;
+                }
+
+                .percentage-mobile {
+                    display: inline;
                 }
 
                 .meta .row {
@@ -790,102 +1022,185 @@
         <!-- Audit content -->
         <main>
             <h1>{{ repository_full_name }}</h1>
-            <!-- Vote list table -->
-            <div class="table-card">
-                <div>
-                    <table class="table--interactive" aria-label="Vote history">
-                        <thead>
-                            <tr>
-                                <th class="cell-vote">Vote</th>
-                                <th>Created by</th>
-                                <th>Created</th>
-                                <th>Closed</th>
-                                <th>Status</th>
-                                <th>Outcome</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% if votes.is_empty() %}
-                                <tr class="table-placeholder-row">
-                                    <td colspan="6">No votes recorded for this repository.</td>
-                                </tr>
-                            {% else %}
-                                <!-- Votes row -->
-                                {% for vote in votes %}
-                                    {% let results = vote.results -%}
-                                    <tr {% if !results.is_none() -%}data-modal-id="modal-{{ vote.vote_id }}"{% endif -%}>
-                                        <td class="cell-vote">
-                                            <div class="change-stack">
-                                                <div class="title truncate">
-                                                    {% if let Some(title) = vote.issue_title -%}
-                                                        {{ title }} (#{{ vote.issue_number }})
-                                                    {% else -%}
-                                                        #{{ vote.issue_number }}
-                                                    {% endif -%}
-                                                </div>
-                                                <div class="vote-meta">
-                                                    <div class="type-vote">
-                                                        {% if vote.is_pull_request %}
-                                                            Pull request
-                                                        {% else %}
-                                                            Issue
-                                                        {% endif %}
-                                                    </div>
-                                                    <div class="status-badges">
-                                                        {% if vote.closed %}
-                                                            <span class="badge">Closed</span>
-                                                        {% else %}
-                                                            <span class="badge">Open</span>
-                                                        {% endif %}
-                                                        {% if let Some(results) = results -%}
-                                                            {% if results.passed -%}
-                                                                <span class="badge pass">Passed</span>
-                                                            {% else -%}
-                                                                <span class="badge fail">Failed</span>
-                                                            {% endif -%}
-                                                        {% else %}
-                                                            <span class="badge pending">Pending</span>
-                                                        {% endif -%}
-                                                    </div>
+            <!-- Repository tabs -->
+            <div class="tabs" data-tabs>
+                <div class="tab-list" role="tablist" aria-label="Repository sections">
+                    <button class="tab-button active"
+                            type="button"
+                            role="tab"
+                            id="tab-button-votes"
+                            aria-controls="tab-votes"
+                            aria-selected="true"
+                            data-tab-target="votes">Votes</button>
+                    <button class="tab-button"
+                            type="button"
+                            role="tab"
+                            id="tab-button-participations"
+                            aria-controls="tab-participations"
+                            aria-selected="false"
+                            data-tab-target="participations">Participation</button>
+                </div>
+                <div class="tab-panels">
+                    <div class="tab-panel active"
+                         id="tab-votes"
+                         role="tabpanel"
+                         aria-labelledby="tab-button-votes"
+                         tabindex="0"
+                         data-tab-panel="votes">
+                        <div class="table-card">
+                            <div>
+                                <table class="table--interactive" aria-label="Vote history">
+                                    <thead>
+                                        <tr>
+                                            <th class="cell-vote">Vote</th>
+                                            <th>Created by</th>
+                                            <th>Created</th>
+                                            <th>Closed</th>
+                                            <th>Status</th>
+                                            <th>Outcome</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% if votes.is_empty() %}
+                                            <tr class="table-placeholder-row">
+                                                <td colspan="6">No votes recorded for this repository.</td>
+                                            </tr>
+                                        {% else %}
+                                            <!-- Votes row -->
+                                            {% for vote in votes %}
+                                                {% let results = vote.results -%}
+                                                <tr {% if !results.is_none() -%}data-modal-id="modal-{{ vote.vote_id }}"{% endif -%}>
+                                                    <td class="cell-vote">
+                                                        <div class="change-stack">
+                                                            <div class="title truncate">
+                                                                {% if let Some(title) = vote.issue_title -%}
+                                                                    {{ title }} (#{{ vote.issue_number }})
+                                                                {% else -%}
+                                                                    #{{ vote.issue_number }}
+                                                                {% endif -%}
+                                                            </div>
+                                                            <div class="vote-meta">
+                                                                <div class="type-vote">
+                                                                    {% if vote.is_pull_request %}
+                                                                        Pull request
+                                                                    {% else %}
+                                                                        Issue
+                                                                    {% endif %}
+                                                                </div>
+                                                                <div class="status-badges">
+                                                                    {% if vote.closed %}
+                                                                        <span class="badge">Closed</span>
+                                                                    {% else %}
+                                                                        <span class="badge">Open</span>
+                                                                    {% endif %}
+                                                                    {% if let Some(results) = results -%}
+                                                                        {% if results.passed -%}
+                                                                            <span class="badge pass">Passed</span>
+                                                                        {% else -%}
+                                                                            <span class="badge fail">Failed</span>
+                                                                        {% endif -%}
+                                                                    {% else %}
+                                                                        <span class="badge pending">Pending</span>
+                                                                    {% endif %}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="nowrap cell-author" data-label="Created by">
+                                                        <span class="truncate">@{{ vote.created_by }}</span>
+                                                    </td>
+                                                    <td class="nowrap cell-created" data-label="Created">{% call format_date(vote.created_at) -%}</td>
+                                                        <td class="nowrap cell-closed" data-label="Closed">
+                                                            {% if vote.closed -%}
+                                                                {% call format_date(vote.ends_at) -%}
+                                                                {% endif -%}
+                                                            </td>
+                                                            <td class="nowrap cell-status">
+                                                                {% if vote.closed %}
+                                                                    <span class="badge">Closed</span>
+                                                                {% else %}
+                                                                    <span class="badge">Open</span>
+                                                                {% endif %}
+                                                            </td>
+                                                            <td class="nowrap cell-outcome">
+                                                                {% if let Some(results) = results -%}
+                                                                    {% if results.passed %}
+                                                                        <span class="badge pass">Passed</span>
+                                                                    {% else %}
+                                                                        <span class="badge fail">Failed</span>
+                                                                    {% endif %}
+                                                                {% else %}
+                                                                    <span class="badge">Pending</span>
+                                                                {% endif %}
+                                                            </td>
+                                                        </tr>
+                                                    {% endfor %}
+                                                    <!--/Votes row -->
+                                                {% endif %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tab-panel"
+                                 id="tab-participations"
+                                 role="tabpanel"
+                                 aria-labelledby="tab-button-participations"
+                                 tabindex="0"
+                                 data-tab-panel="participations"
+                                 hidden>
+                                {% if participation_stats.is_empty() %}
+                                    <div class="table-card">
+                                        <div class="tab-panel-placeholder">Participation data is not available for this repository yet.</div>
+                                    </div>
+                                {% else %}
+                                    <div class="participation">
+                                        {% for (year, users) in participation_stats.iter().rev() %}
+                                            <div class="participation-year">
+                                                <h2 class="participation-year__title">{{ year }}</h2>
+                                                <div class="table-card participation-year__table">
+                                                    <table class="table--interactive participation-table"
+                                                           aria-label="Participation for {{ year }}">
+                                                        <thead>
+                                                            <tr>
+                                                                <th scope="col">User</th>
+                                                                <th scope="col" class="numeric">Voted</th>
+                                                                <th scope="col" class="numeric">Not voted</th>
+                                                                <th scope="col" class="numeric">Participation</th>
+                                                                <th scope="col" class="numeric">In favor</th>
+                                                                <th scope="col" class="numeric">Against</th>
+                                                                <th scope="col" class="numeric">Abstain</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for (user, stats) in users %}
+                                                                <tr>
+                                                                    <td>{{ user }}</td>
+                                                                    <td class="numeric" data-label="Voted">{{ stats.votes_in_favor + stats.votes_against + stats.votes_abstain }}</td>
+                                                                    <td class="numeric" data-label="Not voted">{{ stats.not_voted }}</td>
+                                                                    <td class="numeric participation-percentage" data-label="Participation">
+                                                                        <span>
+                                                                            <span class="percentage-full">{{ "{:.2}"|format(stats.participation_percentage) }}</span>
+                                                                            <span class="percentage-mobile">{{ "{:.0}"|format(stats.participation_percentage) }}</span>
+                                                                            <span class="percentage">%</span>
+                                                                        </span>
+                                                                    </td>
+                                                                    <td class="numeric" data-label="In favor">{{ stats.votes_in_favor }}</td>
+                                                                    <td class="numeric" data-label="Against">{{ stats.votes_against }}</td>
+                                                                    <td class="numeric" data-label="Abstain">{{ stats.votes_abstain }}</td>
+                                                                </tr>
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
                                                 </div>
                                             </div>
-                                        </td>
-                                        <td class="nowrap cell-author" data-label="Created by">
-                                            <span class="truncate">@{{ vote.created_by }}</span>
-                                        </td>
-                                        <td class="nowrap cell-created" data-label="Created">{% call format_date(vote.created_at) -%}</td>
-                                            <td class="nowrap cell-closed" data-label="Closed">
-                                                {% if vote.closed -%}
-                                                    {% call format_date(vote.ends_at) -%}
-                                                    {% endif -%}
-                                                </td>
-                                                <td class="nowrap cell-status">
-                                                    {% if vote.closed %}
-                                                        <span class="badge">Closed</span>
-                                                    {% else %}
-                                                        <span class="badge">Open</span>
-                                                    {% endif %}
-                                                </td>
-                                                <td class="nowrap cell-outcome">
-                                                    {% if let Some(results) = results -%}
-                                                        {% if results.passed %}
-                                                            <span class="badge pass">Passed</span>
-                                                        {% else %}
-                                                            <span class="badge fail">Failed</span>
-                                                        {% endif %}
-                                                    {% else %}
-                                                        <span class="badge">Pending</span>
-                                                    {% endif %}
-                                                </td>
-                                            </tr>
                                         {% endfor %}
-                                        <!--/Votes row -->
-                                    {% endif %}
-                                </tbody>
-                            </table>
+                                    </div>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
-                    <!-- /Vote list table -->
+                    <!-- /Repository tabs -->
                     {% if !votes.is_empty() %}
                         <!-- Vote detail modal -->
                         {% for vote in votes %}
@@ -948,13 +1263,13 @@
                                                 <h3>Results</h3>
                                                 <div class="box">
                                                     <div class="results-line">
-                                                        <span class="muted-700">In favor: <span class="badge">{{ "{:.0}"|format(results.in_favor_percentage) }}%</span></span>
+                                                        <span class="muted-700">In favor: <span class="badge">{{ "{:.0}"|format(results.in_favor_percentage) }}<span class="percentage">%</span></span></span>
                                                         {% if results.passed %}
                                                             <span class="badge pass">Passed</span>
                                                         {% else %}
                                                             <span class="badge fail">Failed</span>
                                                         {% endif %}
-                                                        <span class="muted passing-threshold">Passing threshold: <span class="badge">{{ results.pass_threshold }}%</span></span>
+                                                        <span class="muted passing-threshold">Passing threshold: <span class="badge">{{ results.pass_threshold }}<span class="percentage">%</span></span></span>
                                                     </div>
                                                     <div class="progress" aria-hidden="true">
                                                         <!-- djlint:off H008 -->
@@ -1045,6 +1360,52 @@
                 <script>
             (function () {
                 const body = document.body;
+                const tabsRoot = document.querySelector('[data-tabs]');
+                if (tabsRoot) {
+                    const tabButtons = Array.from(
+                        tabsRoot.querySelectorAll('[data-tab-target]')
+                    );
+                    const tabPanels = new Map();
+                    tabsRoot.querySelectorAll('[data-tab-panel]').forEach((panel) => {
+                        tabPanels.set(panel.dataset.tabPanel, panel);
+                    });
+                    const setActiveTab = (target) => {
+                        tabButtons.forEach((button) => {
+                            const isActive = button.dataset.tabTarget === target;
+                            button.classList.toggle('active', isActive);
+                            button.setAttribute(
+                                'aria-selected',
+                                isActive ? 'true' : 'false'
+                            );
+                            button.setAttribute('tabindex', isActive ? '0' : '-1');
+                        });
+                        tabPanels.forEach((panel, name) => {
+                            if (name === target) {
+                                panel.classList.add('active');
+                                panel.removeAttribute('hidden');
+                            } else {
+                                panel.classList.remove('active');
+                                panel.setAttribute('hidden', '');
+                            }
+                        });
+                    };
+                    const initialButton = tabButtons.find((button) =>
+                        button.classList.contains('active')
+                    );
+                    if (initialButton) {
+                        setActiveTab(initialButton.dataset.tabTarget);
+                    }
+                    tabsRoot.addEventListener('click', (event) => {
+                        const trigger = event.target.closest('[data-tab-target]');
+                        if (!trigger || !tabsRoot.contains(trigger)) {
+                            return;
+                        }
+                        if (trigger.classList.contains('active')) {
+                            return;
+                        }
+                        setActiveTab(trigger.dataset.tabTarget);
+                    });
+                }
                 const overlays = new Map();
                 document.querySelectorAll('.overlay').forEach((overlay) => {
                     overlays.set(overlay.id, overlay);
