@@ -111,10 +111,7 @@ async fn audit(
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
-    let template = tmpl::Audit {
-        repository_full_name,
-        votes,
-    };
+    let template = tmpl::Audit::new(repository_full_name, votes);
     match template.render() {
         Ok(html) => Ok(Html(html)),
         Err(err) => {
