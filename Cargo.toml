@@ -11,9 +11,9 @@ anyhow = "1.0.100"
 askama = { version = "0.14.0", features = ["serde_json"] }
 async-channel = "2.5.0"
 async-trait = "0.1.89"
-axum = { version = "0.8.4", features = ["macros"] }
+axum = { version = "0.8.6", features = ["macros"] }
 cached = { version = "0.56.0", features = ["async"] }
-clap = { version = "4.5.48", features = ["derive"] }
+clap = { version = "4.5.49", features = ["derive"] }
 deadpool-postgres = { version = "0.14.1", features = ["serde"] }
 figment = { version = "0.10.19", features = ["yaml", "env"] }
 futures = "0.3.31"
@@ -25,16 +25,16 @@ humantime = "2.3.0"
 humantime-serde = "1.1.1"
 ignore = "0.4.23"
 jsonwebtoken = "9.3.1"
-octocrab = "0.45.0"
+octocrab = "0.47.0"
 openssl = { version = "0.10.73", features = ["vendored"] }
-postgres-openssl = "0.5.1"
-regex = "1.11.2"
-reqwest = "0.12.23"
-serde = { version = "1.0.226", features = ["derive"] }
+postgres-openssl = "0.5.2"
+regex = "1.12.2"
+reqwest = "0.12.24"
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 serde_yaml = "0.9.34"
 sha2 = "0.10.9"
-thiserror = "2.0.16"
+thiserror = "2.0.17"
 time = { version = "0.3.44", features = ["serde"] }
 tokio = { version = "1.47.1", features = [
     "macros",
