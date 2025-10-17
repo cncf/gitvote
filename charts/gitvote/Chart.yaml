@@ -27,7 +27,7 @@ annotations:
     - kind: added
       description: Audit page
     - kind: added
-      description: Extra location for config: .github directory
+      description: "Extra location for config: .github directory"
     - kind: added
       description: Some tests for templates
     - kind: changed
