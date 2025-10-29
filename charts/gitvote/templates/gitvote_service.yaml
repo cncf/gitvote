@@ -5,13 +5,18 @@ metadata:
   labels:
     app.kubernetes.io/component: gitvote
     {{- include "chart.labels" . | nindent 4 }}
+  {{- with .Values.gitvote.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
-  type: {{ .Values.gitvote.service.type }}
+  {{- $serviceType := default "ClusterIP" .Values.gitvote.service.type }}
+  {{- if eq $serviceType "LoadBalancer" }}
+  allocateLoadBalancerNodePorts: {{ .Values.gitvote.service.allocateLoadBalancerNodePorts }}
+  {{- end }}
+  type: {{ $serviceType }}
   ports:
-    - port: {{ .Values.gitvote.service.port }}
-      targetPort: http
-      protocol: TCP
-      name: http
+    {{- toYaml .Values.gitvote.service.ports | nindent 4 }}
   selector:
     app.kubernetes.io/component: gitvote
     {{- include "chart.selectorLabels" . | nindent 4 }}

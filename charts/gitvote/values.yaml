@@ -18,13 +18,17 @@ fullnameOverride: ""
 # Directory path where the configuration files should be mounted
 configDir: "/home/gitvote/.config/gitvote"
 
+# Check database readiness init container configuration
+checkDbIsReadyInitContainer:
+  securityContext: {}
+
 # Database configuration
 db:
   host: ""
   port: "5432"
   dbname: gitvote
-  user: postgres
-  password: postgres
+  password: gitvote
+  user: gitvote
 
 # Log configuration
 log:
@@ -34,9 +38,11 @@ log:
 # Database migrator configuration
 dbmigrator:
   job:
+    containerSecurityContext: {}
     image:
       # Database migrator image repository (without the tag)
       repository: ghcr.io/cncf/gitvote/dbmigrator
+    podSecurityContext: {}
 
 # GitVote service configuration
 gitvote:
@@ -62,30 +68,54 @@ gitvote:
     enabled: true
     annotations:
       kubernetes.io/ingress.class: nginx
+    backendServicePort: 80
     rules: []
     tls: []
 
   # Service configuration
   service:
+    allocateLoadBalancerNodePorts: true
+    annotations: {}
+    ports:
+      - name: http
+        port: 80
+        protocol: TCP
+        targetPort: 9000
     type: NodePort
-    port: 80
 
   # Deployment configuration
   deploy:
-    replicaCount: 1
+    containerSecurityContext: {}
     image:
       repository: ghcr.io/cncf/gitvote/server
+    podSecurityContext: {}
+    readinessProbe:
+      httpGet:
+        path: /
+        port: 9000
+    replicaCount: 1
     resources: {}
 
 # PostgreSQL configuration
 postgresql:
   enabled: true
+  auth:
+    database: gitvote
+    password: gitvote
+    username: gitvote
+  global:
+    security:
+      allowInsecureImages: true
   image:
+    registry: docker.io
     repository: artifacthub/postgres
     tag: latest
   persistence:
     mountPath: /data
-  postgresqlUsername: postgres
-  postgresqlPassword: postgres
-  postgresqlDatabase: gitvote
-  postgresqlDataDir: /data/pgdata
+  primary:
+    extraVolumes:
+      - name: run
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: run
+        mountPath: /var/run/postgresql

@@ -15,7 +15,7 @@ spec:
     service:
       name: {{ include "chart.resourceNamePrefix" . }}gitvote
       port:
-        number: {{ .Values.gitvote.service.port }}
+        number: {{ .Values.gitvote.ingress.backendServicePort }}
   {{- with .Values.gitvote.ingress.rules }}
   rules:
     {{- toYaml . | nindent 4 }}
