@@ -17,6 +17,10 @@ spec:
         app.kubernetes.io/component: gitvote
         {{- include "chart.selectorLabels" . | nindent 8 }}
     spec:
+    {{- with .Values.gitvote.deploy.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
     {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -32,12 +36,20 @@ spec:
           {{ $kubectlImageVersion := ternary "1.33" $kubeVersion (semverCompare ">=1.34.0-0" (printf "%s.0" $kubeVersion)) }}
           image: "docker.io/bitnamilegacy/kubectl:{{ $kubectlImageVersion }}"
           imagePullPolicy: IfNotPresent
+          {{- with .Values.checkDbIsReadyInitContainer.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           command: ['kubectl', 'wait', '--namespace={{ .Release.Namespace }}', '--for=condition=complete', 'job/{{ include "chart.resourceNamePrefix" . }}dbmigrator-install', '--timeout=60s']
         {{- end }}
       containers:
         - name: gitvote
           image: {{ .Values.gitvote.deploy.image.repository }}:{{ .Values.imageTag | default (printf "v%s" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.pullPolicy }}
+          {{- with .Values.gitvote.deploy.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: gitvote-config
               mountPath: {{ .Values.configDir | quote }}
@@ -46,6 +58,10 @@ spec:
             - name: http
               containerPort: 9000
               protocol: TCP
+          {{- with .Values.gitvote.deploy.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.gitvote.deploy.resources | nindent 12 }}
           command: ['gitvote', '-c', '{{ .Values.configDir }}/gitvote.yml']
