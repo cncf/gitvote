@@ -43,6 +43,9 @@ pub(crate) trait DB {
     /// Get pending status checks.
     async fn get_pending_status_checks(&self) -> Result<Vec<CheckVoteInput>>;
 
+    /// Get vote by id.
+    async fn get_vote(&self, vote_id: Uuid) -> Result<Option<Vote>>;
+
     /// Check if the issue/pr provided has a vote.
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
 
@@ -246,6 +249,16 @@ impl DB for PgDB {
             })
             .collect();
         Ok(inputs)
+    }
+
+    /// [`DB::get_vote`]
+    async fn get_vote(&self, vote_id: Uuid) -> Result<Option<Vote>> {
+        let db = self.pool.get().await?;
+        let vote = db
+            .query_opt("select * from vote where vote_id = $1::uuid", &[&vote_id])
+            .await?
+            .map(|row| Vote::from(&row));
+        Ok(vote)
     }
 
     /// [`DB::has_vote`]
