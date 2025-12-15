@@ -1105,7 +1105,6 @@
                                                 {% let results = vote.results -%}
                                                 <tr data-modal-id="modal-{{ vote.vote_id }}"
                                                     {% if results.is_none() -%}
-                                                    data-in-progress="true"
                                                     hx-get="/audit/{{ repository_full_name }}/vote/{{ vote.vote_id }}"
                                                     hx-target="#modal-{{ vote.vote_id }} .modal-content"
                                                     hx-swap="innerHTML"
