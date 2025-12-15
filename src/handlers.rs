@@ -7,7 +7,7 @@ use axum::{
     Router,
     body::Bytes,
     extract::{FromRef, Path, State},
-    http::{HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{Html, IntoResponse},
     routing::{get, post},
 };
@@ -21,6 +21,7 @@ use sha2::Sha256;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{error, instrument, trace};
+use uuid::Uuid;
 
 use crate::{
     cfg_repo::{Cfg as RepoCfg, CfgError},
@@ -31,7 +32,7 @@ use crate::{
         self, CheckDetails, DynGH, Event, EventError, PullRequestEvent, PullRequestEventAction,
         split_full_name,
     },
-    tmpl,
+    results, tmpl,
 };
 
 /// Header representing the kind of the event received.
@@ -61,6 +62,7 @@ pub(crate) fn setup_router(
         .route("/", get(index))
         .route("/api/events", post(event))
         .route("/audit/{owner}/{repo}", get(audit))
+        .route("/audit/{owner}/{repo}/vote/{vote_id}", get(audit_vote_details))
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()))
         .with_state(RouterState {
             db,
@@ -113,9 +115,71 @@ async fn audit(
     };
     let template = tmpl::Audit::new(repository_full_name, votes);
     match template.render() {
-        Ok(html) => Ok(Html(html)),
+        Ok(html) => Ok(([(header::CACHE_CONTROL, "max-age=900")], Html(html))),
         Err(err) => {
             error!(?err, "error rendering audit template");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Handler that returns vote details HTML fragment for a given vote.
+async fn audit_vote_details(
+    State(db): State<DynDB>,
+    State(gh): State<DynGH>,
+    Path((owner, repo, vote_id)): Path<(String, String, Uuid)>,
+) -> impl IntoResponse {
+    let repository_full_name = format!("{owner}/{repo}");
+
+    // Check if audit page is enabled for the repository
+    let audit_enabled = match audit_is_enabled(gh.clone(), repository_full_name.clone()).await {
+        Ok(enabled) => enabled,
+        Err(err) => {
+            error!(?err, %vote_id, "error checking audit configuration");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    if !audit_enabled {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Get vote from database
+    let vote = match db.get_vote(vote_id).await {
+        Ok(Some(vote)) => vote,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(err) => {
+            error!(?err, %vote_id, "error getting vote");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Verify vote belongs to the requested repository
+    if vote.repository_full_name != repository_full_name {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Get results (from DB if closed, or calculate from GitHub API if open)
+    let results = if let Some(results) = &vote.results {
+        results.clone()
+    } else {
+        match results::calculate(gh, &owner, &repo, &vote).await {
+            Ok(results) => results,
+            Err(err) => {
+                error!(?err, %vote_id, "error calculating vote results");
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    };
+
+    // Render template
+    let template = tmpl::AuditVoteDetails {
+        results: &results,
+        vote: &vote,
+    };
+    match template.render() {
+        Ok(html) => Ok(([(header::CACHE_CONTROL, "max-age=900")], Html(html))),
+        Err(err) => {
+            error!(?err, %vote_id, "error rendering audit vote details template");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -400,6 +464,263 @@ profiles:
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
+        assert_eq!(response.headers()["cache-control"], "max-age=900");
+        assert!(!get_body(response).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn audit_vote_details_audit_disabled_returns_not_found() {
+        let cfg = setup_test_config();
+
+        let mut db = MockDB::new();
+        db.expect_get_vote().never();
+        let db = Arc::new(db);
+
+        let mut gh = MockGH::new();
+        gh.expect_get_repository_installation_id()
+            .with(eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _| Box::pin(future::ready(Ok(INST_ID))));
+        gh.expect_get_config_file()
+            .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _, _| {
+                let config = r"
+audit:
+  enabled: false
+profiles:
+  default:
+    duration: 1m
+    pass_threshold: 50
+";
+                Box::pin(future::ready(Some(config.trim_start_matches('\n').to_string())))
+            });
+        let gh = Arc::new(gh);
+
+        let (cmds_tx, _) = async_channel::unbounded();
+        let router = setup_router(&cfg, db, gh, cmds_tx);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/audit/{ORG}/{REPO}/vote/{VOTE_ID}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn audit_vote_details_vote_not_found() {
+        let cfg = setup_test_config();
+
+        let mut db = MockDB::new();
+        let vote_id = Uuid::parse_str(VOTE_ID).unwrap();
+        db.expect_get_vote()
+            .with(eq(vote_id))
+            .times(1)
+            .returning(|_| Box::pin(future::ready(Ok(None))));
+        let db = Arc::new(db);
+
+        let mut gh = MockGH::new();
+        gh.expect_get_repository_installation_id()
+            .with(eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _| Box::pin(future::ready(Ok(INST_ID))));
+        gh.expect_get_config_file()
+            .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _, _| {
+                let config = r"
+audit:
+  enabled: true
+profiles:
+  default:
+    duration: 1m
+    pass_threshold: 50
+";
+                Box::pin(future::ready(Some(config.trim_start_matches('\n').to_string())))
+            });
+        let gh = Arc::new(gh);
+
+        let (cmds_tx, _) = async_channel::unbounded();
+        let router = setup_router(&cfg, db, gh, cmds_tx);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/audit/{ORG}/{REPO}/vote/{VOTE_ID}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn audit_vote_details_vote_wrong_repo_returns_not_found() {
+        let cfg = setup_test_config();
+
+        let mut db = MockDB::new();
+        let vote_id = Uuid::parse_str(VOTE_ID).unwrap();
+        db.expect_get_vote().with(eq(vote_id)).times(1).returning(|_| {
+            let mut vote = setup_test_vote();
+            vote.repository_full_name = "other/repo".to_string();
+            Box::pin(future::ready(Ok(Some(vote))))
+        });
+        let db = Arc::new(db);
+
+        let mut gh = MockGH::new();
+        gh.expect_get_repository_installation_id()
+            .with(eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _| Box::pin(future::ready(Ok(INST_ID))));
+        gh.expect_get_config_file()
+            .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _, _| {
+                let config = r"
+audit:
+  enabled: true
+profiles:
+  default:
+    duration: 1m
+    pass_threshold: 50
+";
+                Box::pin(future::ready(Some(config.trim_start_matches('\n').to_string())))
+            });
+        let gh = Arc::new(gh);
+
+        let (cmds_tx, _) = async_channel::unbounded();
+        let router = setup_router(&cfg, db, gh, cmds_tx);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/audit/{ORG}/{REPO}/vote/{VOTE_ID}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn audit_vote_details_closed_vote_renders_template() {
+        let cfg = setup_test_config();
+
+        let mut db = MockDB::new();
+        let vote_id = Uuid::parse_str(VOTE_ID).unwrap();
+        db.expect_get_vote().with(eq(vote_id)).times(1).returning(|_| {
+            let mut vote = setup_test_vote();
+            vote.results = Some(setup_test_vote_results());
+            Box::pin(future::ready(Ok(Some(vote))))
+        });
+        let db = Arc::new(db);
+
+        let mut gh = MockGH::new();
+        gh.expect_get_repository_installation_id()
+            .with(eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _| Box::pin(future::ready(Ok(INST_ID))));
+        gh.expect_get_config_file()
+            .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _, _| {
+                let config = r"
+audit:
+  enabled: true
+profiles:
+  default:
+    duration: 1m
+    pass_threshold: 50
+";
+                Box::pin(future::ready(Some(config.trim_start_matches('\n').to_string())))
+            });
+        let gh = Arc::new(gh);
+
+        let (cmds_tx, _) = async_channel::unbounded();
+        let router = setup_router(&cfg, db, gh, cmds_tx);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/audit/{ORG}/{REPO}/vote/{VOTE_ID}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
+        assert_eq!(response.headers()["cache-control"], "max-age=900");
+        assert!(!get_body(response).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn audit_vote_details_open_vote_renders_template() {
+        let cfg = setup_test_config();
+
+        let mut db = MockDB::new();
+        let vote_id = Uuid::parse_str(VOTE_ID).unwrap();
+        db.expect_get_vote().with(eq(vote_id)).times(1).returning(|_| {
+            let vote = setup_test_vote();
+            Box::pin(future::ready(Ok(Some(vote))))
+        });
+        let db = Arc::new(db);
+
+        let mut gh = MockGH::new();
+        gh.expect_get_repository_installation_id()
+            .with(eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _| Box::pin(future::ready(Ok(INST_ID))));
+        gh.expect_get_config_file()
+            .with(eq(INST_ID), eq(ORG), eq(REPO))
+            .times(1)
+            .returning(|_, _, _| {
+                let config = r"
+audit:
+  enabled: true
+profiles:
+  default:
+    duration: 1m
+    pass_threshold: 50
+";
+                Box::pin(future::ready(Some(config.trim_start_matches('\n').to_string())))
+            });
+        gh.expect_get_comment_reactions()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(COMMENT_ID))
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(vec![]))));
+        gh.expect_get_allowed_voters()
+            .times(1)
+            .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(vec![USER1.to_string()]))));
+        let gh = Arc::new(gh);
+
+        let (cmds_tx, _) = async_channel::unbounded();
+        let router = setup_router(&cfg, db, gh, cmds_tx);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/audit/{ORG}/{REPO}/vote/{VOTE_ID}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[CONTENT_TYPE], "text/html; charset=utf-8");
+        assert_eq!(response.headers()["cache-control"], "max-age=900");
         assert!(!get_body(response).await.is_empty());
     }
 

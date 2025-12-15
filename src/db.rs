@@ -1,17 +1,13 @@
 //! This module defines an abstraction layer over the database.
 
 use std::sync::Arc;
-#[cfg(not(test))]
-use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
-#[cfg(not(test))]
-use cached::proc_macro::cached;
 use deadpool_postgres::{Pool, Transaction};
 #[cfg(test)]
 use mockall::automock;
-use tokio_postgres::{Client, types::Json};
+use tokio_postgres::types::Json;
 use uuid::Uuid;
 
 use crate::{
@@ -42,6 +38,9 @@ pub(crate) trait DB {
 
     /// Get pending status checks.
     async fn get_pending_status_checks(&self) -> Result<Vec<CheckVoteInput>>;
+
+    /// Get vote by id.
+    async fn get_vote(&self, vote_id: Uuid) -> Result<Option<Vote>>;
 
     /// Check if the issue/pr provided has a vote.
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool>;
@@ -248,6 +247,16 @@ impl DB for PgDB {
         Ok(inputs)
     }
 
+    /// [`DB::get_vote`]
+    async fn get_vote(&self, vote_id: Uuid) -> Result<Option<Vote>> {
+        let db = self.pool.get().await?;
+        let vote = db
+            .query_opt("select * from vote where vote_id = $1::uuid", &[&vote_id])
+            .await?
+            .map(|row| Vote::from(&row));
+        Ok(vote)
+    }
+
     /// [`DB::has_vote`]
     async fn has_vote(&self, repository_full_name: &str, issue_number: i64) -> Result<bool> {
         let db = self.pool.get().await?;
@@ -289,36 +298,22 @@ impl DB for PgDB {
 
     /// [`DB::list_votes`]
     async fn list_votes(&self, repository_full_name: &str) -> Result<Vec<Vote>> {
-        #[cfg_attr(
-            not(test),
-            cached(
-                time = 900,
-                key = "String",
-                convert = r#"{ repository_full_name.to_owned() }"#,
-                sync_writes = "by_key",
-                result = true
+        let db = self.pool.get().await?;
+        let votes = db
+            .query(
+                "
+                select *
+                from vote
+                where repository_full_name = $1::text
+                order by created_at desc
+                ",
+                &[&repository_full_name],
             )
-        )]
-        async fn inner(client: &Client, repository_full_name: &str) -> Result<Vec<Vote>> {
-            let votes = client
-                .query(
-                    "
-                    select *
-                    from vote
-                    where repository_full_name = $1::text
-                    order by created_at desc
-                    ",
-                    &[&repository_full_name],
-                )
-                .await?
-                .iter()
-                .map(Vote::from)
-                .collect();
-            Ok(votes)
-        }
-
-        let client = self.pool.get().await?;
-        inner(client.as_ref(), repository_full_name).await
+            .await?
+            .iter()
+            .map(Vote::from)
+            .collect();
+        Ok(votes)
     }
 
     /// [`DB::store_vote`]

@@ -971,7 +971,41 @@
             .btn:hover {
                 background: #f8fafc;
             }
+
+            .loading-spinner {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 3rem 1.5rem;
+                color: var(--muted);
+                font-size: 0.875rem;
+            }
+
+            .loading-spinner::before {
+                content: "";
+                width: 2rem;
+                height: 2rem;
+                border: 3px solid var(--border);
+                border-top-color: var(--ink-800);
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin-bottom: 1rem;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .loading-error {
+                color: var(--chip-fail-text);
+                text-align: center;
+                padding: 2rem;
+            }
         </style>
+        <script src="https://unpkg.com/htmx.org@2.0.7"></script>
     </head>
     <!-- /Document head and styles -->
     <body>
@@ -1069,7 +1103,13 @@
                                             <!-- Votes row -->
                                             {% for vote in votes %}
                                                 {% let results = vote.results -%}
-                                                <tr {% if !results.is_none() -%}data-modal-id="modal-{{ vote.vote_id }}"{% endif -%}>
+                                                <tr data-modal-id="modal-{{ vote.vote_id }}"
+                                                    {% if results.is_none() -%}
+                                                    hx-get="/audit/{{ repository_full_name }}/vote/{{ vote.vote_id }}"
+                                                    hx-target="#modal-{{ vote.vote_id }} .modal-content"
+                                                    hx-swap="innerHTML"
+                                                    hx-trigger="click"
+                                                    {% endif -%}>
                                                     <td class="cell-vote">
                                                         <div class="change-stack">
                                                             <div class="title truncate">
@@ -1205,6 +1245,7 @@
                         <!-- Vote detail modal -->
                         {% for vote in votes %}
                             {% if let Some(results) = vote.results -%}
+                                <!-- Modal for closed vote (with results) -->
                                 <div class="overlay" id="modal-{{ vote.vote_id }}" aria-hidden="true">
                                     <div class="modal" role="dialog" aria-modal="true">
                                         <div class="header">
@@ -1212,138 +1253,23 @@
                                             <button class="close-x" data-modal-close aria-label="Close modal">✕</button>
                                         </div>
                                         <div class="modal-content">
-                                            <!-- Vote metadata section -->
-                                            <section class="meta">
-                                                <h3>Vote details</h3>
-                                                <div class="box">
-                                                    <div class="row">
-                                                        <div class="label">
-                                                            {% if vote.is_pull_request %}
-                                                                PR
-                                                            {% else %}
-                                                                Issue
-                                                            {% endif %}
-                                                        </div>
-                                                        <div class="value">
-                                                            <a class="inline-link"
-                                                               href="https://github.com/{{ vote.repository_full_name }}/{%- if vote.is_pull_request -%}pull{%- else -%}issues{%- endif -%}/{{ vote.issue_number }}"
-                                                               target="_blank"
-                                                               rel="noopener noreferrer">
-                                                                {% if let Some(title) = vote.issue_title -%}
-                                                                    {{ title }} (#{{ vote.issue_number }})
-                                                                {% else -%}
-                                                                    #{{ vote.issue_number }}
-                                                                {% endif -%}
-                                                                <svg class="ext-sm" viewBox="0 0 24 24" aria-hidden="true">
-                                                                    <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z" />
-                                                                </svg>
-                                                            </a>
-                                                        </div>
-                                                    </div>
-                                                    <div class="row">
-                                                        <div class="label">Created by</div>
-                                                        <div class="value">@{{ vote.created_by }}</div>
-                                                    </div>
-                                                    <div class="row">
-                                                        <div class="label">Created</div>
-                                                        <div class="value">{{ vote.created_at }}</div>
-                                                    </div>
-                                                    <div class="row">
-                                                        <div class="label">Closed</div>
-                                                        <div class="value">
-                                                            {% if let Some(closed_at) = vote.closed_at %}
-                                                                {{ closed_at }}
-                                                            {% endif -%}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </section>
-                                            <!-- Vote results data -->
-                                            <section>
-                                                <h3>Results</h3>
-                                                <div class="box">
-                                                    <div class="results-line">
-                                                        <span class="muted-700">In favor: <span class="badge">{{ "{:.0}"|format(results.in_favor_percentage) }}<span class="percentage">%</span></span></span>
-                                                        {% if results.passed %}
-                                                            <span class="badge pass">Passed</span>
-                                                        {% else %}
-                                                            <span class="badge fail">Failed</span>
-                                                        {% endif %}
-                                                        <span class="muted passing-threshold">Passing threshold: <span class="badge">{{ results.pass_threshold }}<span class="percentage">%</span></span></span>
-                                                    </div>
-                                                    <div class="progress" aria-hidden="true">
-                                                        <!-- djlint:off H008 -->
-                                                        <div class="bar {% if results.passed -%}passed{% else -%}failed{% endif -%}"
-                                                             style='width:{{ "{:.2}"|format(results.in_favor_percentage) }}%'>
-                                                        </div>
-                                                        <!-- djlint:on H008 -->
-                                                    </div>
-                                                </div>
-                                            </section>
-                                            <section>
-                                                <h3>Summary</h3>
-                                                <div class="summary">
-                                                    <div class="stat">
-                                                        <div class="label">In favor</div>
-                                                        <div class="value">{{ results.in_favor }}</div>
-                                                    </div>
-                                                    <div class="stat">
-                                                        <div class="label">Against</div>
-                                                        <div class="value">{{ results.against }}</div>
-                                                    </div>
-                                                    <div class="stat">
-                                                        <div class="label">Abstain</div>
-                                                        <div class="value">{{ results.abstain }}</div>
-                                                    </div>
-                                                    <div class="stat">
-                                                        <div class="label">Not voted</div>
-                                                        <div class="value">{{ results.not_voted }}</div>
-                                                    </div>
-                                                </div>
-                                            </section>
-                                            <section class="votes">
-                                                <h3>Binding votes</h3>
-                                                <div class="table-wrap">
-                                                    <!-- Vote breakdown table -->
-                                                    <div class="modal-table">
-                                                        <table aria-label="Binding votes table">
-                                                            <thead>
-                                                                <tr>
-                                                                    <th>USER</th>
-                                                                    <th>VOTE</th>
-                                                                    <th class="cell-date">DATE</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {% for (user, user_vote) in results.votes -%}
-                                                                    {% if user_vote.binding %}
-                                                                        <tr>
-                                                                            <td>@{{ user }}</td>
-                                                                            <td>
-                                                                                <span class="vote-chip {% match user_vote.vote_option -%}{% when crate::results::VoteOption::InFavor %}favor{% when crate::results::VoteOption::Against %}against{% when crate::results::VoteOption::Abstain %}abstain{% endmatch %}">{{ user_vote.vote_option }}</span>
-                                                                            </td>
-                                                                            <td class="muted-700 cell-date">{{ user_vote.timestamp }}</td>
-                                                                        </tr>
-                                                                    {% endif %}
-                                                                {% endfor -%}
-                                                                {% if !results.pending_voters.is_empty() -%}
-                                                                    {% for user in results.pending_voters -%}
-                                                                        <tr>
-                                                                            <td>@{{ user }}</td>
-                                                                            <td>
-                                                                                <span class="vote-chip not-voted">Not voted</span>
-                                                                            </td>
-                                                                            <td class="muted-700 cell-date"></td>
-                                                                        </tr>
-                                                                    {% endfor -%}
-                                                                {% endif %}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                    <!-- /Vote breakdown table -->
-                                                </div>
-                                            </section>
-                                            <!-- /Vote results data -->
+                                            {% include "audit-vote-details.html" %}
+                                        </div>
+                                        <div class="footer">
+                                            <button class="btn" data-modal-close>Close</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% else %}
+                                <!-- Modal for open vote (in progress, details loaded via htmx) -->
+                                <div class="overlay" id="modal-{{ vote.vote_id }}" aria-hidden="true">
+                                    <div class="modal" role="dialog" aria-modal="true">
+                                        <div class="header">
+                                            <h2>Vote</h2>
+                                            <button class="close-x" data-modal-close aria-label="Close modal">✕</button>
+                                        </div>
+                                        <div class="modal-content">
+                                            <div class="loading-spinner">Loading vote details...</div>
                                         </div>
                                         <div class="footer">
                                             <button class="btn" data-modal-close>Close</button>
@@ -1451,6 +1377,12 @@
                         if (visible) {
                             closeModal(visible);
                         }
+                    }
+                });
+                document.body.addEventListener('htmx:responseError', function(evt) {
+                    const target = evt.detail.target;
+                    if (target && target.classList.contains('modal-content')) {
+                        target.innerHTML = '<div class="loading-error">Failed to load vote details</div>';
                     }
                 });
             })();

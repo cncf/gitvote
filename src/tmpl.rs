@@ -26,6 +26,14 @@ pub(crate) struct Audit {
     pub votes: Vec<Vote>,
 }
 
+/// Template for the audit vote details fragment.
+#[derive(Debug, Clone, Template)]
+#[template(path = "audit-vote-details.html")]
+pub(crate) struct AuditVoteDetails<'a> {
+    pub results: &'a VoteResults,
+    pub vote: &'a Vote,
+}
+
 impl Audit {
     /// Create a new `Audit` template.
     pub(crate) fn new(repository_full_name: String, votes: Vec<Vote>) -> Self {
