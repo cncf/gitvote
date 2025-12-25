@@ -11,22 +11,22 @@ anyhow = "1.0.100"
 askama = { version = "0.14.0", features = ["serde_json"] }
 async-channel = "2.5.0"
 async-trait = "0.1.89"
-axum = { version = "0.8.6", features = ["macros"] }
+axum = { version = "0.8.7", features = ["macros"] }
 cached = { version = "0.56.0", features = ["async"] }
-clap = { version = "4.5.49", features = ["derive"] }
+clap = { version = "4.5.53", features = ["derive"] }
 deadpool-postgres = { version = "0.14.1", features = ["serde"] }
 figment = { version = "0.10.19", features = ["yaml", "env"] }
 futures = "0.3.31"
 graphql_client = { version = "0.14.0", features = ["reqwest"] }
 hex = "0.4.3"
 hmac = "0.12.1"
-http = "1.3.1"
+http = "1.4.0"
 humantime = "2.3.0"
 humantime-serde = "1.1.1"
-ignore = "0.4.24"
+ignore = "0.4.25"
 jsonwebtoken = "9.3.1" # do-not-upgrade
 octocrab = "0.47.0"
-openssl = { version = "0.10.74", features = ["vendored"] }
+openssl = { version = "0.10.75", features = ["vendored"] }
 postgres-openssl = "0.5.2"
 regex = "1.12.2"
 reqwest = "0.12.24"
@@ -47,14 +47,14 @@ tokio-postgres = { version = "0.7.15", features = [
     "with-serde_json-1",
     "with-time-0_3",
 ] }
-tokio-util = { version = "0.7.16", features = ["rt"] }
+tokio-util = { version = "0.7.17", features = ["rt"] }
 tower = { version = "0.5.2", features = ["util"] }
-tower-http = { version = "0.6.6", features = ["trace"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
+tower-http = { version = "0.6.7", features = ["trace"] }
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 uuid = { version = "1.18.1", features = ["serde", "v4"] }
 
 [dev-dependencies]
 http-body = "1.0.1"
-hyper = "1.7.0"
+hyper = "1.8.1"
 mockall = "0.13.1"
