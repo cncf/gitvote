@@ -1149,10 +1149,10 @@
                                                     <td class="nowrap cell-author" data-label="Created by">
                                                         <span class="truncate">@{{ vote.created_by }}</span>
                                                     </td>
-                                                    <td class="nowrap cell-created" data-label="Created">{% call format_date(vote.created_at) -%}</td>
+                                                    <td class="nowrap cell-created" data-label="Created">{{ format_date(vote.created_at) -}}</td>
                                                         <td class="nowrap cell-closed" data-label="Closed">
                                                             {% if vote.closed -%}
-                                                                {% call format_date(vote.ends_at) -%}
+                                                                {{ format_date(vote.ends_at) -}}
                                                                 {% endif -%}
                                                             </td>
                                                             <td class="nowrap cell-status">
