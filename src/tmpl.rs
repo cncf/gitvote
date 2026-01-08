@@ -322,6 +322,7 @@ impl<'a> VoteStatus<'a> {
     }
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref, clippy::unnecessary_wraps)]
 mod filters {
     use std::collections::BTreeMap;
 
@@ -330,7 +331,7 @@ mod filters {
     /// Template filter that returns up to the requested number of non-binding
     /// votes from the votes collection provided sorted by timestamp (oldest
     /// first).
-    #[allow(clippy::trivially_copy_pass_by_ref, clippy::unnecessary_wraps)]
+    #[askama::filter_fn]
     pub(crate) fn non_binding(
         votes: &BTreeMap<UserName, UserVote>,
         _: &dyn askama::Values,
@@ -920,7 +921,7 @@ mod tests {
         // Test with limit of 3
         let dummy_values = DummyValues;
 
-        let filtered = filters::non_binding(&votes, &dummy_values, &3).unwrap();
+        let filtered = filters::non_binding::default().with_max(&3).execute(&votes, &dummy_values).unwrap();
         assert_eq!(filtered.len(), 3);
 
         // Verify they are sorted by timestamp
@@ -929,7 +930,7 @@ mod tests {
         assert_eq!(filtered[2].0, "supporter2");
 
         // Test with limit larger than available non-binding votes
-        let filtered = filters::non_binding(&votes, &dummy_values, &10).unwrap();
+        let filtered = filters::non_binding::default().with_max(&10).execute(&votes, &dummy_values).unwrap();
         assert_eq!(filtered.len(), 5);
     }
 
