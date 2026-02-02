@@ -322,7 +322,11 @@ impl<'a> VoteStatus<'a> {
     }
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref, clippy::unnecessary_wraps)]
+#[allow(
+    clippy::inline_always,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::unnecessary_wraps
+)]
 mod filters {
     use std::collections::BTreeMap;
 
