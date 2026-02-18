@@ -1121,11 +1121,17 @@
                                                             </div>
                                                             <div class="vote-meta">
                                                                 <div class="type-vote">
-                                                                    {% if vote.is_pull_request %}
-                                                                        Pull request
-                                                                    {% else %}
-                                                                        Issue
-                                                                    {% endif %}
+                                                                    <a class="inline-link"
+                                                                       href="https://github.com/{{ vote.repository_full_name }}/{%- if vote.is_pull_request -%}pull{%- else -%}issues{%- endif -%}/{{ vote.issue_number }}"
+                                                                       target="_blank"
+                                                                       rel="noopener noreferrer">
+                                                                        {% if vote.is_pull_request %}
+                                                                            Pull request
+                                                                        {% else %}
+                                                                            Issue
+                                                                        {% endif %}
+                                                                        {% include "external-link-icon.html" %}
+                                                                    </a>
                                                                 </div>
                                                                 <div class="status-badges">
                                                                     {% if vote.closed %}
@@ -1349,7 +1355,10 @@
                     body.style.overflow = '';
                 };
                 document.querySelectorAll('tr[data-modal-id]').forEach((row) => {
-                    row.addEventListener('click', () => {
+                    row.addEventListener('click', (event) => {
+                        if (event.target.closest('a')) {
+                            return;
+                        }
                         const overlay = overlays.get(row.dataset.modalId);
                         if (overlay) {
                             openModal(overlay);
