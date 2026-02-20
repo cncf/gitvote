@@ -10,6 +10,7 @@ use octocrab::Octocrab;
 use rustls::{
     ClientConfig, DigitallySignedStruct, Error as RustlsError, SignatureScheme,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+    crypto::aws_lc_rs,
     pki_types::{CertificateDer, ServerName, UnixTime},
 };
 use tokio::{net::TcpListener, signal};
@@ -46,6 +47,10 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install a process-wide rustls provider before building any TLS config
+    let _ = aws_lc_rs::default_provider().install_default();
+
+    // Parse command line arguments
     let args = Args::parse();
 
     // Setup configuration
