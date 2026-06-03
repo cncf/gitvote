@@ -1,10 +1,10 @@
 # Build tern
-FROM golang:1.26.1-alpine3.23 AS tern
+FROM golang:1.26.4-alpine3.23 AS tern
 RUN apk --no-cache add git
 RUN go install github.com/jackc/tern@latest
 
 # Build final image
-FROM alpine:3.23.3
+FROM alpine:3.23.4
 RUN addgroup -S gitvote && adduser -S gitvote -G gitvote
 USER gitvote
 WORKDIR /home/gitvote
