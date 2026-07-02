@@ -12,11 +12,8 @@ use axum::{
     routing::{get, post},
 };
 #[cfg(not(test))]
-use std::time::Duration;
-
-#[cfg(not(test))]
-use cached::proc_macro::cached;
-use hmac::{Hmac, Mac};
+use cached::cached;
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -250,11 +247,10 @@ async fn event(
 #[cfg_attr(
     not(test),
     cached(
-        time = 900, // 15 minutes
+        ttl = 900, // 15 minutes
         key = "String",
         convert = r#"{ repository_full_name.clone() }"#,
-        sync_writes = "by_key",
-        result = true
+        sync_writes = "by_key"
     )
 )]
 async fn audit_is_enabled(gh: DynGH, repository_full_name: String) -> Result<bool> {
