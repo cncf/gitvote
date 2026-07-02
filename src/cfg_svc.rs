@@ -23,11 +23,16 @@ pub(crate) struct Cfg {
 impl Cfg {
     /// Create a new Cfg instance.
     pub(crate) fn new(config_file: &Path) -> Result<Self> {
+        Self::load(config_file, Env::prefixed("GITVOTE_"))
+    }
+
+    /// Load the configuration from the file and environment provider given.
+    fn load(config_file: &Path, env: Env) -> Result<Self> {
         Figment::new()
             .merge(Serialized::default("addr", "127.0.0.1:9000"))
             .merge(Serialized::default("log.format", "pretty"))
             .merge(Yaml::file(config_file))
-            .merge(Env::prefixed("GITVOTE_").split("_").lowercase(false))
+            .merge(env.split("_").lowercase(false))
             .extract()
             .map_err(Into::into)
     }
@@ -56,3 +61,6 @@ pub struct GitHubApp {
     pub webhook_secret: String,
     pub webhook_secret_fallback: Option<String>,
 }
+
+#[cfg(test)]
+mod tests;
