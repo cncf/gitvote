@@ -33,13 +33,13 @@ const VOTES_CLOSER_PAUSE_ON_NONE: Duration = Duration::from_secs(15);
 const VOTES_CLOSER_PAUSE_ON_ERROR: Duration = Duration::from_secs(30);
 
 /// How often a vote can be checked.
-const MAX_VOTE_CHECK_FREQUENCY: Duration = Duration::from_secs(60 * 60 * 24);
+const MAX_VOTE_CHECK_FREQUENCY: Duration = Duration::from_hours(24);
 
 /// How often the status checker should run.
-const STATUS_CHECK_FREQUENCY: Duration = Duration::from_secs(60 * 30);
+const STATUS_CHECK_FREQUENCY: Duration = Duration::from_mins(30);
 
 /// How often we try to auto close votes that have already passed.
-const AUTO_CLOSE_FREQUENCY: Duration = Duration::from_secs(60 * 60 * 24);
+const AUTO_CLOSE_FREQUENCY: Duration = Duration::from_hours(24);
 
 /// Label used to tag issues/prs where a vote has been created.
 const GITVOTE_LABEL: &str = "gitvote";
@@ -912,7 +912,7 @@ mod tests {
         let event = setup_test_issue_event();
         let create_vote_input = CreateVoteInput::new(None, &Event::Issue(event));
         let cfg = CfgProfile {
-            duration: Duration::from_secs(300),
+            duration: Duration::from_mins(5),
             pass_threshold: 50.0,
             allowed_voters: Some(AllowedVoters::default()),
             ..Default::default()
@@ -1003,7 +1003,7 @@ mod tests {
         let event = setup_test_pr_event();
         let create_vote_input = CreateVoteInput::new(None, &Event::PullRequest(event));
         let cfg = CfgProfile {
-            duration: Duration::from_secs(300),
+            duration: Duration::from_mins(5),
             pass_threshold: 50.0,
             allowed_voters: Some(AllowedVoters::default()),
             ..Default::default()

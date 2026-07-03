@@ -343,7 +343,7 @@ mod filters {
     ) -> askama::Result<Vec<(UserName, UserVote)>> {
         let mut non_binding_votes: Vec<(UserName, UserVote)> =
             votes.iter().filter(|(_, v)| !v.binding).map(|(n, v)| (n.clone(), v.clone())).collect();
-        non_binding_votes.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
+        non_binding_votes.sort_by_key(|a| a.1.timestamp);
         #[allow(clippy::cast_possible_truncation)]
         Ok(non_binding_votes.into_iter().take(*max as usize).collect())
     }
@@ -609,7 +609,7 @@ mod tests {
         let event = Event::Issue(setup_test_issue_event());
         let input = CreateVoteInput::new(None, &event);
         let cfg = CfgProfile {
-            duration: std::time::Duration::from_secs(86_400), // 1 day
+            duration: std::time::Duration::from_hours(24), // 1 day
             pass_threshold: 75.0,
             ..Default::default()
         };
@@ -628,7 +628,7 @@ mod tests {
         let input = CreateVoteInput::new(None, &event);
 
         let cfg = CfgProfile {
-            duration: std::time::Duration::from_secs(259_200), // 3 days
+            duration: std::time::Duration::from_hours(72), // 3 days
             pass_threshold: 51.0,
             allowed_voters: Some(crate::cfg_repo::AllowedVoters {
                 teams: Some(vec!["core-team".into(), "maintainers".into()]),

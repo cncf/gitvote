@@ -329,7 +329,7 @@ mod tests {
         assert_eq!(
             CfgProfile::get(gh, INST_ID, OWNER, OWNER_IS_ORG, REPO, None).await.unwrap(),
             CfgProfile {
-                duration: Duration::from_secs(300),
+                duration: Duration::from_mins(5),
                 pass_threshold: 50.0,
                 allowed_voters: Some(AllowedVoters::default()),
                 ..Default::default()
@@ -358,7 +358,7 @@ mod tests {
             .await
             .unwrap(),
             CfgProfile {
-                duration: Duration::from_secs(600),
+                duration: Duration::from_mins(10),
                 pass_threshold: 75.0,
                 allowed_voters: Some(AllowedVoters {
                     teams: Some(vec![TEAM1.to_string()]),

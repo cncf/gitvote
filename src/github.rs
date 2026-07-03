@@ -211,10 +211,11 @@ impl GH for GHApi {
     ) -> Result<()> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
         let pr = client.pulls(owner, repo).get(issue_number as u64).await?;
+        let head_sha = pr.head.context("pull request response missing head")?.sha;
         let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs");
         let mut body = json!({
             "name": GITVOTE_CHECK_NAME,
-            "head_sha": pr.head.sha,
+            "head_sha": head_sha,
             "status": check_details.status,
             "output": {
                 "title": check_details.summary,
@@ -339,7 +340,7 @@ impl GH for GHApi {
         comment_id: i64,
     ) -> Result<Vec<Reaction>> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",);
+        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions");
         let first_page: Page<Reaction> = client.get(url, None::<&()>).await?;
         let reactions = client.all_pages(first_page).await?;
         Ok(reactions)
@@ -463,7 +464,7 @@ impl GH for GHApi {
     /// [`GH::user_is_collaborator`]
     async fn user_is_collaborator(&self, inst_id: u64, owner: &str, repo: &str, user: &str) -> Result<bool> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators/{user}",);
+        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators/{user}");
         let resp = client._get(url).await?;
         if resp.status() == StatusCode::NO_CONTENT {
             return Ok(true);

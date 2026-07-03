@@ -130,7 +130,7 @@ pub(crate) fn setup_test_vote() -> Vote {
         closed_at: None,
         checked_at: None,
         cfg: CfgProfile {
-            duration: Duration::from_secs(300),
+            duration: Duration::from_mins(5),
             pass_threshold: 50.0,
             allowed_voters: Some(AllowedVoters {
                 users: Some(vec![USER1.to_string()]),
