@@ -1,0 +1,139 @@
+<!-- Vote metadata section -->
+<section class="meta">
+    <h3>Vote details</h3>
+    <div class="box">
+        <div class="row">
+            <div class="label">
+                
+                    PR
+                
+            </div>
+            <div class="value">
+                <a class="inline-link"
+                   href="https://github.com/org/repo/pull/1"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    Test title (#1)
+                    <svg class="ext-sm" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z" />
+</svg>
+                </a>
+            </div>
+        </div>
+        <div class="row">
+            <div class="label">Created by</div>
+            <div class="value">@user</div>
+        </div>
+        <div class="row">
+            <div class="label">Created</div>
+            <div class="value">2024-03-01 10:00:00.0 +00:00:00</div>
+        </div>
+        <div class="row">
+            <div class="label">Closed</div>
+            <div class="value">
+                
+                    2024-03-02 10:00:00.0 +00:00:00
+                </div>
+        </div>
+    </div>
+</section>
+<!-- Vote results data -->
+<section>
+    <h3>Results</h3>
+    <div class="box">
+        <div class="results-line">
+            <span class="muted-700">In favor: <span class="badge">50<span class="percentage">%</span></span></span>
+            
+                <span class="badge pass">Passed</span>
+            
+            <span class="muted passing-threshold">Passing threshold: <span class="badge">50<span class="percentage">%</span></span></span>
+        </div>
+        <div class="progress" aria-hidden="true">
+            <!-- djlint:off H008 -->
+            <div class="bar passed"
+                 style='width:50.00%'>
+            </div>
+            <!-- djlint:on H008 -->
+        </div>
+    </div>
+</section>
+<section>
+    <h3>Summary</h3>
+    <div class="summary">
+        <div class="stat">
+            <div class="label">In favor</div>
+            <div class="value">2</div>
+        </div>
+        <div class="stat">
+            <div class="label">Against</div>
+            <div class="value">1</div>
+        </div>
+        <div class="stat">
+            <div class="label">Abstain</div>
+            <div class="value">1</div>
+        </div>
+        <div class="stat">
+            <div class="label">Not voted</div>
+            <div class="value">0</div>
+        </div>
+    </div>
+</section>
+<section class="votes">
+    <h3>Binding votes</h3>
+    <div class="table-wrap">
+        <!-- Vote breakdown table -->
+        <div class="modal-table">
+            <table aria-label="Binding votes table">
+                <thead>
+                    <tr>
+                        <th>USER</th>
+                        <th>VOTE</th>
+                        <th class="cell-date">DATE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                            <tr>
+                                <td>@alice</td>
+                                <td>
+                                    <span class="vote-chip favor">In favor</span>
+                                </td>
+                                <td class="muted-700 cell-date">2024-03-01 12:00:00.0 +00:00:00</td>
+                            </tr>
+                        
+                    
+                            <tr>
+                                <td>@bob</td>
+                                <td>
+                                    <span class="vote-chip favor">In favor</span>
+                                </td>
+                                <td class="muted-700 cell-date">2024-03-01 12:00:00.0 +00:00:00</td>
+                            </tr>
+                        
+                    
+                            <tr>
+                                <td>@carol</td>
+                                <td>
+                                    <span class="vote-chip against">Against</span>
+                                </td>
+                                <td class="muted-700 cell-date">2024-03-01 12:00:00.0 +00:00:00</td>
+                            </tr>
+                        
+                    
+                            <tr>
+                                <td>@dave</td>
+                                <td>
+                                    <span class="vote-chip abstain">Abstain</span>
+                                </td>
+                                <td class="muted-700 cell-date">2024-03-01 12:00:00.0 +00:00:00</td>
+                            </tr>
+                        
+                    
+                    
+                </tbody>
+            </table>
+        </div>
+        <!-- /Vote breakdown table -->
+    </div>
+</section>
+<!-- /Vote results data -->

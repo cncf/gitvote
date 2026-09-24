@@ -4,7 +4,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{{ repository_full_name }} audit</title>
+        <title>org/repo audit</title>
         <style>
             :root {
                 --page: #f8fafc;
@@ -1015,7 +1015,6 @@
                 <div class="brand">
                     <div class="brand__icon">
                         <!-- Logo -->
-                        {# djlint:off H021 -#}
                         <svg xmlns:xlink="http://www.w3.org/1999/xlink"
                              xmlns="http://www.w3.org/2000/svg"
                              viewBox="0,0,3300,1200"
@@ -1046,7 +1045,7 @@
                             <path d="M368.001,695.144L414.563,648.515L464.495,703.77L587.446,588.396L631.999,636.814L464.495,800.344L368.001,695.144Z" fill="#FFFFFF" />
                             </g>
                         </svg>
-                        {# djlint:on H021 #}
+                        
                         <!-- /Logo -->
                     </div>
                 </div>
@@ -1055,7 +1054,7 @@
         <!-- /Header -->
         <!-- Audit content -->
         <main>
-            <h1>{{ repository_full_name }}</h1>
+            <h1>org/repo</h1>
             <!-- Repository tabs -->
             <div class="tabs" data-tabs>
                 <div class="tab-list" role="tablist" aria-label="Repository sections">
@@ -1095,94 +1094,127 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {% if votes.is_empty() %}
-                                            <tr class="table-placeholder-row">
-                                                <td colspan="6">No votes recorded for this repository.</td>
-                                            </tr>
-                                        {% else %}
+                                        
                                             <!-- Votes row -->
-                                            {% for vote in votes %}
-                                                {% let results = vote.results -%}
-                                                <tr data-modal-id="modal-{{ vote.vote_id }}"
-                                                    {% if results.is_none() -%}
-                                                    hx-get="/audit/{{ repository_full_name }}/vote/{{ vote.vote_id }}"
-                                                    hx-target="#modal-{{ vote.vote_id }} .modal-content"
+                                            
+                                                <tr data-modal-id="modal-00000000-0000-0000-0000-000000000002"
+                                                    hx-get="/audit/org/repo/vote/00000000-0000-0000-0000-000000000002"
+                                                    hx-target="#modal-00000000-0000-0000-0000-000000000002 .modal-content"
                                                     hx-swap="innerHTML"
                                                     hx-trigger="click"
-                                                    {% endif -%}>
+                                                    >
                                                     <td class="cell-vote">
                                                         <div class="change-stack">
                                                             <div class="title truncate">
-                                                                {% if let Some(title) = vote.issue_title -%}
-                                                                    {{ title }} (#{{ vote.issue_number }})
-                                                                {% else -%}
-                                                                    #{{ vote.issue_number }}
-                                                                {% endif -%}
-                                                            </div>
+                                                                #2
+                                                                </div>
                                                             <div class="vote-meta">
                                                                 <div class="type-vote">
                                                                     <a class="inline-link"
-                                                                       href="https://github.com/{{ vote.repository_full_name }}/{%- if vote.is_pull_request -%}pull{%- else -%}issues{%- endif -%}/{{ vote.issue_number }}"
+                                                                       href="https://github.com/org/repo/pull/2"
                                                                        target="_blank"
                                                                        rel="noopener noreferrer">
-                                                                        {% if vote.is_pull_request %}
+                                                                        
                                                                             Pull request
-                                                                        {% else %}
-                                                                            Issue
-                                                                        {% endif %}
-                                                                        {% include "external-link-icon.html" %}
+                                                                        
+                                                                        <svg class="ext-sm" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z" />
+</svg>
                                                                     </a>
                                                                 </div>
                                                                 <div class="status-badges">
-                                                                    {% if vote.closed %}
-                                                                        <span class="badge">Closed</span>
-                                                                    {% else %}
+                                                                    
                                                                         <span class="badge">Open</span>
-                                                                    {% endif %}
-                                                                    {% if let Some(results) = results -%}
-                                                                        {% if results.passed -%}
-                                                                            <span class="badge pass">Passed</span>
-                                                                        {% else -%}
-                                                                            <span class="badge fail">Failed</span>
-                                                                        {% endif -%}
-                                                                    {% else %}
+                                                                    
+                                                                    
                                                                         <span class="badge pending">Pending</span>
-                                                                    {% endif %}
+                                                                    
                                                                 </div>
                                                             </div>
                                                         </div>
                                                     </td>
                                                     <td class="nowrap cell-author" data-label="Created by">
-                                                        <span class="truncate">@{{ vote.created_by }}</span>
+                                                        <span class="truncate">@user</span>
                                                     </td>
-                                                    <td class="nowrap cell-created" data-label="Created">{{ format_date(vote.created_at) -}}</td>
+                                                    <td class="nowrap cell-created" data-label="Created"><div class="date-wrap">
+                <div class="date">2024-04-01</div>
+                <div class="time">10:00:00.0</div>
+            </div>
+        </td>
                                                         <td class="nowrap cell-closed" data-label="Closed">
-                                                            {% if let Some(closed_at) = vote.closed_at -%}
-                                                                {{ format_date(closed_at) -}}
-                                                                {% endif -%}
                                                             </td>
                                                             <td class="nowrap cell-status">
-                                                                {% if vote.closed %}
-                                                                    <span class="badge">Closed</span>
-                                                                {% else %}
+                                                                
                                                                     <span class="badge">Open</span>
-                                                                {% endif %}
+                                                                
                                                             </td>
                                                             <td class="nowrap cell-outcome">
-                                                                {% if let Some(results) = results -%}
-                                                                    {% if results.passed %}
-                                                                        <span class="badge pass">Passed</span>
-                                                                    {% else %}
-                                                                        <span class="badge fail">Failed</span>
-                                                                    {% endif %}
-                                                                {% else %}
+                                                                
                                                                     <span class="badge">Pending</span>
-                                                                {% endif %}
+                                                                
                                                             </td>
                                                         </tr>
-                                                    {% endfor %}
+                                                    
+                                                <tr data-modal-id="modal-00000000-0000-0000-0000-000000000001"
+                                                    >
+                                                    <td class="cell-vote">
+                                                        <div class="change-stack">
+                                                            <div class="title truncate">
+                                                                Test title (#1)
+                                                                </div>
+                                                            <div class="vote-meta">
+                                                                <div class="type-vote">
+                                                                    <a class="inline-link"
+                                                                       href="https://github.com/org/repo/issues/1"
+                                                                       target="_blank"
+                                                                       rel="noopener noreferrer">
+                                                                        
+                                                                            Issue
+                                                                        
+                                                                        <svg class="ext-sm" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z" />
+</svg>
+                                                                    </a>
+                                                                </div>
+                                                                <div class="status-badges">
+                                                                    
+                                                                        <span class="badge">Closed</span>
+                                                                    
+                                                                    <span class="badge pass">Passed</span>
+                                                                        
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td class="nowrap cell-author" data-label="Created by">
+                                                        <span class="truncate">@user</span>
+                                                    </td>
+                                                    <td class="nowrap cell-created" data-label="Created"><div class="date-wrap">
+                <div class="date">2024-03-01</div>
+                <div class="time">10:00:00.0</div>
+            </div>
+        </td>
+                                                        <td class="nowrap cell-closed" data-label="Closed">
+                                                            <div class="date-wrap">
+                <div class="date">2024-03-02</div>
+                <div class="time">10:00:00.0</div>
+            </div>
+        </td>
+                                                            <td class="nowrap cell-status">
+                                                                
+                                                                    <span class="badge">Closed</span>
+                                                                
+                                                            </td>
+                                                            <td class="nowrap cell-outcome">
+                                                                
+                                                                        <span class="badge pass">Passed</span>
+                                                                    
+                                                                
+                                                            </td>
+                                                        </tr>
+                                                    
                                                     <!--/Votes row -->
-                                                {% endif %}
+                                                
                                             </tbody>
                                         </table>
                                     </div>
@@ -1195,18 +1227,14 @@
                                  tabindex="0"
                                  data-tab-panel="participations"
                                  hidden>
-                                {% if participation_stats.is_empty() %}
-                                    <div class="table-card">
-                                        <div class="tab-panel-placeholder">Participation data is not available for this repository yet.</div>
-                                    </div>
-                                {% else %}
+                                
                                     <div class="participation">
-                                        {% for (year, users) in participation_stats.iter().rev() %}
+                                        
                                             <div class="participation-year">
-                                                <h2 class="participation-year__title">{{ year }}</h2>
+                                                <h2 class="participation-year__title">2024</h2>
                                                 <div class="table-card participation-year__table">
                                                     <table class="table--interactive participation-table"
-                                                           aria-label="Participation for {{ year }}">
+                                                           aria-label="Participation for 2024">
                                                         <thead>
                                                             <tr>
                                                                 <th scope="col">User</th>
@@ -1219,56 +1247,40 @@
                                                             </tr>
                                                         </thead>
                                                         <tbody>
-                                                            {% for (user, stats) in users %}
+                                                            
                                                                 <tr>
-                                                                    <td>{{ user }}</td>
-                                                                    <td class="numeric" data-label="Voted">{{ stats.votes_in_favor + stats.votes_against + stats.votes_abstain }}</td>
-                                                                    <td class="numeric" data-label="Not voted">{{ stats.not_voted }}</td>
+                                                                    <td>user1</td>
+                                                                    <td class="numeric" data-label="Voted">1</td>
+                                                                    <td class="numeric" data-label="Not voted">0</td>
                                                                     <td class="numeric participation-percentage" data-label="Participation">
                                                                         <span>
-                                                                            <span class="percentage-full">{{ "{:.2}"|format(stats.participation_percentage) }}</span>
-                                                                            <span class="percentage-mobile">{{ "{:.0}"|format(stats.participation_percentage) }}</span>
+                                                                            <span class="percentage-full">100.00</span>
+                                                                            <span class="percentage-mobile">100</span>
                                                                             <span class="percentage">%</span>
                                                                         </span>
                                                                     </td>
-                                                                    <td class="numeric" data-label="In favor">{{ stats.votes_in_favor }}</td>
-                                                                    <td class="numeric" data-label="Against">{{ stats.votes_against }}</td>
-                                                                    <td class="numeric" data-label="Abstain">{{ stats.votes_abstain }}</td>
+                                                                    <td class="numeric" data-label="In favor">1</td>
+                                                                    <td class="numeric" data-label="Against">0</td>
+                                                                    <td class="numeric" data-label="Abstain">0</td>
                                                                 </tr>
-                                                            {% endfor %}
+                                                            
                                                         </tbody>
                                                     </table>
                                                 </div>
                                             </div>
-                                        {% endfor %}
+                                        
                                     </div>
-                                {% endif %}
+                                
                             </div>
                         </div>
                     </div>
                     <!-- /Repository tabs -->
-                    {% if !votes.is_empty() %}
+                    
                         <!-- Vote detail modal -->
-                        {% for vote in votes %}
-                            {% if let Some(results) = vote.results -%}
-                                <!-- Modal for closed vote (with results) -->
-                                <div class="overlay" id="modal-{{ vote.vote_id }}" aria-hidden="true">
-                                    <div class="modal" role="dialog" aria-modal="true">
-                                        <div class="header">
-                                            <h2>Vote</h2>
-                                            <button class="close-x" data-modal-close aria-label="Close modal">✕</button>
-                                        </div>
-                                        <div class="modal-content">
-                                            {% include "audit-vote-details.html" %}
-                                        </div>
-                                        <div class="footer">
-                                            <button class="btn" data-modal-close>Close</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            {% else %}
+                        
+                            
                                 <!-- Modal for open vote (in progress, details loaded via htmx) -->
-                                <div class="overlay" id="modal-{{ vote.vote_id }}" aria-hidden="true">
+                                <div class="overlay" id="modal-00000000-0000-0000-0000-000000000002" aria-hidden="true">
                                     <div class="modal" role="dialog" aria-modal="true">
                                         <div class="header">
                                             <h2>Vote</h2>
@@ -1282,10 +1294,135 @@
                                         </div>
                                     </div>
                                 </div>
-                            {% endif -%}
-                        {% endfor %}
+                            
+                            <!-- Modal for closed vote (with results) -->
+                                <div class="overlay" id="modal-00000000-0000-0000-0000-000000000001" aria-hidden="true">
+                                    <div class="modal" role="dialog" aria-modal="true">
+                                        <div class="header">
+                                            <h2>Vote</h2>
+                                            <button class="close-x" data-modal-close aria-label="Close modal">✕</button>
+                                        </div>
+                                        <div class="modal-content">
+                                            <!-- Vote metadata section -->
+<section class="meta">
+    <h3>Vote details</h3>
+    <div class="box">
+        <div class="row">
+            <div class="label">
+                
+                    Issue
+                
+            </div>
+            <div class="value">
+                <a class="inline-link"
+                   href="https://github.com/org/repo/issues/1"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    Test title (#1)
+                    <svg class="ext-sm" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z" />
+</svg>
+                </a>
+            </div>
+        </div>
+        <div class="row">
+            <div class="label">Created by</div>
+            <div class="value">@user</div>
+        </div>
+        <div class="row">
+            <div class="label">Created</div>
+            <div class="value">2024-03-01 10:00:00.0 +00:00:00</div>
+        </div>
+        <div class="row">
+            <div class="label">Closed</div>
+            <div class="value">
+                
+                    2024-03-02 10:00:00.0 +00:00:00
+                </div>
+        </div>
+    </div>
+</section>
+<!-- Vote results data -->
+<section>
+    <h3>Results</h3>
+    <div class="box">
+        <div class="results-line">
+            <span class="muted-700">In favor: <span class="badge">100<span class="percentage">%</span></span></span>
+            
+                <span class="badge pass">Passed</span>
+            
+            <span class="muted passing-threshold">Passing threshold: <span class="badge">50<span class="percentage">%</span></span></span>
+        </div>
+        <div class="progress" aria-hidden="true">
+            <!-- djlint:off H008 -->
+            <div class="bar passed"
+                 style='width:100.00%'>
+            </div>
+            <!-- djlint:on H008 -->
+        </div>
+    </div>
+</section>
+<section>
+    <h3>Summary</h3>
+    <div class="summary">
+        <div class="stat">
+            <div class="label">In favor</div>
+            <div class="value">1</div>
+        </div>
+        <div class="stat">
+            <div class="label">Against</div>
+            <div class="value">0</div>
+        </div>
+        <div class="stat">
+            <div class="label">Abstain</div>
+            <div class="value">0</div>
+        </div>
+        <div class="stat">
+            <div class="label">Not voted</div>
+            <div class="value">0</div>
+        </div>
+    </div>
+</section>
+<section class="votes">
+    <h3>Binding votes</h3>
+    <div class="table-wrap">
+        <!-- Vote breakdown table -->
+        <div class="modal-table">
+            <table aria-label="Binding votes table">
+                <thead>
+                    <tr>
+                        <th>USER</th>
+                        <th>VOTE</th>
+                        <th class="cell-date">DATE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                            <tr>
+                                <td>@user1</td>
+                                <td>
+                                    <span class="vote-chip favor">In favor</span>
+                                </td>
+                                <td class="muted-700 cell-date">2022-11-30 10:00:00.0 +00:00:00</td>
+                            </tr>
+                        
+                    
+                </tbody>
+            </table>
+        </div>
+        <!-- /Vote breakdown table -->
+    </div>
+</section>
+<!-- /Vote results data -->
+                                        </div>
+                                        <div class="footer">
+                                            <button class="btn" data-modal-close>Close</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            
                         <!-- /Vote detail modal -->
-                    {% endif %}
+                    
                 </main>
                 <!-- /Audit content -->
                 <!-- Modal interaction script -->
@@ -1399,11 +1536,4 @@
                 <!-- /Modal interaction script -->
             </body>
         </html>
-        {# Date formatting macro -#}
-        {% macro format_date(date) -%}
-            <div class="date-wrap">
-                <div class="date">{{ date.date() }}</div>
-                <div class="time">{{ date.time() }}</div>
-            </div>
-        {% endmacro -%}
-        {# End date formatting macro -#}
+        

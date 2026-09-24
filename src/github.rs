@@ -16,9 +16,6 @@ use thiserror::Error;
 
 use crate::cfg_repo::CfgProfile;
 
-/// GitHub API base url.
-const GITHUB_API_URL: &str = "https://api.github.com";
-
 /// Configuration file name.
 const CONFIG_FILE: &str = ".gitvote.yml";
 
@@ -212,7 +209,7 @@ impl GH for GHApi {
         let client = self.app_client.installation(InstallationId(inst_id))?;
         let pr = client.pulls(owner, repo).get(issue_number as u64).await?;
         let head_sha = pr.head.context("pull request response missing head")?.sha;
-        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs");
+        let url = format!("/repos/{owner}/{repo}/check-runs");
         let mut body = json!({
             "name": GITVOTE_CHECK_NAME,
             "head_sha": head_sha,
@@ -242,7 +239,7 @@ impl GH for GHApi {
         let client = self.app_client.installation(InstallationId(inst_id))?;
 
         // Fetch some repository details needed to create a discussion
-        let response: graphql_client::Response<announcement_repo_query::ResponseData> = client
+        let response: announcement_repo_query::ResponseData = client
             .graphql(&AnnouncementRepoQuery::build_query(
                 announcement_repo_query::Variables {
                     owner: owner.to_string(),
@@ -251,7 +248,7 @@ impl GH for GHApi {
                 },
             ))
             .await?;
-        let Some((repository_id, category_id)) = response.data.and_then(|d| d.repository).and_then(|r| {
+        let Some((repository_id, category_id)) = response.repository.and_then(|r| {
             let discussion_category = r.discussion_category?;
             Some((r.id, discussion_category.id))
         }) else {
@@ -259,7 +256,7 @@ impl GH for GHApi {
         };
 
         // Create discussion
-        let _: graphql_client::Response<create_discussion::ResponseData> = client
+        let _: create_discussion::ResponseData = client
             .graphql(&CreateDiscussion::build_query(create_discussion::Variables {
                 repository_id,
                 category_id,
@@ -295,7 +292,7 @@ impl GH for GHApi {
                         self.get_team_members(inst_id, org.as_str(), team, exclude_maintainers).await
                     {
                         for user in members {
-                            if !allowed_voters.contains(&user) {
+                            if !allowed_voters.iter().any(|voter| voter.eq_ignore_ascii_case(&user)) {
                                 allowed_voters.push(user.clone());
                             }
                         }
@@ -303,10 +300,11 @@ impl GH for GHApi {
                 }
             }
 
-            // Users
+            // Users (GitHub usernames are case insensitive, so team members'
+            // spelling is kept when they are also listed as users)
             if let Some(users) = &cfg_allowed_voters.users {
                 for user in users {
-                    if !allowed_voters.contains(user) {
+                    if !allowed_voters.iter().any(|voter| voter.eq_ignore_ascii_case(user)) {
                         allowed_voters.push(user.clone());
                     }
                 }
@@ -325,7 +323,7 @@ impl GH for GHApi {
     /// [`GH::get_collaborators`]
     async fn get_collaborators(&self, inst_id: u64, owner: &str, repo: &str) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators");
+        let url = format!("/repos/{owner}/{repo}/collaborators");
         let first_page: Page<User> = client.get(url, None::<&()>).await?;
         let collaborators = client.all_pages(first_page).await?.into_iter().map(|u| u.login).collect();
         Ok(collaborators)
@@ -340,7 +338,7 @@ impl GH for GHApi {
         comment_id: i64,
     ) -> Result<Vec<Reaction>> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions");
+        let url = format!("/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions");
         let first_page: Page<Reaction> = client.get(url, None::<&()>).await?;
         let reactions = client.all_pages(first_page).await?;
         Ok(reactions)
@@ -376,7 +374,7 @@ impl GH for GHApi {
     /// [`GH::get_pr_files`]
     async fn get_pr_files(&self, inst_id: u64, owner: &str, repo: &str, pr_number: i64) -> Result<Vec<File>> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}/files");
+        let url = format!("/repos/{owner}/{repo}/pulls/{pr_number}/files");
         let first_page: Page<File> = client.get(url, None::<&()>).await?;
         let files: Vec<File> = client.all_pages(first_page).await?;
         Ok(files)
@@ -397,7 +395,7 @@ impl GH for GHApi {
         exclude_maintainers: bool,
     ) -> Result<Vec<UserName>> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        let url = format!("{GITHUB_API_URL}/orgs/{org}/teams/{team}/members");
+        let url = format!("/orgs/{org}/teams/{team}/members");
         let first_page: Page<User> = client
             .get(
                 url,
@@ -414,7 +412,7 @@ impl GH for GHApi {
     /// [`GH::is_check_required`]
     async fn is_check_required(&self, inst_id: u64, owner: &str, repo: &str, branch: &str) -> Result<bool> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/branches/{branch}");
+        let url = format!("/repos/{owner}/{repo}/branches/{branch}");
         let branch: Branch = client.get(url, None::<&()>).await?;
         let is_check_required = if let Some(required_checks) =
             branch.protection.and_then(|protection| protection.required_status_checks)
@@ -464,7 +462,7 @@ impl GH for GHApi {
     /// [`GH::user_is_collaborator`]
     async fn user_is_collaborator(&self, inst_id: u64, owner: &str, repo: &str, user: &str) -> Result<bool> {
         let client = self.app_client.installation(InstallationId(inst_id))?;
-        let url = format!("{GITHUB_API_URL}/repos/{owner}/{repo}/collaborators/{user}");
+        let url = format!("/repos/{owner}/{repo}/collaborators/{user}");
         let resp = client._get(url).await?;
         if resp.status() == StatusCode::NO_CONTENT {
             return Ok(true);
@@ -675,3 +673,6 @@ pub(crate) fn is_not_found_error(err: &Error) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests;

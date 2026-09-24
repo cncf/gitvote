@@ -68,6 +68,9 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 uuid = { version = "1.23.4", features = ["serde", "v4"] }
 
 [dev-dependencies]
+aws-lc-rs = "1.17.0"
+base64 = "0.22.1"
 http-body = "1.0.1"
 hyper = "1.10.1"
 mockall = "0.15.0"
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }

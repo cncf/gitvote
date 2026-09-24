@@ -84,6 +84,7 @@ profiles:
     #
     # The percentage is calculated based on the number of votes in favor and the
     # number of allowed voters (see allowed_voters field below for more details).
+    # It must be greater than 0 and not greater than 100.
     pass_threshold: 50
 
     # Allowed voters (optional)
@@ -103,7 +104,8 @@ profiles:
     # considered allowed voters. Please note that this option only applies to
     # the teams explicitly listed in `allowed_voters/teams`.
     #
-    # Teams names must be provided without the organization prefix.
+    # Teams names must be provided without the organization prefix. Users are
+    # matched case-insensitively, as GitHub usernames are.
     #
     # allowed_voters:
     #   teams:
