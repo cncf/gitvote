@@ -7,7 +7,7 @@ use serde::Serialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
-    cfg_repo::CfgProfile,
+    cfg_repo::{CfgProfile, PassThresholdBase},
     cmd::CreateVoteInput,
     github::{TeamSlug, UserName},
     results::{Vote, VoteOption, VoteResults},
@@ -238,6 +238,8 @@ pub(crate) struct VoteCreated<'a> {
     issue_number: i64,
     duration: String,
     pass_threshold: f64,
+    pass_threshold_base_votes_cast: bool,
+    exclude_abstentions: bool,
     org: &'a str,
     teams: &'a [TeamSlug],
     users: &'a [UserName],
@@ -263,12 +265,23 @@ impl<'a> VoteCreated<'a> {
             None => "",
         };
 
+        // Prepare pass threshold base details
+        let (pass_threshold_base_votes_cast, exclude_abstentions) =
+            match cfg.pass_threshold_base.clone().unwrap_or_default() {
+                PassThresholdBase::AllowedVoters => (false, false),
+                PassThresholdBase::VotesCast { exclude_abstentions } => {
+                    (true, exclude_abstentions.unwrap_or(false))
+                }
+            };
+
         Self {
             creator: &input.created_by,
             issue_title: &input.issue_title,
             issue_number: input.issue_number,
             duration: humantime::format_duration(cfg.duration).to_string(),
             pass_threshold: cfg.pass_threshold,
+            pass_threshold_base_votes_cast,
+            exclude_abstentions,
             org,
             teams,
             users,

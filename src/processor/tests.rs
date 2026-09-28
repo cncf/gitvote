@@ -6,7 +6,11 @@ use time::ext::NumericalDuration;
 
 use crate::results::{REACTION_IN_FAVOR, Vote};
 use crate::testutil::*;
-use crate::{cfg_repo::AllowedVoters, db::MockDB, github::*};
+use crate::{
+    cfg_repo::{AllowedVoters, PassThresholdBase},
+    db::MockDB,
+    github::*,
+};
 
 use super::*;
 
@@ -1988,6 +1992,58 @@ async fn status_checker_stops_when_requested_none_pending() {
     // Check no commands were enqueued
     assert!(status_checker_handle.await.is_ok());
     assert!(cmds_rx.is_empty());
+}
+
+#[tokio::test]
+async fn votes_auto_closer_closes_vote_only_when_passing_over_all_allowed_voters() {
+    // Setup cases (exclude abstentions, allowed voters, expected ends at updates).
+    // In all cases USER1 votes in favor and the vote passes over the votes cast.
+    let cases = [
+        (None, vec![USER1, USER2, USER3], 0),
+        (None, vec![USER1, USER2], 1),
+        (Some(true), vec![USER1, USER2], 1),
+        (None, vec![], 0),
+    ];
+
+    for (exclude_abstentions, allowed_voters, expected_updates) in cases {
+        // Setup vote using the votes cast as the pass threshold base
+        let mut vote = setup_test_vote();
+        vote.cfg.pass_threshold_base = Some(PassThresholdBase::VotesCast { exclude_abstentions });
+
+        // Setup database expectations
+        let mut db = MockDB::new();
+        db.expect_get_open_votes_with_close_on_passing()
+            .times(1)
+            .return_once(move || Box::pin(future::ready(Ok(vec![vote]))));
+        db.expect_update_vote_ends_at()
+            .with(eq(Uuid::parse_str(VOTE_ID).unwrap()))
+            .times(expected_updates)
+            .returning(|_| Box::pin(future::ready(Ok(()))));
+
+        // Setup GitHub expectations
+        let mut gh = MockGH::new();
+        gh.expect_get_comment_reactions()
+            .with(eq(INST_ID), eq(ORG), eq(REPO), eq(COMMENT_ID))
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(future::ready(Ok(vec![in_favor_reaction(USER1)]))));
+        let allowed_voters: Vec<UserName> = allowed_voters.into_iter().map(ToString::to_string).collect();
+        gh.expect_get_allowed_voters()
+            .withf(|inst_id, _, owner, repo, _| *inst_id == INST_ID && owner == ORG && repo == REPO)
+            .times(1)
+            .return_once(move |_, _, _, _, _| Box::pin(future::ready(Ok(allowed_voters))));
+
+        // Run the votes auto closer until it's asked to stop
+        let cancel_token = CancellationToken::new();
+        let votes_auto_closer = VotesAutoCloser::new(Arc::new(db), Arc::new(gh));
+        let votes_auto_closer_handle = votes_auto_closer.run(cancel_token.clone());
+        cancel_token.cancel();
+
+        // Check the worker completed (expectations are verified on drop)
+        assert!(
+            votes_auto_closer_handle.await.is_ok(),
+            "exclude abstentions: {exclude_abstentions:?}, expected updates: {expected_updates}"
+        );
+    }
 }
 
 #[tokio::test]

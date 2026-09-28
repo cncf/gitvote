@@ -98,6 +98,14 @@ pub(crate) struct CfgProfile {
     pub allowed_voters: Option<AllowedVoters>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub announcements: Option<Announcements>,
+    // The singleton map representation allows using the `votes_cast:` map syntax
+    // in YAML, instead of the `!votes_cast` tag expected by default
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_yaml::with::singleton_map"
+    )]
+    pub pass_threshold_base: Option<PassThresholdBase>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub periodic_status_check: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -172,6 +180,20 @@ pub(crate) struct Announcements {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct DiscussionsAnnouncements {
     pub category: String,
+}
+
+/// Base used to calculate the pass threshold percentage.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PassThresholdBase {
+    /// All users with binding votes.
+    #[default]
+    AllowedVoters,
+    /// Binding votes cast.
+    VotesCast {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exclude_abstentions: Option<bool>,
+    },
 }
 
 /// Errors that may occur while getting the configuration profile.

@@ -5,7 +5,9 @@ use futures::future::{self};
 use mockall::predicate::eq;
 use proptest::{collection, prelude::*, sample};
 use serde_json::json;
+use tokio_postgres::types::{FromSql, Type};
 
+use crate::cfg_repo::AllowedVoters;
 use crate::github::{MockGH, Reaction, User, UserName};
 use crate::testutil::*;
 
@@ -19,8 +21,26 @@ const PROPTEST_REACTIONS: [(&str, Option<VoteOption>); 4] = [
     ("heart", None),
 ];
 
+/// Pass threshold bases used in randomly generated votes.
+const PROPTEST_THRESHOLD_BASES: [Option<PassThresholdBase>; 5] = [
+    None,
+    Some(PassThresholdBase::AllowedVoters),
+    Some(PassThresholdBase::VotesCast {
+        exclude_abstentions: None,
+    }),
+    Some(PassThresholdBase::VotesCast {
+        exclude_abstentions: Some(false),
+    }),
+    Some(PassThresholdBase::VotesCast {
+        exclude_abstentions: Some(true),
+    }),
+];
+
 /// Number of users that can take part in randomly generated votes.
 const PROPTEST_USERS: usize = 6;
+
+/// Pass threshold used to require more votes in favor than against.
+const STRICT_MAJORITY_THRESHOLD: f64 = 50.01;
 
 /// Additional deterministic timestamps used to check each vote keeps its own.
 const TIMESTAMP2: &str = "2022-11-30T11:00:00Z";
@@ -67,6 +87,7 @@ proptest! {
         allowed_users_uppercase in collection::vec(any::<bool>(), PROPTEST_USERS),
         users_reactions in collection::vec((1..=PROPTEST_USERS, 0..PROPTEST_REACTIONS.len()), 0..20),
         pass_threshold in 1..=100_u32,
+        pass_threshold_base in 0..PROPTEST_THRESHOLD_BASES.len(),
     ) {
         // Setup allowed voters, spelled with random casing
         let allowed_voters: Vec<UserName> = allowed_users
@@ -77,36 +98,20 @@ proptest! {
             })
             .collect();
 
-        // Setup reactions and vote
+        // Setup reactions and vote profile
         let reactions: Vec<Reaction> = users_reactions
             .iter()
-            .map(|(i, r)| Reaction {
-                user: User { login: format!("user{i}") },
-                content: PROPTEST_REACTIONS[*r].0.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            })
+            .map(|(i, r)| reaction(&format!("user{i}"), PROPTEST_REACTIONS[*r].0))
             .collect();
-        let mut vote = setup_test_vote();
-        vote.cfg.pass_threshold = f64::from(pass_threshold);
-
-        // Setup GitHub expectations
-        let mut gh = MockGH::new();
-        let reactions_returned = reactions.clone();
-        gh.expect_get_comment_reactions()
-            .with(eq(INST_ID), eq(OWNER), eq(REPO), eq(COMMENT_ID))
-            .times(1)
-            .returning(move |_, _, _, _| Box::pin(future::ready(Ok(reactions_returned.clone()))));
-        let allowed_voters_returned = allowed_voters.clone();
-        gh.expect_get_allowed_voters()
-            .withf(|inst_id, _, owner, repo, _| *inst_id == INST_ID && owner == OWNER && repo == REPO)
-            .times(1)
-            .returning(move |_, _, _, _, _| {
-                Box::pin(future::ready(Ok(allowed_voters_returned.clone())))
-            });
+        let cfg = CfgProfile {
+            pass_threshold: f64::from(pass_threshold),
+            pass_threshold_base: PROPTEST_THRESHOLD_BASES[pass_threshold_base].clone(),
+            ..setup_test_vote().cfg
+        };
 
         // Calculate vote results
         let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-        let results = rt.block_on(calculate(Arc::new(gh), OWNER, REPO, &vote)).unwrap();
+        let results = rt.block_on(calculate_results(cfg.clone(), reactions, allowed_voters.clone()));
 
         // Build expected votes (only users with a single supported reaction count)
         let mut users_options: BTreeMap<UserName, Vec<VoteOption>> = BTreeMap::new();
@@ -132,6 +137,7 @@ proptest! {
                 .count() as i64
         };
         let expected_in_favor = count_binding(Some(VoteOption::InFavor));
+        let expected_against = count_binding(Some(VoteOption::Against));
         let expected_binding = count_binding(None);
         let expected_pending: Vec<UserName> = allowed_voters
             .iter()
@@ -139,7 +145,20 @@ proptest! {
             .cloned()
             .collect();
         let allowed = allowed_voters.len() as i64;
-        let expected_passed = allowed > 0 && expected_in_favor * 100 >= i64::from(pass_threshold) * allowed;
+        let expected_base = match cfg.pass_threshold_base.clone().unwrap_or_default() {
+            PassThresholdBase::AllowedVoters => allowed,
+            PassThresholdBase::VotesCast { exclude_abstentions: Some(true) } => {
+                expected_in_favor + expected_against
+            }
+            PassThresholdBase::VotesCast { .. } => expected_binding,
+        };
+        let reaches_threshold =
+            |base: i64| base > 0 && expected_in_favor * 100 >= i64::from(pass_threshold) * base;
+        let expected_passed = reaches_threshold(expected_base);
+        #[allow(clippy::cast_precision_loss)]
+        let expected_percentage = |count: i64| {
+            if expected_base > 0 { count as f64 / expected_base as f64 * 100.0 } else { 0.0 }
+        };
 
         // Check the votes counted
         let votes: BTreeMap<UserName, (VoteOption, bool)> = results
@@ -151,8 +170,10 @@ proptest! {
 
         // Check the results summary
         prop_assert_eq!(results.passed, expected_passed);
+        prop_assert!((results.in_favor_percentage - expected_percentage(expected_in_favor)).abs() < 1e-9);
+        prop_assert!((results.against_percentage - expected_percentage(expected_against)).abs() < 1e-9);
         prop_assert_eq!(results.in_favor, expected_in_favor);
-        prop_assert_eq!(results.against, count_binding(Some(VoteOption::Against)));
+        prop_assert_eq!(results.against, expected_against);
         prop_assert_eq!(results.abstain, count_binding(Some(VoteOption::Abstain)));
         prop_assert_eq!(results.binding, expected_binding);
         prop_assert_eq!(results.non_binding, expected_votes.len() as i64 - expected_binding);
@@ -163,6 +184,14 @@ proptest! {
         // Check the results invariants
         prop_assert_eq!(results.in_favor + results.against + results.abstain, results.binding);
         prop_assert_eq!(results.binding + results.not_voted, results.allowed_voters);
+        for percentage in [results.in_favor_percentage, results.against_percentage] {
+            prop_assert!(percentage.is_finite() && (0.0..=100.0).contains(&percentage));
+        }
+
+        // Check the early close check uses all the allowed voters as the base, and
+        // that a vote that passes over them also passes over the base configured
+        prop_assert_eq!(results.passes_with_all_allowed_voters(), reaches_threshold(allowed));
+        prop_assert!(!results.passes_with_all_allowed_voters() || results.passed);
     }
 }
 
@@ -179,48 +208,8 @@ macro_rules! test_calculate {
     $(
         #[tokio::test]
         async fn $func() {
-            // Prepare test data
-            let vote = Vote {
-                vote_id: Uuid::parse_str(VOTE_ID).unwrap(),
-                vote_comment_id: COMMENT_ID,
-                created_at: OffsetDateTime::now_utc(),
-                created_by: USER.to_string(),
-                ends_at: OffsetDateTime::now_utc(),
-                closed: false,
-                closed_at: None,
-                checked_at: None,
-                cfg: $cfg.clone(),
-                installation_id: INST_ID as i64,
-                issue_id: ISSUE_ID,
-                issue_number: ISSUE_NUM,
-                issue_title: Some(TITLE.to_string()),
-                is_pull_request: false,
-                repository_full_name: REPOFN.to_string(),
-                organization: Some(ORG.to_string()),
-                results: None,
-            };
-
-            // Setup mocks and expectations
-            let mut gh = MockGH::new();
-            gh.expect_get_comment_reactions()
-                .with(eq(INST_ID), eq(OWNER), eq(REPO), eq(COMMENT_ID))
-                .times(1)
-                .returning(|_, _, _, _| Box::pin(future::ready(Ok($reactions))));
-            gh.expect_get_allowed_voters()
-                .withf(|inst_id, cfg, owner, repo, org| {
-                    *inst_id == INST_ID
-                        && *cfg == $cfg
-                        && owner == OWNER
-                        && repo == REPO
-                        && *org == Some(ORG.to_string()).as_ref()
-                })
-                .times(1)
-                .returning(|_, _, _, _, _| Box::pin(future::ready(Ok($allowed_voters))));
-
             // Calculate vote results and check we get what we expect
-            let results = calculate(Arc::new(gh), OWNER, REPO, &vote)
-                .await
-                .unwrap();
+            let results = calculate_results($cfg, $reactions, $allowed_voters).await;
             assert_eq!(results, $expected_results);
         }
     )*
@@ -230,22 +219,9 @@ macro_rules! test_calculate {
 test_calculate!(
     calculate_allowed_voters_are_matched_case_insensitively:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
-        reactions: vec![
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
-        ],
-        allowed_voters: vec![
-            USER1.to_uppercase(),
-            USER2.to_uppercase()
-        ],
+        cfg: threshold_cfg(50.0),
+        reactions: reactions(&votes_cast(1, 0, 0)),
+        allowed_voters: vec![USER1.to_uppercase(), USER2.to_uppercase()],
         expected_results: VoteResults {
             passed: true,
             in_favor_percentage: 50.0,
@@ -274,485 +250,158 @@ test_calculate!(
 
     calculate_do_not_count_votes_from_multiple_options_voters:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
+        cfg: threshold_cfg(50.0),
         reactions: vec![
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_AGAINST.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_ABSTAIN.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
+            reaction(USER1, REACTION_AGAINST),
+            reaction(USER1, REACTION_ABSTAIN),
         ],
-        allowed_voters: vec![
-            USER1.to_string()
-        ],
-        expected_results: VoteResults {
-            passed: false,
-            in_favor_percentage: 0.0,
-            pass_threshold: 50.0,
-            in_favor: 0,
-            against: 0,
-            against_percentage: 0.0,
-            abstain: 0,
-            not_voted: 1,
-            binding: 0,
-            non_binding: 0,
-            votes: BTreeMap::new(),
-            allowed_voters: 1,
-            pending_voters: vec![USER1.to_string()],
-        }
+        allowed_voters: users(1),
+        expected_results: expected_results(50.0, &[], &users(1), (false, 0.0, 0.0))
     },
 
     calculate_do_not_count_votes_from_non_binding_multiple_options_voters:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
+        cfg: threshold_cfg(50.0),
         reactions: vec![
-            Reaction {
-                user: User { login: USER5.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER5.to_string() },
-                content: REACTION_AGAINST.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
+            reaction(USER5, REACTION_IN_FAVOR),
+            reaction(USER5, REACTION_AGAINST),
         ],
-        allowed_voters: vec![
-            USER1.to_string()
-        ],
-        expected_results: VoteResults {
-            passed: false,
-            in_favor_percentage: 0.0,
-            pass_threshold: 50.0,
-            in_favor: 0,
-            against: 0,
-            against_percentage: 0.0,
-            abstain: 0,
-            not_voted: 1,
-            binding: 0,
-            non_binding: 0,
-            votes: BTreeMap::new(),
-            allowed_voters: 1,
-            pending_voters: vec![USER1.to_string()],
-        }
+        allowed_voters: users(1),
+        expected_results: expected_results(50.0, &[], &users(1), (false, 0.0, 0.0))
     },
 
     calculate_ignore_further_reactions_from_multiple_options_voters:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
+        cfg: threshold_cfg(50.0),
         reactions: vec![
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_AGAINST.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_ABSTAIN.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER2.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
+            reaction(USER1, REACTION_IN_FAVOR),
+            reaction(USER1, REACTION_AGAINST),
+            reaction(USER1, REACTION_ABSTAIN),
+            reaction(USER2, REACTION_IN_FAVOR),
         ],
-        allowed_voters: vec![
-            USER1.to_string(),
-            USER2.to_string()
-        ],
-        expected_results: VoteResults {
-            passed: true,
-            in_favor_percentage: 50.0,
-            pass_threshold: 50.0,
-            in_favor: 1,
-            against: 0,
-            against_percentage: 0.0,
-            abstain: 0,
-            not_voted: 1,
-            binding: 1,
-            non_binding: 0,
-            votes: BTreeMap::from([
-                (
-                    USER2.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                )
-            ]),
-            allowed_voters: 2,
-            pending_voters: vec![USER1.to_string()],
-        }
+        allowed_voters: users(2),
+        expected_results: expected_results(
+            50.0,
+            &[(USER2.to_string(), VoteOption::InFavor)],
+            &users(2),
+            (true, 50.0, 0.0)
+        )
     },
 
     calculate_no_allowed_voters:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
-        reactions: vec![
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
-        ],
+        cfg: threshold_cfg(50.0),
+        reactions: reactions(&votes_cast(1, 0, 0)),
         allowed_voters: Vec::<UserName>::new(),
-        expected_results: VoteResults {
-            passed: false,
-            in_favor_percentage: 0.0,
-            pass_threshold: 50.0,
-            in_favor: 0,
-            against: 0,
-            against_percentage: 0.0,
-            abstain: 0,
-            not_voted: 0,
-            binding: 0,
-            non_binding: 1,
-            votes: BTreeMap::from([
-                (
-                    USER1.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: false,
-                    },
-                )
-            ]),
-            allowed_voters: 0,
-            pending_voters: vec![],
-        }
+        expected_results: expected_results(50.0, &votes_cast(1, 0, 0), &[], (false, 0.0, 0.0))
     },
 
     calculate_no_reactions:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
+        cfg: threshold_cfg(50.0),
         reactions: Vec::<Reaction>::new(),
-        allowed_voters: vec![
-            USER1.to_string(),
-            USER2.to_string()
-        ],
-        expected_results: VoteResults {
-            passed: false,
-            in_favor_percentage: 0.0,
-            pass_threshold: 50.0,
-            in_favor: 0,
-            against: 0,
-            against_percentage: 0.0,
-            abstain: 0,
-            not_voted: 2,
-            binding: 0,
-            non_binding: 0,
-            votes: BTreeMap::new(),
-            allowed_voters: 2,
-            pending_voters: vec![USER1.to_string(), USER2.to_string()],
-        }
+        allowed_voters: users(2),
+        expected_results: expected_results(50.0, &[], &users(2), (false, 0.0, 0.0))
+    },
+
+    calculate_pass_threshold_base_example_allowed_voters:
+    {
+        cfg: CfgProfile {
+            pass_threshold_base: Some(PassThresholdBase::AllowedVoters),
+            ..threshold_cfg(60.0)
+        },
+        reactions: reactions(&votes_cast(2, 1, 1)),
+        allowed_voters: users(10),
+        expected_results: expected_results(
+            60.0,
+            &votes_cast(2, 1, 1),
+            &users(10),
+            (false, 2.0 / 10.0 * 100.0, 1.0 / 10.0 * 100.0)
+        )
+    },
+
+    calculate_pass_threshold_base_example_votes_cast:
+    {
+        cfg: votes_cast_cfg(60.0, None),
+        reactions: reactions(&votes_cast(2, 1, 1)),
+        allowed_voters: users(10),
+        expected_results: expected_results(
+            60.0,
+            &votes_cast(2, 1, 1),
+            &users(10),
+            (false, 2.0 / 4.0 * 100.0, 1.0 / 4.0 * 100.0)
+        )
+    },
+
+    calculate_pass_threshold_base_example_votes_cast_excluding_abstentions:
+    {
+        cfg: votes_cast_cfg(60.0, Some(true)),
+        reactions: reactions(&votes_cast(2, 1, 1)),
+        allowed_voters: users(10),
+        expected_results: expected_results(
+            60.0,
+            &votes_cast(2, 1, 1),
+            &users(10),
+            (true, 2.0 / 3.0 * 100.0, 1.0 / 3.0 * 100.0)
+        )
     },
 
     calculate_unsupported_reactions_are_ignored:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
+        cfg: threshold_cfg(50.0),
         reactions: vec![
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: "unsupported".to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_AGAINST.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: "unsupported".to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
+            reaction(USER1, "unsupported"),
+            reaction(USER1, REACTION_AGAINST),
+            reaction(USER1, "unsupported"),
         ],
-        allowed_voters: vec![
-            USER1.to_string()
-        ],
-        expected_results: VoteResults {
-            passed: false,
-            in_favor_percentage: 0.0,
-            pass_threshold: 50.0,
-            in_favor: 0,
-            against: 1,
-            against_percentage: 100.0,
-            abstain: 0,
-            not_voted: 0,
-            binding: 1,
-            non_binding: 0,
-            votes: BTreeMap::from([
-                (
-                    USER1.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::Against,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                )
-            ]),
-            allowed_voters: 1,
-            pending_voters: vec![],
-        }
+        allowed_voters: users(1),
+        expected_results: expected_results(
+            50.0,
+            &votes_cast(0, 1, 0),
+            &users(1),
+            (false, 0.0, 100.0)
+        )
     },
 
     calculate_vote_does_not_pass_when_in_favor_percentage_is_below_pass_threshold:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 66.67,
-            ..Default::default()
-        },
-        reactions: vec![
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER2.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER3.to_string() },
-                content: REACTION_ABSTAIN.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
-        ],
-        allowed_voters: vec![
-            USER1.to_string(),
-            USER2.to_string(),
-            USER3.to_string()
-        ],
-        expected_results: VoteResults {
-            passed: false,
-            in_favor_percentage: 2.0 / 3.0 * 100.0,
-            pass_threshold: 66.67,
-            in_favor: 2,
-            against: 0,
-            against_percentage: 0.0,
-            abstain: 1,
-            not_voted: 0,
-            binding: 3,
-            non_binding: 0,
-            votes: BTreeMap::from([
-                (
-                    USER1.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                ),
-                (
-                    USER2.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                ),
-                (
-                    USER3.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::Abstain,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                ),
-            ]),
-            allowed_voters: 3,
-            pending_voters: vec![],
-        }
+        cfg: threshold_cfg(66.67),
+        reactions: reactions(&votes_cast(2, 0, 1)),
+        allowed_voters: users(3),
+        expected_results: expected_results(
+            66.67,
+            &votes_cast(2, 0, 1),
+            &users(3),
+            (false, 2.0 / 3.0 * 100.0, 0.0)
+        )
     },
 
     calculate_vote_passes_when_in_favor_percentage_reaches_pass_threshold:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 75.0,
-            ..Default::default()
-        },
-        reactions: vec![
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER2.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER3.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
-        ],
-        allowed_voters: vec![
-            USER1.to_string(),
-            USER2.to_string(),
-            USER3.to_string(),
-            USER4.to_string()
-        ],
-        expected_results: VoteResults {
-            passed: true,
-            in_favor_percentage: 75.0,
-            pass_threshold: 75.0,
-            in_favor: 3,
-            against: 0,
-            against_percentage: 0.0,
-            abstain: 0,
-            not_voted: 1,
-            binding: 3,
-            non_binding: 0,
-            votes: BTreeMap::from([
-                (
-                    USER1.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                ),
-                (
-                    USER2.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                ),
-                (
-                    USER3.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                ),
-            ]),
-            allowed_voters: 4,
-            pending_voters: vec![USER4.to_string()],
-        }
+        cfg: threshold_cfg(75.0),
+        reactions: reactions(&votes_cast(3, 0, 0)),
+        allowed_voters: users(4),
+        expected_results: expected_results(75.0, &votes_cast(3, 0, 0), &users(4), (true, 75.0, 0.0))
     },
 
     calculate_vote_passes_when_in_favor_votes_exactly_reach_pass_threshold:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 58.0,
-            ..Default::default()
-        },
-        reactions: (1..=29)
-            .map(|i| Reaction {
-                user: User { login: format!("user{i}") },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            })
-            .collect::<Vec<_>>(),
-        allowed_voters: (1..=50).map(|i| format!("user{i}")).collect::<Vec<_>>(),
-        expected_results: VoteResults {
-            passed: true,
-            in_favor_percentage: 29.0 / 50.0 * 100.0,
-            pass_threshold: 58.0,
-            in_favor: 29,
-            against: 0,
-            against_percentage: 0.0,
-            abstain: 0,
-            not_voted: 21,
-            binding: 29,
-            non_binding: 0,
-            votes: (1..=29)
-                .map(|i| {
-                    (
-                        format!("user{i}"),
-                        UserVote {
-                            vote_option: VoteOption::InFavor,
-                            timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                            binding: true,
-                        },
-                    )
-                })
-                .collect(),
-            allowed_voters: 50,
-            pending_voters: (30..=50).map(|i| format!("user{i}")).collect(),
-        }
+        cfg: threshold_cfg(58.0),
+        reactions: reactions(&votes_cast(29, 0, 0)),
+        allowed_voters: users(50),
+        expected_results: expected_results(
+            58.0,
+            &votes_cast(29, 0, 0),
+            &users(50),
+            (true, 29.0 / 50.0 * 100.0, 0.0)
+        )
     },
 
     calculate_votes_are_counted_correctly:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
-        reactions: vec![
-            Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER2.to_string() },
-                content: REACTION_AGAINST.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER3.to_string() },
-                content: REACTION_ABSTAIN.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER5.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            }
-        ],
-        allowed_voters: vec![
-            USER1.to_string(),
-            USER2.to_string(),
-            USER3.to_string(),
-            USER4.to_string()
-        ],
+        cfg: threshold_cfg(50.0),
+        reactions: reactions(&[votes_cast(1, 1, 1), vec![(USER5.to_string(), VoteOption::InFavor)]].concat()),
+        allowed_voters: users(4),
         expected_results: VoteResults {
             passed: false,
             in_favor_percentage: 25.0,
@@ -803,76 +452,237 @@ test_calculate!(
         }
     },
 
+    calculate_votes_cast_does_not_pass_when_in_favor_percentage_is_below_pass_threshold:
+    {
+        cfg: votes_cast_cfg(66.67, None),
+        reactions: reactions(&votes_cast(2, 1, 0)),
+        allowed_voters: users(5),
+        expected_results: expected_results(
+            66.67,
+            &votes_cast(2, 1, 0),
+            &users(5),
+            (false, 2.0 / 3.0 * 100.0, 1.0 / 3.0 * 100.0)
+        )
+    },
+
+    calculate_votes_cast_excluding_abstentions_does_not_pass_with_only_abstentions:
+    {
+        cfg: votes_cast_cfg(50.0, Some(true)),
+        reactions: reactions(&votes_cast(0, 0, 2)),
+        allowed_voters: users(3),
+        expected_results: expected_results(50.0, &votes_cast(0, 0, 2), &users(3), (false, 0.0, 0.0))
+    },
+
+    calculate_votes_cast_excluding_abstentions_passes_when_in_favor_votes_exactly_reach_pass_threshold:
+    {
+        cfg: votes_cast_cfg(58.0, Some(true)),
+        reactions: reactions(&votes_cast(29, 21, 5)),
+        allowed_voters: users(60),
+        expected_results: expected_results(
+            58.0,
+            &votes_cast(29, 21, 5),
+            &users(60),
+            (true, 29.0 / 50.0 * 100.0, 21.0 / 50.0 * 100.0)
+        )
+    },
+
+    calculate_votes_cast_no_allowed_voters:
+    {
+        cfg: votes_cast_cfg(50.0, None),
+        reactions: reactions(&votes_cast(1, 0, 0)),
+        allowed_voters: Vec::<UserName>::new(),
+        expected_results: expected_results(50.0, &votes_cast(1, 0, 0), &[], (false, 0.0, 0.0))
+    },
+
+    calculate_votes_cast_no_reactions:
+    {
+        cfg: votes_cast_cfg(50.0, None),
+        reactions: Vec::<Reaction>::new(),
+        allowed_voters: users(2),
+        expected_results: expected_results(50.0, &[], &users(2), (false, 0.0, 0.0))
+    },
+
+    calculate_votes_cast_only_non_binding_votes:
+    {
+        cfg: votes_cast_cfg(50.0, None),
+        reactions: reactions(&votes_cast(1, 0, 0)),
+        allowed_voters: vec![USER2.to_string(), USER3.to_string()],
+        expected_results: expected_results(
+            50.0,
+            &votes_cast(1, 0, 0),
+            &[USER2.to_string(), USER3.to_string()],
+            (false, 0.0, 0.0)
+        )
+    },
+
+    calculate_votes_cast_passes_when_in_favor_votes_exactly_reach_pass_threshold:
+    {
+        cfg: votes_cast_cfg(58.0, None),
+        reactions: reactions(&votes_cast(29, 21, 0)),
+        allowed_voters: users(60),
+        expected_results: expected_results(
+            58.0,
+            &votes_cast(29, 21, 0),
+            &users(60),
+            (true, 29.0 / 50.0 * 100.0, 21.0 / 50.0 * 100.0)
+        )
+    },
+
     calculate_votes_keep_each_user_timestamp:
     {
-        cfg: CfgProfile {
-            duration: Duration::from_secs(1),
-            pass_threshold: 50.0,
-            ..Default::default()
-        },
+        cfg: threshold_cfg(50.0),
         reactions: vec![
+            reaction(USER1, REACTION_IN_FAVOR),
             Reaction {
-                user: User { login: USER1.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
-                created_at: TIMESTAMP.to_string(),
-            },
-            Reaction {
-                user: User { login: USER2.to_string() },
-                content: REACTION_AGAINST.to_string(),
                 created_at: TIMESTAMP2.to_string(),
+                ..reaction(USER2, REACTION_AGAINST)
             },
             Reaction {
-                user: User { login: USER5.to_string() },
-                content: REACTION_IN_FAVOR.to_string(),
                 created_at: TIMESTAMP3.to_string(),
-            }
+                ..reaction(USER5, REACTION_IN_FAVOR)
+            },
         ],
-        allowed_voters: vec![
-            USER1.to_string(),
-            USER2.to_string()
-        ],
-        expected_results: VoteResults {
-            passed: true,
-            in_favor_percentage: 50.0,
-            pass_threshold: 50.0,
-            in_favor: 1,
-            against: 1,
-            against_percentage: 50.0,
-            abstain: 0,
-            not_voted: 0,
-            binding: 2,
-            non_binding: 1,
-            votes: BTreeMap::from([
-                (
-                    USER1.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                ),
-                (
-                    USER2.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::Against,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP2, &Rfc3339).unwrap(),
-                        binding: true,
-                    },
-                ),
-                (
-                    USER5.to_string(),
-                    UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP3, &Rfc3339).unwrap(),
-                        binding: false,
-                    },
-                ),
-            ]),
-            allowed_voters: 2,
-            pending_voters: vec![],
+        allowed_voters: users(2),
+        expected_results: {
+            let mut results = expected_results(
+                50.0,
+                &[votes_cast(1, 1, 0), vec![(USER5.to_string(), VoteOption::InFavor)]].concat(),
+                &users(2),
+                (true, 50.0, 50.0)
+            );
+            results.votes.get_mut(USER2).unwrap().timestamp =
+                OffsetDateTime::parse(TIMESTAMP2, &Rfc3339).unwrap();
+            results.votes.get_mut(USER5).unwrap().timestamp =
+                OffsetDateTime::parse(TIMESTAMP3, &Rfc3339).unwrap();
+            results
         }
     },
 );
+
+#[tokio::test]
+async fn calculate_strict_majority_recipe() {
+    // Setup cases (in favor, against, abstain, pass threshold, expected passed)
+    let cases = [
+        (2, 0, 10, STRICT_MAJORITY_THRESHOLD, true),
+        (2, 2, 0, STRICT_MAJORITY_THRESHOLD, false),
+        (3, 2, 5, STRICT_MAJORITY_THRESHOLD, true),
+        (0, 1, 0, STRICT_MAJORITY_THRESHOLD, false),
+        (0, 0, 3, STRICT_MAJORITY_THRESHOLD, false),
+        // A tie passes with 50, so it cannot be used to require a strict majority
+        (2, 2, 0, 50.0, true),
+    ];
+
+    for (in_favor, against, abstain, pass_threshold, expected_passed) in cases {
+        // Calculate the results, leaving one allowed voter pending
+        let votes = votes_cast(in_favor, against, abstain);
+        let allowed_voters = users(in_favor + against + abstain + 1);
+        let cfg = votes_cast_cfg(pass_threshold, Some(true));
+        let results = calculate_results(cfg, reactions(&votes), allowed_voters).await;
+
+        // Check the vote passes only when expected
+        assert_eq!(
+            results.passed, expected_passed,
+            "votes: ({in_favor}, {against}, {abstain}), pass threshold: {pass_threshold}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn calculate_votes_cast_omitted_exclude_abstentions_equals_false() {
+    for (in_favor, against, abstain) in [(2, 1, 1), (1, 1, 0), (0, 0, 2)] {
+        // Calculate the results with the flag omitted and set to false
+        let votes = votes_cast(in_favor, against, abstain);
+        let mut results = vec![];
+        for exclude_abstentions in [None, Some(false)] {
+            let cfg = votes_cast_cfg(50.0, exclude_abstentions);
+            results.push(calculate_results(cfg, reactions(&votes), users(5)).await);
+        }
+
+        // Check both results are identical
+        assert_eq!(
+            results[0], results[1],
+            "votes: ({in_favor}, {against}, {abstain})"
+        );
+    }
+}
+
+#[test]
+fn threshold_reached_strict_majority_limit() {
+    // Setup cases (in favor, against, expected result)
+    let cases = [(2500, 2499, true), (2501, 2500, false)];
+
+    for (in_favor, against, expected) in cases {
+        // Check the result over the votes cast excluding abstentions
+        assert_eq!(
+            threshold_reached(in_favor, STRICT_MAJORITY_THRESHOLD, in_favor + against),
+            expected,
+            "votes: ({in_favor}, {against})"
+        );
+    }
+}
+
+#[test]
+fn vote_cfg_decode_stored_jsonb() {
+    // Setup cases (stored pass threshold base, expected pass threshold base)
+    let cases = [
+        (None, None),
+        (
+            Some(json!("allowed_voters")),
+            Some(PassThresholdBase::AllowedVoters),
+        ),
+        (
+            Some(json!({"votes_cast": {}})),
+            Some(PassThresholdBase::VotesCast {
+                exclude_abstentions: None,
+            }),
+        ),
+        (
+            Some(json!({"votes_cast": {"exclude_abstentions": false}})),
+            Some(PassThresholdBase::VotesCast {
+                exclude_abstentions: Some(false),
+            }),
+        ),
+        (
+            Some(json!({"votes_cast": {"exclude_abstentions": true}})),
+            Some(PassThresholdBase::VotesCast {
+                exclude_abstentions: Some(true),
+            }),
+        ),
+    ];
+
+    for (stored_base, expected_base) in cases {
+        // Setup JSONB value as stored in the vote cfg column (version byte + JSON)
+        let mut stored = json!({
+            "duration": "5m",
+            "pass_threshold": 50.0,
+            "allowed_voters": {"users": [USER1]},
+            "close_on_passing": true
+        });
+        if let Some(stored_base) = &stored_base {
+            stored["pass_threshold_base"] = stored_base.clone();
+        }
+        let mut raw = vec![1_u8];
+        raw.extend(serde_json::to_vec(&stored).unwrap());
+
+        // Check it decodes into the expected profile, as done when reading votes
+        let Json(cfg) = <Json<CfgProfile> as FromSql>::from_sql(&Type::JSONB, &raw).unwrap();
+        assert_eq!(
+            cfg,
+            CfgProfile {
+                duration: Duration::from_mins(5),
+                pass_threshold: 50.0,
+                allowed_voters: Some(AllowedVoters {
+                    users: Some(vec![USER1.to_string()]),
+                    ..Default::default()
+                }),
+                close_on_passing: Some(true),
+                pass_threshold_base: expected_base,
+                ..Default::default()
+            },
+            "stored: {stored_base:?}"
+        );
+    }
+}
 
 #[test]
 fn vote_option_display() {
@@ -981,6 +791,37 @@ fn vote_results_deserialize_stored_json() {
 }
 
 #[test]
+fn vote_results_passes_with_all_allowed_voters() {
+    // Setup cases (in favor, allowed voters, pass threshold, expected result)
+    let cases = [
+        (0, 0, 50.0, false),
+        (1, 2, 50.0, true),
+        (1, 3, 50.0, false),
+        (29, 50, 58.0, true),
+        (28, 50, 58.0, false),
+        (2, 3, 66.67, false),
+        (3, 3, 100.0, true),
+    ];
+
+    for (in_favor, allowed_voters, pass_threshold, expected) in cases {
+        // Setup results
+        let results = VoteResults {
+            pass_threshold,
+            in_favor,
+            allowed_voters,
+            ..setup_test_vote_results()
+        };
+
+        // Check the result over all the allowed voters
+        assert_eq!(
+            results.passes_with_all_allowed_voters(),
+            expected,
+            "in favor: {in_favor}, allowed voters: {allowed_voters}, pass threshold: {pass_threshold}"
+        );
+    }
+}
+
+#[test]
 fn vote_results_serialize() {
     // Check serialized vote results
     assert_eq!(
@@ -1007,4 +848,160 @@ fn vote_results_serialize() {
             "pending_voters": []
         })
     );
+}
+
+// Helpers.
+
+/// Calculate the results of a vote using the configuration, reactions and
+/// allowed voters provided.
+async fn calculate_results(
+    cfg: CfgProfile,
+    reactions: Vec<Reaction>,
+    allowed_voters: Vec<UserName>,
+) -> VoteResults {
+    // Setup GitHub expectations
+    let mut gh = MockGH::new();
+    gh.expect_get_comment_reactions()
+        .with(eq(INST_ID), eq(OWNER), eq(REPO), eq(COMMENT_ID))
+        .times(1)
+        .return_once(move |_, _, _, _| Box::pin(future::ready(Ok(reactions))));
+    let expected_cfg = cfg.clone();
+    gh.expect_get_allowed_voters()
+        .withf(move |inst_id, cfg, owner, repo, org| {
+            *inst_id == INST_ID
+                && *cfg == expected_cfg
+                && owner == OWNER
+                && repo == REPO
+                && *org == Some(ORG.to_string()).as_ref()
+        })
+        .times(1)
+        .return_once(move |_, _, _, _, _| Box::pin(future::ready(Ok(allowed_voters))));
+
+    // Calculate vote results
+    let vote = Vote {
+        cfg,
+        ..setup_test_vote()
+    };
+    calculate(Arc::new(gh), OWNER, REPO, &vote).await.unwrap()
+}
+
+/// Build the expected results of a vote from the votes cast and allowed voters
+/// provided, using the outcome given (passed, in favor and against percentages).
+fn expected_results(
+    pass_threshold: f64,
+    votes_cast: &[(UserName, VoteOption)],
+    allowed_voters: &[UserName],
+    (passed, in_favor_percentage, against_percentage): (bool, f64, f64),
+) -> VoteResults {
+    // Prepare votes, which are binding when cast by allowed voters (matched
+    // case insensitively)
+    let is_allowed_voter =
+        |user: &UserName| allowed_voters.iter().any(|voter| voter.eq_ignore_ascii_case(user));
+    let timestamp = OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap();
+    let votes: BTreeMap<UserName, UserVote> = votes_cast
+        .iter()
+        .map(|(user, vote_option)| {
+            let user_vote = UserVote {
+                vote_option: vote_option.clone(),
+                timestamp,
+                binding: is_allowed_voter(user),
+            };
+            (user.clone(), user_vote)
+        })
+        .collect();
+
+    // Prepare counts
+    let count_binding = |option: Option<VoteOption>| {
+        votes
+            .values()
+            .filter(|v| v.binding && option.as_ref().is_none_or(|o| *o == v.vote_option))
+            .count() as i64
+    };
+    let binding = count_binding(None);
+    let pending_voters: Vec<UserName> = allowed_voters
+        .iter()
+        .filter(|voter| !votes.keys().any(|user| user.eq_ignore_ascii_case(voter)))
+        .cloned()
+        .collect();
+
+    VoteResults {
+        passed,
+        in_favor_percentage,
+        pass_threshold,
+        in_favor: count_binding(Some(VoteOption::InFavor)),
+        against: count_binding(Some(VoteOption::Against)),
+        against_percentage,
+        abstain: count_binding(Some(VoteOption::Abstain)),
+        not_voted: pending_voters.len() as i64,
+        binding,
+        non_binding: votes.len() as i64 - binding,
+        allowed_voters: allowed_voters.len() as i64,
+        votes,
+        pending_voters,
+    }
+}
+
+/// Setup a reaction from the user provided with the content given.
+fn reaction(user: &str, content: &str) -> Reaction {
+    Reaction {
+        user: User {
+            login: user.to_string(),
+        },
+        content: content.to_string(),
+        created_at: TIMESTAMP.to_string(),
+    }
+}
+
+/// Setup reactions for the votes provided.
+fn reactions(votes: &[(UserName, VoteOption)]) -> Vec<Reaction> {
+    votes
+        .iter()
+        .map(|(user, vote_option)| {
+            let content = match vote_option {
+                VoteOption::InFavor => REACTION_IN_FAVOR,
+                VoteOption::Against => REACTION_AGAINST,
+                VoteOption::Abstain => REACTION_ABSTAIN,
+            };
+            reaction(user, content)
+        })
+        .collect()
+}
+
+/// Setup a profile using the pass threshold provided and the default pass
+/// threshold base.
+fn threshold_cfg(pass_threshold: f64) -> CfgProfile {
+    CfgProfile {
+        duration: Duration::from_secs(1),
+        pass_threshold,
+        ..Default::default()
+    }
+}
+
+/// Setup a list with the first users (`user1`, `user2`, ...).
+fn users(count: usize) -> Vec<UserName> {
+    (1..=count).map(|i| format!("user{i}")).collect()
+}
+
+/// Setup the votes cast by the first users: in favor first, then against and
+/// then abstain (i.e. `(2, 1, 0)` means `user1` and `user2` in favor and `user3`
+/// against).
+fn votes_cast(in_favor: usize, against: usize, abstain: usize) -> Vec<(UserName, VoteOption)> {
+    [
+        (in_favor, VoteOption::InFavor),
+        (against, VoteOption::Against),
+        (abstain, VoteOption::Abstain),
+    ]
+    .into_iter()
+    .flat_map(|(count, vote_option)| std::iter::repeat_n(vote_option, count))
+    .enumerate()
+    .map(|(i, vote_option)| (format!("user{}", i + 1), vote_option))
+    .collect()
+}
+
+/// Setup a profile using the votes cast as the pass threshold base.
+fn votes_cast_cfg(pass_threshold: f64, exclude_abstentions: Option<bool>) -> CfgProfile {
+    CfgProfile {
+        pass_threshold_base: Some(PassThresholdBase::VotesCast { exclude_abstentions }),
+        ..threshold_cfg(pass_threshold)
+    }
 }
