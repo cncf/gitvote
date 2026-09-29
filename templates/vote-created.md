@@ -39,4 +39,10 @@ You can cast your vote by reacting to `this` comment. The following reactions ar
 
 *Please note that voting for multiple options is not allowed and those votes won't be counted.*
 
-The vote will be open for `{{ duration }}`. It will pass if at least `{{ pass_threshold }}%` of the users with binding votes vote `In favor 👍`. Once it's closed, results will be published here as a new comment.
+The vote will be open for `{{ duration }}`.
+{%- if pass_threshold_base_votes_cast %} It will pass if at least `{{ pass_threshold }}%` of the binding votes cast are `In favor 👍`
+  {%- if exclude_abstentions %} (abstentions are recorded but not included in the percentage calculation).
+  {%- else %} (abstentions are included in the percentage calculation).
+  {%- endif %}
+{%- else %} It will pass if at least `{{ pass_threshold }}%` of the users with binding votes vote `In favor 👍`.
+{%- endif %} Once it's closed, results will be published here as a new comment.

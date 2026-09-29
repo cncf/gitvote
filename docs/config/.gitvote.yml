@@ -83,9 +83,55 @@ profiles:
     # Percentage of votes in favor required to pass the vote
     #
     # The percentage is calculated based on the number of votes in favor and the
-    # number of allowed voters (see allowed_voters field below for more details).
+    # pass threshold base, which is the number of allowed voters by default (see
+    # the pass_threshold_base and allowed_voters fields below for more details).
     # It must be greater than 0 and not greater than 100.
     pass_threshold: 50
+
+    # Pass threshold base (optional)
+    #
+    # Number the in favor and against percentages are calculated over, which is
+    # also used to decide if the vote passes. Only binding votes are counted.
+    #
+    #   - allowed_voters (default): all users with binding votes, so users who
+    #     do not vote count towards the percentage calculation too.
+    #
+    #   - votes_cast: binding votes cast (in favor, against and abstain).
+    #     Abstentions are included in the percentage calculation by default.
+    #     When `exclude_abstentions` is set to true, only votes in favor and
+    #     against are included. Abstentions are still displayed and recorded
+    #     as binding votes, though.
+    #
+    # If no votes are counted, the vote does not pass. Please note that there is
+    # no minimum participation required when using votes_cast, so a low turnout
+    # can decide a vote.
+    #
+    # Each profile sets this option independently (the value set in the default
+    # profile is not inherited by other profiles).
+    #
+    # pass_threshold_base: allowed_voters
+    #
+    # pass_threshold_base:
+    #   votes_cast: {}
+    #
+    # pass_threshold_base:
+    #   votes_cast:
+    #     exclude_abstentions: true
+    #
+    # More votes in favor than against
+    #
+    # To require more votes in favor than against (ignoring abstentions and users
+    # who do not vote), use votes_cast excluding abstentions with a pass
+    # threshold of 50.01. A tie does not pass with 50.01, but it would pass with
+    # 50. This is exact for up to 2,499 votes against. Comments will display
+    # `50.01%` as the passing threshold.
+    #
+    # pass_threshold: 50.01
+    # pass_threshold_base:
+    #   votes_cast:
+    #     exclude_abstentions: true
+    #
+    pass_threshold_base: allowed_voters
 
     # Allowed voters (optional)
     #
@@ -156,6 +202,12 @@ profiles:
     # The close on passing feature makes this possible. Open votes where this
     # feature has been enabled will be checked once daily and, if GitVote
     # detects that the vote has passed, it will automatically close it.
+    #
+    # Whatever the pass_threshold_base is set to, a vote is only closed early
+    # once the pass threshold is met over all allowed voters, so that votes from
+    # the users who have not voted yet cannot make it fail. When using
+    # votes_cast, this means that a vote that is currently passing may stay open
+    # until its duration ends.
     # 
     # close_on_passing: true
     #

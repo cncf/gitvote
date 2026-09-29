@@ -1,6 +1,6 @@
 ## Vote status
 
-So far `{{ "{:.2}"|format(results.in_favor_percentage) }}%` of the users with binding vote are in favor and `{{ "{:.2}"|format(results.against_percentage) }}%` are against (passing threshold: `{{ results.pass_threshold }}%`).
+In favor: `{{ "{:.2}"|format(results.in_favor_percentage) }}%` · Against: `{{ "{:.2}"|format(results.against_percentage) }}%` · Passing threshold: `{{ results.pass_threshold }}%`
 
 ### Summary
 

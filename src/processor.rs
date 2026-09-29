@@ -519,8 +519,9 @@ impl StatusChecker {
     }
 }
 
-/// Worker that periodically auto closes votes that have already passed. This
-/// only applies to votes with the `close_on_passing` feature enabled.
+/// Worker that periodically auto closes votes that have already passed over all
+/// the allowed voters. This only applies to votes with the `close_on_passing`
+/// feature enabled.
 struct VotesAutoCloser {
     db: DynDB,
     gh: DynGH,
@@ -546,8 +547,12 @@ impl VotesAutoCloser {
                             // Calculate vote results
                             match results::calculate(self.gh.clone(), owner, repo, vote).await {
                                 Ok(results) => {
-                                    // If the vote has already passed, update its ending timestamp
-                                    if results.passed
+                                    // Close the vote early (update its ending
+                                    // timestamp) only once it passes over all the
+                                    // allowed voters, so that further votes from
+                                    // pending voters cannot make it fail. A vote
+                                    // passing over the votes cast may stay open.
+                                    if results.passes_with_all_allowed_voters()
                                         && let Err(err) = self.db.update_vote_ends_at(vote_id).await
                                     {
                                         error!(?err, ?vote.vote_id, "error updating vote ends at");

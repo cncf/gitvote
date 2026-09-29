@@ -9,7 +9,7 @@ use tokio_postgres::{Row, types::Json};
 use uuid::Uuid;
 
 use crate::{
-    cfg_repo::CfgProfile,
+    cfg_repo::{CfgProfile, PassThresholdBase},
     github::{DynGH, UserName},
 };
 
@@ -117,6 +117,15 @@ pub(crate) struct VoteResults {
     pub pending_voters: Vec<UserName>,
 }
 
+impl VoteResults {
+    /// Check if the vote passes when calculated over all the allowed voters, so
+    /// that further votes from pending voters cannot make it fail (assuming the
+    /// votes already cast and the allowed voters do not change).
+    pub(crate) fn passes_with_all_allowed_voters(&self) -> bool {
+        threshold_reached(self.in_favor, self.pass_threshold, self.allowed_voters)
+    }
+}
+
 /// User's vote details.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct UserVote {
@@ -175,7 +184,8 @@ pub(crate) async fn calculate<'a>(
         );
     }
 
-    // Prepare results and return them
+    // Count binding votes per option and the number of binding and
+    // non-binding voters (only binding votes count towards the result)
     let (mut in_favor, mut against, mut abstain, mut binding, mut non_binding) = (0, 0, 0, 0, 0);
     for user_vote in votes.values() {
         if user_vote.binding {
@@ -189,27 +199,38 @@ pub(crate) async fn calculate<'a>(
             non_binding += 1;
         }
     }
+
+    // Select the base used to calculate the percentages and the pass threshold
+    let allowed_voters_count = allowed_voters.len() as i64;
+    let threshold_base = match vote.cfg.pass_threshold_base.clone().unwrap_or_default() {
+        PassThresholdBase::AllowedVoters => allowed_voters_count,
+        PassThresholdBase::VotesCast { exclude_abstentions } => {
+            if exclude_abstentions.unwrap_or(false) {
+                in_favor + against
+            } else {
+                binding
+            }
+        }
+    };
+
+    // Calculate the in favor and against percentages over the threshold base
     let mut in_favor_percentage = 0.0;
     let mut against_percentage = 0.0;
     #[allow(clippy::cast_precision_loss)]
-    if !allowed_voters.is_empty() {
-        in_favor_percentage = in_favor as f64 / allowed_voters.len() as f64 * 100.0;
-        against_percentage = against as f64 / allowed_voters.len() as f64 * 100.0;
+    if threshold_base > 0 {
+        in_favor_percentage = in_favor as f64 / threshold_base as f64 * 100.0;
+        against_percentage = against as f64 / threshold_base as f64 * 100.0;
     }
+
+    // Collect the allowed voters who have not voted yet
     let pending_voters: Vec<UserName> = allowed_voters
         .iter()
         .filter(|user| !votes.keys().any(|voter| voter.eq_ignore_ascii_case(user)))
         .cloned()
         .collect();
 
-    // Check if the vote passed, comparing without dividing so that votes in
-    // favor that match the pass threshold exactly are not lost to rounding
-    #[allow(clippy::cast_precision_loss)]
-    let passed = if allowed_voters.is_empty() {
-        in_favor_percentage >= vote.cfg.pass_threshold
-    } else {
-        in_favor as f64 * 100.0 >= vote.cfg.pass_threshold * allowed_voters.len() as f64
-    };
+    // Check if the vote passed
+    let passed = threshold_reached(in_favor, vote.cfg.pass_threshold, threshold_base);
 
     Ok(VoteResults {
         passed,
@@ -222,10 +243,17 @@ pub(crate) async fn calculate<'a>(
         not_voted: pending_voters.len() as i64,
         binding,
         non_binding,
-        allowed_voters: allowed_voters.len() as i64,
+        allowed_voters: allowed_voters_count,
         votes,
         pending_voters,
     })
+}
+
+/// Check if the votes in favor reach the pass threshold over the base provided,
+/// comparing without dividing so that exact matches are not lost to rounding.
+#[allow(clippy::cast_precision_loss)]
+fn threshold_reached(in_favor: i64, pass_threshold: f64, base: i64) -> bool {
+    base > 0 && in_favor as f64 * 100.0 >= pass_threshold * base as f64
 }
 
 #[cfg(test)]

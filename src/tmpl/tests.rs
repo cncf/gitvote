@@ -696,6 +696,63 @@ fn test_vote_created_users_only() {
 }
 
 #[test]
+fn test_vote_created_votes_cast() {
+    // Setup input and configuration
+    let input = CreateVoteInput::new(None, &Event::Issue(setup_test_issue_event()));
+    let cfg = CfgProfile {
+        duration: std::time::Duration::from_hours(24),
+        pass_threshold: 60.0,
+        pass_threshold_base: Some(PassThresholdBase::VotesCast {
+            exclude_abstentions: None,
+        }),
+        ..Default::default()
+    };
+
+    // Render template and check the output
+    let output = VoteCreated::new(&input, &cfg).render().unwrap();
+    check_golden_file("vote-created-votes-cast", &output);
+}
+
+#[test]
+fn test_vote_created_votes_cast_excluding_abstentions() {
+    // Setup input and configuration
+    let input = CreateVoteInput::new(None, &Event::Issue(setup_test_issue_event()));
+    let cfg = CfgProfile {
+        duration: std::time::Duration::from_hours(24),
+        pass_threshold: 50.01,
+        pass_threshold_base: Some(PassThresholdBase::VotesCast {
+            exclude_abstentions: Some(true),
+        }),
+        ..Default::default()
+    };
+
+    // Render template and check the output
+    let output = VoteCreated::new(&input, &cfg).render().unwrap();
+    check_golden_file("vote-created-votes-cast-excluding-abstentions", &output);
+}
+
+#[test]
+fn test_vote_created_votes_cast_omitted_exclude_abstentions_equals_false() {
+    // Setup input and render the template with the flag omitted and set to false
+    let input = CreateVoteInput::new(None, &Event::Issue(setup_test_issue_event()));
+    let outputs: Vec<String> = [None, Some(false)]
+        .into_iter()
+        .map(|exclude_abstentions| {
+            let cfg = CfgProfile {
+                duration: std::time::Duration::from_hours(24),
+                pass_threshold: 60.0,
+                pass_threshold_base: Some(PassThresholdBase::VotesCast { exclude_abstentions }),
+                ..Default::default()
+            };
+            VoteCreated::new(&input, &cfg).render().unwrap()
+        })
+        .collect();
+
+    // Check both outputs are identical
+    assert_eq!(outputs[0], outputs[1]);
+}
+
+#[test]
 fn test_vote_created_with_teams_and_users() {
     // Setup input and configuration
     let mut event = setup_test_issue_event();
