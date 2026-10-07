@@ -40,7 +40,8 @@ You can cast your vote by reacting to `this` comment. The following reactions ar
 *Please note that voting for multiple options is not allowed and those votes won't be counted.*
 
 The vote will be open for `{{ duration }}`.
-{%- if pass_threshold_base_votes_cast %} It will pass if at least `{{ pass_threshold }}%` of the binding votes cast are `In favor 👍`
+{%- if let Some((minimum_approvals, maximum_rejections)) = vote_count_thresholds %} It will pass if at least `{{ minimum_approvals }}` users with binding votes vote `In favor 👍` and at most `{{ maximum_rejections }}` vote `Against 👎`.
+{%- else if pass_threshold_base_votes_cast %} It will pass if at least `{{ pass_threshold }}%` of the binding votes cast are `In favor 👍`
   {%- if exclude_abstentions %} (abstentions are recorded but not included in the percentage calculation).
   {%- else %} (abstentions are included in the percentage calculation).
   {%- endif %}

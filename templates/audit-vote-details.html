@@ -53,7 +53,7 @@
             {% else %}
                 <span class="badge fail">Failed</span>
             {% endif %}
-            <span class="muted passing-threshold">Passing threshold: <span class="badge">{{ results.pass_threshold }}<span class="percentage">%</span></span></span>
+            {% if let Some((minimum_approvals, maximum_rejections)) = results.vote_count_thresholds() %}<span class="muted passing-threshold">Required: <span class="badge">{{ minimum_approvals }} approvals, at most {{ maximum_rejections }} rejections</span></span>{% else if let Some(pass_threshold) = results.percentage_threshold() %}<span class="muted passing-threshold">Passing threshold: <span class="badge">{{ pass_threshold }}<span class="percentage">%</span></span></span>{% endif %}
         </div>
         <div class="progress" aria-hidden="true">
             <!-- djlint:off H008 -->

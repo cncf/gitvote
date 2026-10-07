@@ -177,6 +177,7 @@ pub(crate) fn setup_test_vote_results() -> VoteResults {
         passed: true,
         in_favor_percentage: 100.0,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 1,
         against: 0,
         against_percentage: 0.0,

@@ -78,20 +78,41 @@ profiles:
     #
     duration: 5m
 
-    # Pass threshold (required)
+    # Pass rule (required)
     #
-    # Percentage of votes in favor required to pass the vote
+    # A profile must define exactly one of `pass_threshold` or `pass_rule`.
+    #
+    # `pass_threshold` is the percentage of votes in favor required to pass.
     #
     # The percentage is calculated based on the number of votes in favor and the
     # pass threshold base, which is the number of allowed voters by default (see
     # the pass_threshold_base and allowed_voters fields below for more details).
     # It must be greater than 0 and not greater than 100.
     pass_threshold: 50
+    #
+    # `pass_threshold` is the legacy format and remains the default percentage
+    # rule when `pass_rule` is not provided. The equivalent typed rule is:
+    #
+    # pass_rule:
+    #   type: percentage
+    #   threshold: 50
+    #
+    # Alternatively, the `vote_count` rule passes a vote based on the number of
+    # binding votes cast. The example below requires at least three approvals
+    # and no rejections. Abstentions and users who have not voted do not affect
+    # either count.
+    #
+    # pass_rule:
+    #   type: vote_count
+    #   minimum_approvals: 3
+    #   maximum_rejections: 0
 
     # Pass threshold base (optional)
     #
     # Number the in favor and against percentages are calculated over, which is
     # also used to decide if the vote passes. Only binding votes are counted.
+    # This option applies to percentage rules only; vote_count rules use the
+    # configured approval and rejection counts directly.
     #
     #   - allowed_voters (default): all users with binding votes, so users who
     #     do not vote count towards the percentage calculation too.
@@ -143,6 +164,10 @@ profiles:
     # are direct collaborators, organization members with access through team
     # memberships, organization members with access through default organization
     # permissions, and organization owners.
+    # When the `vote_count` pass rule is used, only binding votes from these
+    # allowed users count toward `minimum_approvals` and `maximum_rejections`.
+    # This makes it possible to require, for example, three maintainer approvals
+    # and no maintainer rejections by listing the maintainers team below.
     #
     # By default, teams' members with the maintainer role are allowed to vote
     # as well. By using the `exclude_team_maintainers` option, it's possible to
@@ -208,6 +233,10 @@ profiles:
     # the users who have not voted yet cannot make it fail. When using
     # votes_cast, this means that a vote that is currently passing may stay open
     # until its duration ends.
+    #
+    # With a vote_count rule, a vote is only closed early once the minimum
+    # approvals have been reached and votes from all users who have not voted
+    # yet could not exceed maximum_rejections.
     # 
     # close_on_passing: true
     #

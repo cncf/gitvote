@@ -9,7 +9,7 @@ use tokio_postgres::{Row, types::Json};
 use uuid::Uuid;
 
 use crate::{
-    cfg_repo::{CfgProfile, PassThresholdBase},
+    cfg_repo::{CfgProfile, PassRule, PassThresholdBase},
     github::{DynGH, UserName},
 };
 
@@ -105,6 +105,8 @@ pub(crate) struct VoteResults {
     pub passed: bool,
     pub in_favor_percentage: f64,
     pub pass_threshold: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass_rule: Option<PassRule>,
     pub in_favor: i64,
     pub against: i64,
     pub against_percentage: f64,
@@ -122,7 +124,31 @@ impl VoteResults {
     /// that further votes from pending voters cannot make it fail (assuming the
     /// votes already cast and the allowed voters do not change).
     pub(crate) fn passes_with_all_allowed_voters(&self) -> bool {
-        threshold_reached(self.in_favor, self.pass_threshold, self.allowed_voters)
+        match &self.pass_rule {
+            Some(PassRule::VoteCount {
+                minimum_approvals,
+                maximum_rejections,
+            }) => {
+                self.in_favor as u64 >= *minimum_approvals
+                    && (self.against + self.not_voted) as u64 <= *maximum_rejections
+            }
+            Some(PassRule::Percentage { threshold }) => {
+                threshold_reached(self.in_favor, *threshold, self.allowed_voters)
+            }
+            None => threshold_reached(self.in_favor, self.pass_threshold, self.allowed_voters),
+        }
+    }
+
+    pub(crate) fn percentage_threshold(&self) -> Option<f64> {
+        match &self.pass_rule {
+            Some(PassRule::Percentage { threshold }) => Some(*threshold),
+            Some(PassRule::VoteCount { .. }) => None,
+            None => Some(self.pass_threshold),
+        }
+    }
+
+    pub(crate) fn vote_count_thresholds(&self) -> Option<(u64, u64)> {
+        self.pass_rule.as_ref().and_then(PassRule::vote_count_thresholds)
     }
 }
 
@@ -230,12 +256,20 @@ pub(crate) async fn calculate<'a>(
         .collect();
 
     // Check if the vote passed
-    let passed = threshold_reached(in_favor, vote.cfg.pass_threshold, threshold_base);
+    let passed = match &vote.cfg.pass_rule {
+        Some(PassRule::Percentage { threshold }) => threshold_reached(in_favor, *threshold, threshold_base),
+        Some(PassRule::VoteCount {
+            minimum_approvals,
+            maximum_rejections,
+        }) => in_favor as u64 >= *minimum_approvals && against as u64 <= *maximum_rejections,
+        None => threshold_reached(in_favor, vote.cfg.pass_threshold, threshold_base),
+    };
 
     Ok(VoteResults {
         passed,
         in_favor_percentage,
         pass_threshold: vote.cfg.pass_threshold,
+        pass_rule: vote.cfg.pass_rule.clone(),
         in_favor,
         against,
         against_percentage,

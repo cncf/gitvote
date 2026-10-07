@@ -226,6 +226,7 @@ test_calculate!(
             passed: true,
             in_favor_percentage: 50.0,
             pass_threshold: 50.0,
+            pass_rule: None,
             in_favor: 1,
             against: 0,
             against_percentage: 0.0,
@@ -406,6 +407,7 @@ test_calculate!(
             passed: false,
             in_favor_percentage: 25.0,
             pass_threshold: 50.0,
+            pass_rule: None,
             in_favor: 1,
             against: 1,
             against_percentage: 25.0,
@@ -743,6 +745,7 @@ fn vote_results_deserialize_stored_json() {
             passed: false,
             in_favor_percentage: 25.0,
             pass_threshold: 50.0,
+            pass_rule: None,
             in_favor: 1,
             against: 1,
             against_percentage: 25.0,
@@ -819,6 +822,48 @@ fn vote_results_passes_with_all_allowed_voters() {
             "in favor: {in_favor}, allowed voters: {allowed_voters}, pass threshold: {pass_threshold}"
         );
     }
+}
+
+#[tokio::test]
+async fn calculate_vote_count_rule_requires_approvals_and_limits_rejections() {
+    let cfg = CfgProfile {
+        pass_threshold: 0.0,
+        pass_rule: Some(PassRule::VoteCount {
+            minimum_approvals: 3,
+            maximum_rejections: 0,
+        }),
+        ..setup_test_vote().cfg
+    };
+
+    let passed = calculate_results(cfg.clone(), reactions(&votes_cast(3, 0, 0)), users(4)).await;
+    assert!(passed.passed);
+    assert!(!passed.passes_with_all_allowed_voters());
+
+    let failed = calculate_results(cfg, reactions(&votes_cast(3, 1, 0)), users(4)).await;
+    assert!(!failed.passed);
+}
+
+#[test]
+fn vote_count_rule_only_closes_early_when_pending_votes_cannot_make_it_fail() {
+    let pass_rule = Some(PassRule::VoteCount {
+        minimum_approvals: 3,
+        maximum_rejections: 1,
+    });
+    let safe = VoteResults {
+        in_favor: 3,
+        against: 1,
+        not_voted: 0,
+        pass_rule: pass_rule.clone(),
+        ..setup_test_vote_results()
+    };
+    assert!(safe.passes_with_all_allowed_voters());
+
+    let pending_rejection_could_fail = VoteResults {
+        not_voted: 1,
+        pass_rule,
+        ..safe
+    };
+    assert!(!pending_rejection_could_fail.passes_with_all_allowed_voters());
 }
 
 #[test]
@@ -928,6 +973,7 @@ fn expected_results(
         passed,
         in_favor_percentage,
         pass_threshold,
+        pass_rule: None,
         in_favor: count_binding(Some(VoteOption::InFavor)),
         against: count_binding(Some(VoteOption::Against)),
         against_percentage,

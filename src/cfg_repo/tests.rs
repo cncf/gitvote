@@ -213,6 +213,30 @@ fn cfg_profile_deserialize_pass_threshold_base_invalid() {
 }
 
 #[test]
+fn cfg_profile_deserialize_pass_rules() {
+    let percentage: CfgProfile =
+        serde_yaml::from_str("duration: 5m\npass_rule:\n  type: percentage\n  threshold: 50\n").unwrap();
+    assert_eq!(
+        percentage.pass_rule,
+        Some(PassRule::Percentage { threshold: 50.0 })
+    );
+    percentage.validate(OWNER_IS_ORG).unwrap();
+
+    let vote_count: CfgProfile = serde_yaml::from_str(
+        "duration: 5m\npass_rule:\n  type: vote_count\n  minimum_approvals: 3\n  maximum_rejections: 0\n",
+    )
+    .unwrap();
+    assert_eq!(
+        vote_count.pass_rule,
+        Some(PassRule::VoteCount {
+            minimum_approvals: 3,
+            maximum_rejections: 0,
+        })
+    );
+    vote_count.validate(OWNER_IS_ORG).unwrap();
+}
+
+#[test]
 fn cfg_profile_deserialize_stored_json() {
     // Setup JSON as stored in the vote cfg column
     let stored = json!({
@@ -240,6 +264,7 @@ fn cfg_profile_deserialize_stored_json() {
         CfgProfile {
             duration: Duration::from_secs(2_630_016 + 2 * 86_400 + 3 * 3_600),
             pass_threshold: 66.5,
+            pass_rule: None,
             allowed_voters: Some(AllowedVoters {
                 teams: Some(vec![TEAM1.to_string()]),
                 users: Some(vec![USER1.to_string()]),
@@ -331,6 +356,7 @@ fn cfg_profile_serialize_full() {
     let cfg = CfgProfile {
         duration: Duration::from_hours(49),
         pass_threshold: 75.0,
+        pass_rule: None,
         allowed_voters: Some(AllowedVoters {
             teams: Some(vec![TEAM1.to_string()]),
             users: Some(vec![USER1.to_string()]),
@@ -416,6 +442,40 @@ fn cfg_profile_validate_invalid_pass_threshold() {
             "pass threshold: {pass_threshold}"
         );
     }
+}
+
+#[test]
+fn cfg_profile_validate_pass_rule_conflicts_and_limits() {
+    let conflicting = CfgProfile {
+        pass_threshold: 50.0,
+        pass_rule: Some(PassRule::Percentage { threshold: 50.0 }),
+        ..Default::default()
+    };
+    assert_eq!(
+        conflicting.validate(OWNER_IS_ORG).unwrap_err().to_string(),
+        ERR_PASS_RULES_MUTUALLY_EXCLUSIVE
+    );
+
+    let invalid_percentage = CfgProfile {
+        pass_rule: Some(PassRule::Percentage { threshold: 0.0 }),
+        ..Default::default()
+    };
+    assert_eq!(
+        invalid_percentage.validate(OWNER_IS_ORG).unwrap_err().to_string(),
+        ERR_INVALID_PASS_THRESHOLD
+    );
+
+    let invalid_vote_count = CfgProfile {
+        pass_rule: Some(PassRule::VoteCount {
+            minimum_approvals: 0,
+            maximum_rejections: 0,
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        invalid_vote_count.validate(OWNER_IS_ORG).unwrap_err().to_string(),
+        ERR_MINIMUM_APPROVALS_INVALID
+    );
 }
 
 #[test]
@@ -545,6 +605,7 @@ profiles:
                 CfgProfile {
                     duration: Duration::from_hours(14 * 24),
                     pass_threshold: 66.6,
+                    pass_rule: None,
                     allowed_voters: Some(AllowedVoters {
                         teams: Some(vec![TEAM1.to_string()]),
                         users: Some(vec![USER1.to_string()]),

@@ -20,6 +20,8 @@ const ERR_INVALID_PASS_THRESHOLD: &str = "pass threshold must be greater than 0 
 /// Error message used when teams are listed in the allowed voters section on a
 /// repository that does not belong to an organization.
 const ERR_TEAMS_NOT_ALLOWED: &str = "teams in allowed voters can only be used in organizations";
+const ERR_PASS_RULES_MUTUALLY_EXCLUSIVE: &str = "pass_threshold and pass_rule cannot be used together";
+const ERR_MINIMUM_APPROVALS_INVALID: &str = "minimum_approvals must be greater than zero";
 
 /// Type alias to represent a profile name.
 type ProfileName = String;
@@ -93,7 +95,10 @@ impl AutomationRule {
 pub(crate) struct CfgProfile {
     #[serde(with = "humantime_serde")]
     pub duration: Duration,
+    #[serde(default)]
     pub pass_threshold: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pass_rule: Option<PassRule>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_voters: Option<AllowedVoters>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -138,10 +143,24 @@ impl CfgProfile {
 
     /// Check if the configuration profile is valid.
     fn validate(&self, is_org: bool) -> Result<()> {
-        // The pass threshold must be a percentage in the (0, 100] range. Written
-        // as a negated range check so that NaN values are rejected as well.
-        if !(self.pass_threshold > 0.0 && self.pass_threshold <= 100.0) {
-            bail!(ERR_INVALID_PASS_THRESHOLD);
+        if self.pass_rule.is_some() && self.pass_threshold != 0.0 {
+            bail!(ERR_PASS_RULES_MUTUALLY_EXCLUSIVE);
+        }
+
+        match &self.pass_rule {
+            Some(PassRule::VoteCount {
+                minimum_approvals: 0, ..
+            }) => bail!(ERR_MINIMUM_APPROVALS_INVALID),
+            Some(PassRule::VoteCount { .. }) => {}
+            pass_rule => {
+                let percentage_threshold = pass_rule
+                    .as_ref()
+                    .and_then(PassRule::percentage_threshold)
+                    .unwrap_or(self.pass_threshold);
+                if !(percentage_threshold > 0.0 && percentage_threshold <= 100.0) {
+                    bail!(ERR_INVALID_PASS_THRESHOLD);
+                }
+            }
         }
 
         // Only repositories that belong to some organization can use teams in
@@ -155,6 +174,38 @@ impl CfgProfile {
         }
 
         Ok(())
+    }
+}
+
+/// Rule used to determine whether a vote passes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum PassRule {
+    Percentage {
+        threshold: f64,
+    },
+    VoteCount {
+        minimum_approvals: u64,
+        maximum_rejections: u64,
+    },
+}
+
+impl PassRule {
+    pub(crate) fn percentage_threshold(&self) -> Option<f64> {
+        match self {
+            Self::Percentage { threshold } => Some(*threshold),
+            Self::VoteCount { .. } => None,
+        }
+    }
+
+    pub(crate) fn vote_count_thresholds(&self) -> Option<(u64, u64)> {
+        match self {
+            Self::Percentage { .. } => None,
+            Self::VoteCount {
+                minimum_approvals,
+                maximum_rejections,
+            } => Some((*minimum_approvals, *maximum_rejections)),
+        }
     }
 }
 

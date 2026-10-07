@@ -7,7 +7,7 @@ use serde::Serialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
-    cfg_repo::{CfgProfile, PassThresholdBase},
+    cfg_repo::{CfgProfile, PassRule, PassThresholdBase},
     cmd::CreateVoteInput,
     github::{TeamSlug, UserName},
     results::{Vote, VoteOption, VoteResults},
@@ -238,6 +238,7 @@ pub(crate) struct VoteCreated<'a> {
     issue_number: i64,
     duration: String,
     pass_threshold: f64,
+    vote_count_thresholds: Option<(u64, u64)>,
     pass_threshold_base_votes_cast: bool,
     exclude_abstentions: bool,
     org: &'a str,
@@ -273,13 +274,20 @@ impl<'a> VoteCreated<'a> {
                     (true, exclude_abstentions.unwrap_or(false))
                 }
             };
+        let pass_threshold = cfg
+            .pass_rule
+            .as_ref()
+            .and_then(PassRule::percentage_threshold)
+            .unwrap_or(cfg.pass_threshold);
+        let vote_count_thresholds = cfg.pass_rule.as_ref().and_then(PassRule::vote_count_thresholds);
 
         Self {
             creator: &input.created_by,
             issue_title: &input.issue_title,
             issue_number: input.issue_number,
             duration: humantime::format_duration(cfg.duration).to_string(),
-            pass_threshold: cfg.pass_threshold,
+            pass_threshold,
+            vote_count_thresholds,
             pass_threshold_base_votes_cast,
             exclude_abstentions,
             org,

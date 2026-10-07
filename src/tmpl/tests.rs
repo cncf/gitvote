@@ -50,6 +50,7 @@ fn test_audit_vote_details_closed_pr_passed() {
         passed: true,
         in_favor_percentage: 50.0,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 2,
         against: 1,
         against_percentage: 25.0,
@@ -87,6 +88,7 @@ fn test_audit_vote_details_open_issue_without_title() {
         passed: false,
         in_favor_percentage: 0.0,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 0,
         against: 1,
         against_percentage: 50.0,
@@ -428,6 +430,7 @@ fn test_vote_closed_announcement() {
         passed: true,
         in_favor_percentage: 66.67,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 2,
         against: 0,
         against_percentage: 0.0,
@@ -496,6 +499,7 @@ fn test_vote_closed_failed() {
         passed: false,
         in_favor_percentage: 40.0,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 2,
         against: 3,
         against_percentage: 60.0,
@@ -521,6 +525,7 @@ fn test_vote_closed_no_votes() {
         passed: false,
         in_favor_percentage: 0.0,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 0,
         against: 0,
         against_percentage: 0.0,
@@ -545,6 +550,7 @@ fn test_vote_closed_non_binding_only() {
         passed: false,
         in_favor_percentage: 0.0,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 0,
         against: 0,
         against_percentage: 0.0,
@@ -641,6 +647,7 @@ fn test_vote_closed_passed() {
         passed: true,
         in_favor_percentage: 80.0,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 4,
         against: 1,
         against_percentage: 20.0,
@@ -779,6 +786,25 @@ fn test_vote_created_with_teams_and_users() {
 }
 
 #[test]
+fn test_vote_created_with_vote_count_pass_rule() {
+    let event = Event::Issue(setup_test_issue_event());
+    let input = CreateVoteInput::new(None, &event);
+    let cfg = CfgProfile {
+        duration: std::time::Duration::from_hours(24),
+        pass_rule: Some(PassRule::VoteCount {
+            minimum_approvals: 3,
+            maximum_rejections: 0,
+        }),
+        ..Default::default()
+    };
+
+    let output = VoteCreated::new(&input, &cfg).render().unwrap();
+    assert!(output.contains(
+        "at least `3` users with binding votes vote `In favor 👍` and at most `0` vote `Against 👎`"
+    ));
+}
+
+#[test]
 fn test_vote_in_progress_issue() {
     // Render template and check the output
     let tmpl = VoteInProgress::new("testuser", false);
@@ -836,6 +862,7 @@ fn test_vote_status_in_progress() {
         passed: false,
         in_favor_percentage: 33.33,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 1,
         against: 0,
         against_percentage: 0.0,
@@ -920,6 +947,7 @@ fn setup_test_results_with_many_non_binding_votes() -> VoteResults {
         passed: true,
         in_favor_percentage: 100.0,
         pass_threshold: 50.0,
+        pass_rule: None,
         in_favor: 1,
         against: 0,
         against_percentage: 0.0,

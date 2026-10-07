@@ -21,3 +21,13 @@ profiles:
       users:
         - user1
         - user2
+
+  profile2:
+    duration: 10m
+    pass_rule:
+      type: vote_count
+      minimum_approvals: 3
+      maximum_rejections: 0
+    allowed_voters:
+      teams:
+        - team1

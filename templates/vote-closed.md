@@ -3,7 +3,7 @@
 
 The vote {% if results.passed %}**passed**! 🎉{% else %}**did not pass**.{% endif %}
 
-In favor: `{{ "{:.2}"|format(results.in_favor_percentage) }}%` · Against: `{{ "{:.2}"|format(results.against_percentage) }}%` · Passing threshold: `{{ results.pass_threshold }}%`
+In favor: `{{ "{:.2}"|format(results.in_favor_percentage) }}%` · Against: `{{ "{:.2}"|format(results.against_percentage) }}%`{% if let Some((minimum_approvals, maximum_rejections)) = results.vote_count_thresholds() %} · Required: at least `{{ minimum_approvals }}` in favor and at most `{{ maximum_rejections }}` against{% else if let Some(pass_threshold) = results.percentage_threshold() %} · Passing threshold: `{{ pass_threshold }}%`{% endif %}
 
 ### Summary
 
