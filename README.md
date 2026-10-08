@@ -34,7 +34,7 @@ The command **must** be on a line by itself. Please note that GitVote only detec
 
 ![create-vote](docs/screenshots/create-vote.png)
 
-Alternatively, if you have setup multiple configuration profiles, you can also start votes using any of them with the command `/vote-PROFILE`.
+Alternatively, if you have setup multiple configuration profiles, you can also start votes using any of them with the command `/vote-PROFILE`. The profile name can contain letters, digits, hyphens and underscores.
 
 > [!NOTE]
 > Only repositories collaborators can create votes. For organization-owned repositories, the list of collaborators includes outside collaborators, organization members that are direct collaborators, organization members with access through team memberships, organization members with access through default organization permissions, and organization owners.

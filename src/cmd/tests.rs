@@ -583,6 +583,23 @@ fn manual_command_from_issue_comment_event_check_vote_cmd() {
 }
 
 #[test]
+fn manual_command_from_issue_comment_event_profile_with_dash_and_underscore() {
+    for profile in ["supply-chain-removal", "my_profile", "my-profile_1"] {
+        // Setup event
+        let mut event = setup_test_issue_comment_event();
+        event.action = IssueCommentEventAction::Created;
+        event.comment.body = Some(format!("/{CMD_CREATE_VOTE}-{profile}"));
+        let event = Event::IssueComment(event);
+
+        // Run and check the manual command is returned with the full profile
+        assert_eq!(
+            Command::from_event_manual(&event),
+            Some(Command::CreateVote(CreateVoteInput::new(Some(profile), &event)))
+        );
+    }
+}
+
+#[test]
 fn manual_command_from_issue_comment_event_cmd_in_issue_body_is_ignored() {
     // Setup event with command only in issue body
     let mut event = setup_test_issue_comment_event();

@@ -21,7 +21,7 @@ const CMD_CHECK_VOTE: &str = "check-vote";
 
 /// Regex used to detect commands in issues/prs comments.
 static CMD: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^/(vote|cancel-vote|check-vote)-?([a-zA-Z0-9]*)\s*$").expect("invalid CMD regexp")
+    Regex::new(r"(?m)^/(vote|cancel-vote|check-vote)-?([a-zA-Z0-9_-]*)\s*$").expect("invalid CMD regexp")
 });
 
 /// Represents a command to be executed, usually created from a GitHub event.

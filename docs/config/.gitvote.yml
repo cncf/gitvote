@@ -252,6 +252,8 @@ profiles:
   # different profile you can use the command /vote-PROFILE. In the case below,
   # the command would be /vote-profile1
   #
+  # Profile names can contain letters, digits, hyphens and underscores.
+  #
   # Please note that each profile must contain all required fields. The default
   # profile is used when using the /vote command, but its values are not used as
   # default values when they are not provided on other profiles.
