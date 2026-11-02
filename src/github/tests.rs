@@ -289,7 +289,7 @@ async fn gh_api_create_check_run_pr_without_head() {
 
     // Check the error returned and that no check run was created
     assert_eq!(err.to_string(), "pull request response missing head");
-    assert!(api.requests(&Method::POST, "/repos/org/repo/check-runs").is_empty());
+    assert_eq!(api.requests(&Method::POST, "/repos/org/repo/check-runs"), vec![]);
 }
 
 #[tokio::test]
@@ -548,7 +548,10 @@ async fn gh_api_get_allowed_voters_ignores_teams_without_org() {
 
     // Check teams were not requested
     assert_eq!(allowed_voters, vec![USER2.to_string()]);
-    assert!(api.requests(&Method::GET, "/orgs/owner/teams/team1/members").is_empty());
+    assert_eq!(
+        api.requests(&Method::GET, "/orgs/owner/teams/team1/members"),
+        vec![]
+    );
 }
 
 #[tokio::test]
@@ -663,7 +666,10 @@ async fn gh_api_get_config_file_from_github_directory() {
         gh.get_config_file(INST_ID, ORG, REPO).await,
         Some("github-dir".to_string())
     );
-    assert!(api.requests(&Method::GET, "/repos/org/.github/contents/.gitvote.yml").is_empty());
+    assert_eq!(
+        api.requests(&Method::GET, "/repos/org/.github/contents/.gitvote.yml"),
+        vec![]
+    );
 }
 
 #[tokio::test]
@@ -708,7 +714,10 @@ async fn gh_api_get_config_file_from_repository_root() {
         gh.get_config_file(INST_ID, ORG, REPO).await,
         Some("repo-root".to_string())
     );
-    assert!(api.requests(&Method::GET, "/repos/org/repo/contents/.github/.gitvote.yml").is_empty());
+    assert_eq!(
+        api.requests(&Method::GET, "/repos/org/repo/contents/.github/.gitvote.yml"),
+        vec![]
+    );
 }
 
 #[tokio::test]

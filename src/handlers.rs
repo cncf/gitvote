@@ -247,7 +247,7 @@ async fn event(
 #[cfg_attr(
     not(test),
     cached(
-        ttl = 900, // 15 minutes
+        ttl_secs = 900, // 15 minutes
         key = "String",
         convert = r#"{ repository_full_name.clone() }"#,
         sync_writes = "by_key"
