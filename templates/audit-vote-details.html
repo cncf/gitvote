@@ -42,89 +42,14 @@
         </div>
     </div>
 </section>
-<!-- Vote results data -->
-<section>
-    <h3>Results</h3>
-    <div class="box">
-        <div class="results-line">
-            <span class="muted-700">In favor: <span class="badge">{{ "{:.0}"|format(results.in_favor_percentage) }}<span class="percentage">%</span></span></span>
-            {% if results.passed %}
-                <span class="badge pass">Passed</span>
-            {% else %}
-                <span class="badge fail">Failed</span>
-            {% endif %}
-            <span class="muted passing-threshold">Passing threshold: <span class="badge">{{ results.pass_threshold }}<span class="percentage">%</span></span></span>
+{% if let Some(results) = results -%}
+    {% include "audit-vote-results.html" -%}
+{% else -%}
+    <!-- Vote results not available -->
+    <section>
+        <h3>Results</h3>
+        <div class="box">
+            <p class="muted">Results are not available: the vote comment was deleted before the vote closed.</p>
         </div>
-        <div class="progress" aria-hidden="true">
-            <!-- djlint:off H008 -->
-            <div class="bar {% if results.passed -%}passed{% else -%}failed{% endif -%}"
-                 style='width:{{ "{:.2}"|format(results.in_favor_percentage) }}%'>
-            </div>
-            <!-- djlint:on H008 -->
-        </div>
-    </div>
-</section>
-<section>
-    <h3>Summary</h3>
-    <div class="summary">
-        <div class="stat">
-            <div class="label">In favor</div>
-            <div class="value">{{ results.in_favor }}</div>
-        </div>
-        <div class="stat">
-            <div class="label">Against</div>
-            <div class="value">{{ results.against }}</div>
-        </div>
-        <div class="stat">
-            <div class="label">Abstain</div>
-            <div class="value">{{ results.abstain }}</div>
-        </div>
-        <div class="stat">
-            <div class="label">Not voted</div>
-            <div class="value">{{ results.not_voted }}</div>
-        </div>
-    </div>
-</section>
-<section class="votes">
-    <h3>Binding votes</h3>
-    <div class="table-wrap">
-        <!-- Vote breakdown table -->
-        <div class="modal-table">
-            <table aria-label="Binding votes table">
-                <thead>
-                    <tr>
-                        <th>USER</th>
-                        <th>VOTE</th>
-                        <th class="cell-date">DATE</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for (user, user_vote) in results.votes -%}
-                        {% if user_vote.binding %}
-                            <tr>
-                                <td>@{{ user }}</td>
-                                <td>
-                                    <span class="vote-chip {% match user_vote.vote_option -%}{% when crate::results::VoteOption::InFavor %}favor{% when crate::results::VoteOption::Against %}against{% when crate::results::VoteOption::Abstain %}abstain{% endmatch %}">{{ user_vote.vote_option }}</span>
-                                </td>
-                                <td class="muted-700 cell-date">{{ user_vote.timestamp }}</td>
-                            </tr>
-                        {% endif %}
-                    {% endfor -%}
-                    {% if !results.pending_voters.is_empty() -%}
-                        {% for user in results.pending_voters -%}
-                            <tr>
-                                <td>@{{ user }}</td>
-                                <td>
-                                    <span class="vote-chip not-voted">Not voted</span>
-                                </td>
-                                <td class="muted-700 cell-date"></td>
-                            </tr>
-                        {% endfor -%}
-                    {% endif %}
-                </tbody>
-            </table>
-        </div>
-        <!-- /Vote breakdown table -->
-    </div>
-</section>
-<!-- /Vote results data -->
+    </section>
+{% endif -%}

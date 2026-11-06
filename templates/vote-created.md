@@ -1,6 +1,6 @@
 ## Vote created
 
-**@{{ creator }}** has called for a vote on `{{ issue_title }}` (#{{ issue_number }}).
+**@{{ creator }}** has called for a vote on {{ issue_title|code_span }} (#{{ issue_number }}).
 
 {%- if !teams.is_empty() || !users.is_empty() %}
   {% if !teams.is_empty() ~%}

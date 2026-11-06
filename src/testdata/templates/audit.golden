@@ -1279,7 +1279,7 @@
                         <!-- Vote detail modal -->
                         
                             
-                                <!-- Modal for open vote (in progress, details loaded via htmx) -->
+                                <!-- Modal for vote without results (details loaded via htmx) -->
                                 <div class="overlay" id="modal-00000000-0000-0000-0000-000000000002" aria-hidden="true">
                                     <div class="modal" role="dialog" aria-modal="true">
                                         <div class="header">

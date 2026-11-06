@@ -1,7 +1,7 @@
 # Build tern
 FROM golang:1.27.3-alpine3.24 AS tern
 RUN apk --no-cache add git
-RUN go install github.com/jackc/tern@latest
+RUN go install github.com/jackc/tern/v2@v2.4.3
 
 # Build final image
 FROM alpine:3.24.4
