@@ -59,14 +59,18 @@ cannot hold every whole number past it, so the value read may differ from the on
 written: larger IDs must be quoted. Strings are accepted only in decimal without leading
 zeros, as helm would read 0123 as 83, and within the int64 range the service uses. An
 unquoted 0123 in a values file reaches the chart as 83 already, so it cannot be refused.
+Helm versions built before Go 1.18 evaluate every argument of and, so the float checks
+are nested to run on floats only.
 */}}
 {{- define "chart.githubAppID" -}}
 {{- $appID := .Values.gitvote.github.appID -}}
 {{- $text := "" -}}
 {{- if kindIs "int64" $appID -}}
 {{- $text = toString $appID -}}
-{{- else if and (kindIs "float64" $appID) (lt $appID 9007199254740992.0) (eq (float64 (int64 $appID)) $appID) -}}
+{{- else if kindIs "float64" $appID -}}
+{{- if and (lt $appID 9007199254740992.0) (eq (float64 (int64 $appID)) $appID) -}}
 {{- $text = toString (int64 $appID) -}}
+{{- end -}}
 {{- else if kindIs "string" $appID -}}
 {{- $text = $appID -}}
 {{- end -}}
