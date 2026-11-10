@@ -1145,7 +1145,7 @@
                                                                         {% else -%}
                                                                             <span class="badge fail">Failed</span>
                                                                         {% endif -%}
-                                                                    {% else %}
+                                                                    {% else if !vote.closed %}
                                                                         <span class="badge pending">Pending</span>
                                                                     {% endif %}
                                                                 </div>
@@ -1175,7 +1175,7 @@
                                                                     {% else %}
                                                                         <span class="badge fail">Failed</span>
                                                                     {% endif %}
-                                                                {% else %}
+                                                                {% else if !vote.closed %}
                                                                     <span class="badge">Pending</span>
                                                                 {% endif %}
                                                             </td>
@@ -1259,6 +1259,7 @@
                                             <button class="close-x" data-modal-close aria-label="Close modal">✕</button>
                                         </div>
                                         <div class="modal-content">
+                                            {% let results = Some(results) -%}
                                             {% include "audit-vote-details.html" %}
                                         </div>
                                         <div class="footer">
@@ -1267,7 +1268,7 @@
                                     </div>
                                 </div>
                             {% else %}
-                                <!-- Modal for open vote (in progress, details loaded via htmx) -->
+                                <!-- Modal for vote without results (details loaded via htmx) -->
                                 <div class="overlay" id="modal-{{ vote.vote_id }}" aria-hidden="true">
                                     <div class="modal" role="dialog" aria-modal="true">
                                         <div class="header">

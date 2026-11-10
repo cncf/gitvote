@@ -33,12 +33,19 @@ audit:
 #
 # Create votes automatically on PRs when any of the files affected by the PR
 # match any of the patterns provided. Patterns must follow the gitignore
-# format (https://git-scm.com/docs/gitignore#_pattern_format).
+# format (https://git-scm.com/docs/gitignore#_pattern_format), so a pattern
+# that matches a directory (i.e. docs/) matches all the files below it too.
 #
 # Each automation rule must include a list of patterns and the profile to use
 # when creating the vote. This allows creating votes automatically using the
 # desired configuration based on the patterns matched. Rules are processed in
 # the order provided, and the first match wins.
+#
+# Please note that only repository collaborators can create votes, and this
+# also applies to automatic votes. The vote is created on behalf of the user
+# who opens the PR, so when that user is not a collaborator no vote is created
+# and GitVote posts a comment saying so. In that case, a collaborator can start
+# the vote by calling the /vote command.
 #
 # automation:
 #   enabled: true
@@ -71,10 +78,14 @@ profiles:
     #
     # Units supported (can be combined as in 1hour 30mins):
     #
+    #   seconds | second | secs | sec | s
     #   minutes | minute | mins | min | m
     #   hours   | hour   | hrs  | hrs | h
     #   days    | day    | d
     #   weeks   | week   | w
+    #
+    # It must be at least 1 second, and it cannot be greater than 36500 days. Any
+    # other duration is rejected as an invalid configuration when creating the vote.
     #
     duration: 5m
 
@@ -181,6 +192,11 @@ profiles:
     # Automatic status checks won't be run if the vote will be closed within
     # the next hour.
     #
+    # The value must be a whole number followed by one of the units below,
+    # separated by a space. It must be at least 1 day and at most 36500 days.
+    # Any other value is rejected as an invalid configuration when creating the
+    # vote.
+    #
     # Units supported:
     #
     #   - day / days
@@ -220,6 +236,11 @@ profiles:
     # preferable to implement a minimum wait time, even if the vote would
     # already pass. This allows participants sufficient opportunity to engage
     # and reflect before the vote is automatically finalized.
+    #
+    # The value must be a whole number followed by one of the units below,
+    # separated by a space. It must be at least 1 day and at most 36500 days.
+    # Any other value is rejected as an invalid configuration when creating the
+    # vote.
     #
     # Units supported:
     #

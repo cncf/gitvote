@@ -1,8 +1,9 @@
+# ct install runs the last published images, so it only checks the chart mechanics
 imageTag: latest
 gitvote:
   github:
     # Sample app ID for chart testing
-    appID: 123456
+    appID: 1234567
     # Sample key for chart testing
     appPrivateKey: |-
       -----BEGIN RSA PRIVATE KEY-----
@@ -34,3 +35,5 @@ gitvote:
       -----END RSA PRIVATE KEY-----
     # Sample webhook secret for chart testing
     webhookSecret: "sample-secret-for-chart-testing"
+    # Sample webhook secret fallback for chart testing
+    webhookSecretFallback: "sample-fallback-for-chart-testing"

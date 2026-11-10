@@ -25,9 +25,10 @@ In favor: `{{ "{:.2}"|format(results.in_favor_percentage) }}%` · Against: `{{ "
     <summary><h3>Non-binding votes ({{ results.non_binding }})</h3></summary>
 
     {%~ let max_non_binding = 300 %}
-    {%- if results.non_binding > max_non_binding %}
+    {%- if results.non_binding > max_non_binding ~%}
       <i>(displaying only the first {{ max_non_binding }} non-binding votes)</i>
-    {% endif %}
+      {{~ "" }}
+    {%- endif %}
 
     {{~ "| User | Vote  | Timestamp |" }}
     {{~ "| ---- | :---: | :-------: |" }}

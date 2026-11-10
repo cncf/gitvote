@@ -1,23 +1,28 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::format_err;
-use futures::future::{self};
+use askama::Template;
+use futures::future;
 use mockall::predicate::eq;
 use proptest::{collection, prelude::*, sample};
 use serde_json::json;
 use tokio_postgres::types::{FromSql, Type};
 
-use crate::cfg_repo::AllowedVoters;
-use crate::github::{MockGH, Reaction, User, UserName};
-use crate::testutil::*;
+use crate::{
+    cfg_repo::{AllowedVoters, Announcements},
+    github::{MockGH, Reaction, User, UserName},
+    testutil::*,
+    tmpl,
+};
 
 use super::*;
 
 /// Reactions used in randomly generated votes, with the option they map to.
 const PROPTEST_REACTIONS: [(&str, Option<VoteOption>); 4] = [
-    (REACTION_IN_FAVOR, Some(VoteOption::InFavor)),
-    (REACTION_AGAINST, Some(VoteOption::Against)),
     (REACTION_ABSTAIN, Some(VoteOption::Abstain)),
+    (REACTION_AGAINST, Some(VoteOption::Against)),
+    (REACTION_IN_FAVOR, Some(VoteOption::InFavor)),
+    // Unsupported reaction, which must be ignored
     ("heart", None),
 ];
 
@@ -42,8 +47,10 @@ const PROPTEST_USERS: usize = 6;
 /// Pass threshold used to require more votes in favor than against.
 const STRICT_MAJORITY_THRESHOLD: f64 = 50.01;
 
-/// Additional deterministic timestamps used to check each vote keeps its own.
+/// Second deterministic timestamp, used to check each vote keeps its own.
 const TIMESTAMP2: &str = "2022-11-30T11:00:00Z";
+
+/// Third deterministic timestamp, used to check each vote keeps its own.
 const TIMESTAMP3: &str = "2022-11-30T12:00:00Z";
 
 #[tokio::test]
@@ -55,12 +62,21 @@ async fn calculate_error_getting_allowed_voters() {
         .times(1)
         .returning(|_, _, _, _| Box::pin(future::ready(Ok(vec![]))));
     gh.expect_get_allowed_voters()
+        .withf(|inst_id, cfg, owner, repo, org| {
+            *inst_id == INST_ID
+                && *cfg == setup_test_vote().cfg
+                && owner == ORG
+                && repo == REPO
+                && *org == setup_test_vote().organization.as_ref()
+        })
         .times(1)
         .returning(|_, _, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
 
-    // Run and check the error is propagated
+    // Calculate the results
     let vote = setup_test_vote();
     let err = calculate(Arc::new(gh), ORG, REPO, &vote).await.unwrap_err();
+
+    // Check the error is propagated
     assert_eq!(err.to_string(), ERROR);
 }
 
@@ -74,10 +90,87 @@ async fn calculate_error_getting_reactions() {
         .returning(|_, _, _, _| Box::pin(future::ready(Err(format_err!(ERROR)))));
     gh.expect_get_allowed_voters().never();
 
-    // Run and check the error is propagated
+    // Calculate the results
     let vote = setup_test_vote();
     let err = calculate(Arc::new(gh), ORG, REPO, &vote).await.unwrap_err();
+
+    // Check the error is propagated
     assert_eq!(err.to_string(), ERROR);
+}
+
+#[tokio::test]
+async fn calculate_ignores_reactions_after_the_end() {
+    // Setup cases (seconds after the end of each reaction, expected in favor, against,
+    // binding, not voted). All the reactions are from the same user: the first one is
+    // in favor, and the second one, when there is one, is against
+    let cases: [(&[i64], i64, i64, i64, i64); 7] = [
+        (&[-1], 1, 0, 1, 0),
+        (&[0], 1, 0, 1, 0),
+        (&[1], 0, 0, 0, 1),
+        (&[3600], 0, 0, 0, 1),
+        (&[-1, 1], 1, 0, 1, 0),
+        (&[1, -1], 0, 1, 1, 0),
+        (&[-1, 0], 0, 0, 0, 1),
+    ];
+
+    for (offsets, in_favor, against, binding, not_voted) in cases {
+        // Setup the vote and the reactions
+        let vote = setup_test_vote();
+        let contents = [REACTION_IN_FAVOR, REACTION_AGAINST];
+        let reactions = offsets
+            .iter()
+            .zip(contents)
+            .map(|(offset, content)| Reaction {
+                created_at: format_timestamp(vote.ends_at + time::Duration::seconds(*offset)),
+                ..reaction(USER1, content)
+            })
+            .collect();
+
+        // Calculate the results
+        let results = calculate_vote_results(&vote, reactions, vec![USER1.to_string()]).await.unwrap();
+
+        // Check only the votes cast until the end of the vote count
+        assert_eq!(results.against, against, "offsets: {offsets:?}");
+        assert_eq!(results.binding, binding, "offsets: {offsets:?}");
+        assert_eq!(results.in_favor, in_favor, "offsets: {offsets:?}");
+        assert_eq!(results.not_voted, not_voted, "offsets: {offsets:?}");
+        assert_eq!(results.votes.len() as i64, binding, "offsets: {offsets:?}");
+    }
+}
+
+#[tokio::test]
+async fn calculate_invalid_reaction_timestamp_returns_error() {
+    // Setup a vote with a reaction whose timestamp is not valid
+    let reaction = Reaction {
+        created_at: "not a timestamp".to_string(),
+        ..reaction(USER1, REACTION_IN_FAVOR)
+    };
+
+    // Calculate the results
+    let vote = setup_test_vote();
+    let result = calculate_vote_results(&vote, vec![reaction], vec![USER1.to_string()]).await;
+
+    // Check the error is returned
+    assert_eq!(result.unwrap_err().to_string(), "invalid reaction timestamp");
+}
+
+#[tokio::test]
+async fn calculate_open_vote_counts_reactions_until_now() {
+    // Setup a vote still open with a reaction created just now
+    let vote = Vote {
+        ends_at: OffsetDateTime::now_utc() + time::Duration::days(1),
+        ..setup_test_vote()
+    };
+    let reaction = Reaction {
+        created_at: format_timestamp(OffsetDateTime::now_utc()),
+        ..reaction(USER1, REACTION_IN_FAVOR)
+    };
+
+    // Calculate the results
+    let results = calculate_vote_results(&vote, vec![reaction], vec![USER1.to_string()]).await.unwrap();
+
+    // Check the vote counts
+    assert_eq!(results.in_favor, 1);
 }
 
 proptest! {
@@ -85,6 +178,7 @@ proptest! {
     fn calculate_results_match_the_votes_cast(
         allowed_users in sample::subsequence((1..=PROPTEST_USERS).collect::<Vec<_>>(), 0..=PROPTEST_USERS),
         allowed_users_uppercase in collection::vec(any::<bool>(), PROPTEST_USERS),
+        logins_uppercase in collection::vec(any::<bool>(), PROPTEST_USERS),
         users_reactions in collection::vec((1..=PROPTEST_USERS, 0..PROPTEST_REACTIONS.len()), 0..20),
         pass_threshold in 1..=100_u32,
         pass_threshold_base in 0..PROPTEST_THRESHOLD_BASES.len(),
@@ -98,13 +192,20 @@ proptest! {
             })
             .collect();
 
-        // Setup reactions and vote profile
+        // Setup reactions, using logins spelled with their own random casing
+        let login = |i: usize| {
+            let user = format!("user{i}");
+            if logins_uppercase[i - 1] { user.to_uppercase() } else { user }
+        };
         let reactions: Vec<Reaction> = users_reactions
             .iter()
-            .map(|(i, r)| reaction(&format!("user{i}"), PROPTEST_REACTIONS[*r].0))
+            .map(|(i, r)| reaction(&login(*i), PROPTEST_REACTIONS[*r].0))
             .collect();
+
+        // Setup vote profile
         let cfg = CfgProfile {
             pass_threshold: f64::from(pass_threshold),
+
             pass_threshold_base: PROPTEST_THRESHOLD_BASES[pass_threshold_base].clone(),
             ..setup_test_vote().cfg
         };
@@ -117,14 +218,14 @@ proptest! {
         let mut users_options: BTreeMap<UserName, Vec<VoteOption>> = BTreeMap::new();
         for (i, r) in &users_reactions {
             if let Some(option) = &PROPTEST_REACTIONS[*r].1 {
-                users_options.entry(format!("user{i}")).or_default().push(option.clone());
+                users_options.entry(login(*i)).or_default().push(option.clone());
             }
         }
         let expected_votes: BTreeMap<UserName, (VoteOption, bool)> = users_options
             .into_iter()
             .filter(|(_, options)| options.len() == 1)
             .map(|(user, options)| {
-                let binding = allowed_voters.iter().any(|voter| voter.to_lowercase() == user);
+                let binding = allowed_voters.iter().any(|voter| voter.eq_ignore_ascii_case(&user));
                 (user, (options[0].clone(), binding))
             })
             .collect();
@@ -141,7 +242,7 @@ proptest! {
         let expected_binding = count_binding(None);
         let expected_pending: Vec<UserName> = allowed_voters
             .iter()
-            .filter(|voter| !expected_votes.contains_key(&voter.to_lowercase()))
+            .filter(|voter| !expected_votes.keys().any(|user| user.eq_ignore_ascii_case(voter)))
             .cloned()
             .collect();
         let allowed = allowed_voters.len() as i64;
@@ -169,17 +270,17 @@ proptest! {
         prop_assert_eq!(&votes, &expected_votes);
 
         // Check the results summary
-        prop_assert_eq!(results.passed, expected_passed);
-        prop_assert!((results.in_favor_percentage - expected_percentage(expected_in_favor)).abs() < 1e-9);
-        prop_assert!((results.against_percentage - expected_percentage(expected_against)).abs() < 1e-9);
-        prop_assert_eq!(results.in_favor, expected_in_favor);
-        prop_assert_eq!(results.against, expected_against);
         prop_assert_eq!(results.abstain, count_binding(Some(VoteOption::Abstain)));
-        prop_assert_eq!(results.binding, expected_binding);
-        prop_assert_eq!(results.non_binding, expected_votes.len() as i64 - expected_binding);
+        prop_assert_eq!(results.against, expected_against);
+        prop_assert!((results.against_percentage - expected_percentage(expected_against)).abs() < 1e-9);
         prop_assert_eq!(results.allowed_voters, allowed);
-        prop_assert_eq!(&results.pending_voters, &expected_pending);
+        prop_assert_eq!(results.binding, expected_binding);
+        prop_assert_eq!(results.in_favor, expected_in_favor);
+        prop_assert!((results.in_favor_percentage - expected_percentage(expected_in_favor)).abs() < 1e-9);
+        prop_assert_eq!(results.non_binding, expected_votes.len() as i64 - expected_binding);
         prop_assert_eq!(results.not_voted, expected_pending.len() as i64);
+        prop_assert_eq!(results.passed, expected_passed);
+        prop_assert_eq!(&results.pending_voters, &expected_pending);
 
         // Check the results invariants
         prop_assert_eq!(results.in_favor + results.against + results.abstain, results.binding);
@@ -195,6 +296,55 @@ proptest! {
     }
 }
 
+#[tokio::test]
+async fn calculate_strict_majority_recipe() {
+    // Setup cases (in favor, against, abstain, pass threshold, expected passed)
+    let cases = [
+        (2, 0, 10, STRICT_MAJORITY_THRESHOLD, true),
+        (2, 2, 0, STRICT_MAJORITY_THRESHOLD, false),
+        (3, 2, 5, STRICT_MAJORITY_THRESHOLD, true),
+        (0, 1, 0, STRICT_MAJORITY_THRESHOLD, false),
+        (0, 0, 3, STRICT_MAJORITY_THRESHOLD, false),
+        // A tie passes with 50, so it cannot be used to require a strict majority
+        (2, 2, 0, 50.0, true),
+    ];
+
+    for (in_favor, against, abstain, pass_threshold, expected_passed) in cases {
+        // Calculate the results, leaving one allowed voter pending
+        let votes = votes_cast(in_favor, against, abstain);
+        let allowed_voters = users(in_favor + against + abstain + 1);
+        let cfg = votes_cast_cfg(pass_threshold, Some(true));
+        let results = calculate_results(cfg, reactions(&votes), allowed_voters).await;
+
+        // Check the vote passes only when expected
+        assert_eq!(
+            results.passed, expected_passed,
+            "votes: ({in_favor}, {against}, {abstain}), pass threshold: {pass_threshold}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn calculate_votes_cast_omitted_exclude_abstentions_equals_false() {
+    for (in_favor, against, abstain) in [(2, 1, 1), (1, 1, 0), (0, 0, 2)] {
+        // Calculate the results with the flag omitted and set to false
+        let votes = votes_cast(in_favor, against, abstain);
+        let mut results = vec![];
+        for exclude_abstentions in [None, Some(false)] {
+            let cfg = votes_cast_cfg(50.0, exclude_abstentions);
+            results.push(calculate_results(cfg, reactions(&votes), users(5)).await);
+        }
+
+        // Check both results are identical
+        assert_eq!(
+            results[0], results[1],
+            "votes: ({in_favor}, {against}, {abstain})"
+        );
+    }
+}
+
+/// Generates a test per case provided, checking the results calculated from the
+/// configuration, reactions and allowed voters given.
 macro_rules! test_calculate {
     ($(
         $func:ident:
@@ -208,8 +358,10 @@ macro_rules! test_calculate {
     $(
         #[tokio::test]
         async fn $func() {
-            // Calculate vote results and check we get what we expect
+            // Calculate vote results
             let results = calculate_results($cfg, $reactions, $allowed_voters).await;
+
+            // Check the calculated results match the expected ones
             assert_eq!(results, $expected_results);
         }
     )*
@@ -223,28 +375,28 @@ test_calculate!(
         reactions: reactions(&votes_cast(1, 0, 0)),
         allowed_voters: vec![USER1.to_uppercase(), USER2.to_uppercase()],
         expected_results: VoteResults {
-            passed: true,
-            in_favor_percentage: 50.0,
-            pass_threshold: 50.0,
-            in_favor: 1,
+            abstain: 0,
             against: 0,
             against_percentage: 0.0,
-            abstain: 0,
-            not_voted: 1,
+            allowed_voters: 2,
             binding: 1,
+            in_favor: 1,
+            in_favor_percentage: 50.0,
             non_binding: 0,
+            not_voted: 1,
+            pass_threshold: 50.0,
+            passed: true,
+            pending_voters: vec![USER2.to_uppercase()],
             votes: BTreeMap::from([
                 (
                     USER1.to_string(),
                     UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
                         binding: true,
+                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                        vote_option: VoteOption::InFavor,
                     },
                 )
             ]),
-            allowed_voters: 2,
-            pending_voters: vec![USER2.to_uppercase()],
         }
     },
 
@@ -346,6 +498,56 @@ test_calculate!(
         )
     },
 
+    calculate_reaction_logins_are_matched_case_insensitively:
+    {
+        cfg: threshold_cfg(50.0),
+        reactions: vec![reaction("USER1", REACTION_IN_FAVOR)],
+        allowed_voters: users(2),
+        expected_results: VoteResults {
+            abstain: 0,
+            against: 0,
+            against_percentage: 0.0,
+            allowed_voters: 2,
+            binding: 1,
+            in_favor: 1,
+            in_favor_percentage: 50.0,
+            non_binding: 0,
+            not_voted: 1,
+            pass_threshold: 50.0,
+            passed: true,
+            pending_voters: vec![USER2.to_string()],
+            votes: BTreeMap::from([
+                (
+                    "USER1".to_string(),
+                    UserVote {
+                        binding: true,
+                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                        vote_option: VoteOption::InFavor,
+                    },
+                )
+            ]),
+        }
+    },
+
+    calculate_reaction_logins_with_mixed_case_match_allowed_voters_with_mixed_case:
+    {
+        cfg: threshold_cfg(100.0),
+        reactions: vec![
+            reaction("uSeR1", REACTION_IN_FAVOR),
+            reaction("USer2", REACTION_IN_FAVOR),
+        ],
+        allowed_voters: vec!["UsEr1".to_string(), "useR2".to_string()],
+        expected_results: expected_results(
+            100.0,
+            &[
+                ("USer2".to_string(), VoteOption::InFavor),
+                ("uSeR1".to_string(), VoteOption::InFavor),
+            ],
+            &["UsEr1".to_string(), "useR2".to_string()],
+            (true, 100.0, 0.0)
+        )
+    },
+
     calculate_unsupported_reactions_are_ignored:
     {
         cfg: threshold_cfg(50.0),
@@ -403,52 +605,52 @@ test_calculate!(
         reactions: reactions(&[votes_cast(1, 1, 1), vec![(USER5.to_string(), VoteOption::InFavor)]].concat()),
         allowed_voters: users(4),
         expected_results: VoteResults {
-            passed: false,
-            in_favor_percentage: 25.0,
-            pass_threshold: 50.0,
-            in_favor: 1,
+            abstain: 1,
             against: 1,
             against_percentage: 25.0,
-            abstain: 1,
-            not_voted: 1,
+            allowed_voters: 4,
             binding: 3,
+            in_favor: 1,
+            in_favor_percentage: 25.0,
             non_binding: 1,
+            not_voted: 1,
+            pass_threshold: 50.0,
+            passed: false,
+            pending_voters: vec![USER4.to_string()],
             votes: BTreeMap::from([
                 (
                     USER1.to_string(),
                     UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
                         binding: true,
+                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                        vote_option: VoteOption::InFavor,
                     },
                 ),
                 (
                     USER2.to_string(),
                     UserVote {
-                        vote_option: VoteOption::Against,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
                         binding: true,
+                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                        vote_option: VoteOption::Against,
                     },
                 ),
                 (
                     USER3.to_string(),
                     UserVote {
-                        vote_option: VoteOption::Abstain,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
                         binding: true,
+                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                        vote_option: VoteOption::Abstain,
                     },
                 ),
                 (
                     USER5.to_string(),
                     UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
                         binding: false,
+                        timestamp: OffsetDateTime::parse(TIMESTAMP, &Rfc3339).unwrap(),
+                        vote_option: VoteOption::InFavor,
                     },
                 ),
             ]),
-            allowed_voters: 4,
-            pending_voters: vec![USER4.to_string()],
         }
     },
 
@@ -559,49 +761,20 @@ test_calculate!(
     },
 );
 
-#[tokio::test]
-async fn calculate_strict_majority_recipe() {
-    // Setup cases (in favor, against, abstain, pass threshold, expected passed)
-    let cases = [
-        (2, 0, 10, STRICT_MAJORITY_THRESHOLD, true),
-        (2, 2, 0, STRICT_MAJORITY_THRESHOLD, false),
-        (3, 2, 5, STRICT_MAJORITY_THRESHOLD, true),
-        (0, 1, 0, STRICT_MAJORITY_THRESHOLD, false),
-        (0, 0, 3, STRICT_MAJORITY_THRESHOLD, false),
-        // A tie passes with 50, so it cannot be used to require a strict majority
-        (2, 2, 0, 50.0, true),
-    ];
+#[test]
+fn threshold_reached_decimal_threshold_met_exactly() {
+    // Setup cases (in favor, pass threshold, base)
+    let cases = [(161, 64.4, 250), (33, 8.8, 375), (7, 1.12, 625)];
 
-    for (in_favor, against, abstain, pass_threshold, expected_passed) in cases {
-        // Calculate the results, leaving one allowed voter pending
-        let votes = votes_cast(in_favor, against, abstain);
-        let allowed_voters = users(in_favor + against + abstain + 1);
-        let cfg = votes_cast_cfg(pass_threshold, Some(true));
-        let results = calculate_results(cfg, reactions(&votes), allowed_voters).await;
-
-        // Check the vote passes only when expected
-        assert_eq!(
-            results.passed, expected_passed,
-            "votes: ({in_favor}, {against}, {abstain}), pass threshold: {pass_threshold}"
+    for (in_favor, pass_threshold, base) in cases {
+        // Check the exact match is reached, unlike one vote less
+        assert!(
+            threshold_reached(in_favor, pass_threshold, base),
+            "case: ({in_favor}, {pass_threshold}, {base})"
         );
-    }
-}
-
-#[tokio::test]
-async fn calculate_votes_cast_omitted_exclude_abstentions_equals_false() {
-    for (in_favor, against, abstain) in [(2, 1, 1), (1, 1, 0), (0, 0, 2)] {
-        // Calculate the results with the flag omitted and set to false
-        let votes = votes_cast(in_favor, against, abstain);
-        let mut results = vec![];
-        for exclude_abstentions in [None, Some(false)] {
-            let cfg = votes_cast_cfg(50.0, exclude_abstentions);
-            results.push(calculate_results(cfg, reactions(&votes), users(5)).await);
-        }
-
-        // Check both results are identical
-        assert_eq!(
-            results[0], results[1],
-            "votes: ({in_favor}, {against}, {abstain})"
+        assert!(
+            !threshold_reached(in_favor - 1, pass_threshold, base),
+            "case: ({in_favor}, {pass_threshold}, {base})"
         );
     }
 }
@@ -671,6 +844,7 @@ fn vote_cfg_decode_stored_jsonb() {
             CfgProfile {
                 duration: Duration::from_mins(5),
                 pass_threshold: 50.0,
+
                 allowed_voters: Some(AllowedVoters {
                     users: Some(vec![USER1.to_string()]),
                     ..Default::default()
@@ -685,34 +859,194 @@ fn vote_cfg_decode_stored_jsonb() {
 }
 
 #[test]
+fn vote_cfg_decode_stored_shapes() {
+    // Setup the fields stored by other versions and the profile they should produce
+    let cases = [
+        // Explicit nulls, written before absent fields were skipped when serializing
+        (json!({"allowed_voters": null}), CfgProfile::default()),
+        (json!({"announcements": null}), CfgProfile::default()),
+        (json!({"close_on_passing": null}), CfgProfile::default()),
+        (json!({"close_on_passing_min_wait": null}), CfgProfile::default()),
+        (json!({"pass_threshold_base": null}), CfgProfile::default()),
+        (json!({"periodic_status_check": null}), CfgProfile::default()),
+        (
+            json!({
+                "allowed_voters": {"teams": null, "users": [USER1], "exclude_team_maintainers": null}
+            }),
+            CfgProfile {
+                allowed_voters: Some(AllowedVoters {
+                    users: Some(vec![USER1.to_string()]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        ),
+        // Sections without their optional fields
+        (
+            json!({"allowed_voters": {}}),
+            CfgProfile {
+                allowed_voters: Some(AllowedVoters::default()),
+                ..Default::default()
+            },
+        ),
+        (
+            json!({"announcements": {}}),
+            CfgProfile {
+                announcements: Some(Announcements::default()),
+                ..Default::default()
+            },
+        ),
+        // Unknown fields, as written by a newer version before rolling back
+        (json!({"future_field": {}}), CfgProfile::default()),
+    ];
+
+    for (stored_fields, expected) in cases {
+        // Setup JSONB value as stored in the vote cfg column (version byte + JSON)
+        let mut stored = json!({"duration": "5m", "pass_threshold": 50.0});
+        stored.as_object_mut().unwrap().extend(stored_fields.as_object().unwrap().clone());
+        let mut raw = vec![1_u8];
+        raw.extend(serde_json::to_vec(&stored).unwrap());
+
+        // Check it decodes into the expected profile, as done when reading votes
+        let Json(cfg) = <Json<CfgProfile> as FromSql>::from_sql(&Type::JSONB, &raw).unwrap();
+        let expected = CfgProfile {
+            duration: Duration::from_mins(5),
+            pass_threshold: 50.0,
+            ..expected
+        };
+        assert_eq!(cfg, expected, "stored: {stored_fields}");
+    }
+}
+
+#[test]
 fn vote_option_display() {
     // Check display strings
-    assert_eq!(VoteOption::InFavor.to_string(), "In favor");
-    assert_eq!(VoteOption::Against.to_string(), "Against");
     assert_eq!(VoteOption::Abstain.to_string(), "Abstain");
+    assert_eq!(VoteOption::Against.to_string(), "Against");
+    assert_eq!(VoteOption::InFavor.to_string(), "In favor");
 }
 
 #[test]
 fn vote_option_from_reaction() {
     // Check supported and unsupported reactions
     assert_eq!(
-        VoteOption::from_reaction(REACTION_IN_FAVOR).unwrap(),
-        VoteOption::InFavor
+        VoteOption::from_reaction(REACTION_ABSTAIN).unwrap(),
+        VoteOption::Abstain
     );
     assert_eq!(
         VoteOption::from_reaction(REACTION_AGAINST).unwrap(),
         VoteOption::Against
     );
     assert_eq!(
-        VoteOption::from_reaction(REACTION_ABSTAIN).unwrap(),
-        VoteOption::Abstain
+        VoteOption::from_reaction(REACTION_IN_FAVOR).unwrap(),
+        VoteOption::InFavor
     );
-    assert!(VoteOption::from_reaction("unsupported").is_err());
+    assert_eq!(
+        VoteOption::from_reaction("unsupported").unwrap_err().to_string(),
+        "reaction not supported"
+    );
+}
+
+#[test]
+fn vote_results_decode_rows_from_previous_releases() {
+    // Setup rows as written by previous releases, which must never be updated: a failure
+    // here means votes already stored cannot be read anymore
+    let cases: [(&[u8], VoteResults); 2] = [
+        // Fields backfilled by migration 004: a single precision percentage, and no
+        // pending voters even though some did not vote
+        (
+            br#"{"passed":false,"in_favor_percentage":16.666666666666664,"pass_threshold":50.0,
+                "in_favor":1,"against":4,"against_percentage":66.66666865348816,"abstain":0,
+                "not_voted":1,"binding":5,"non_binding":0,"allowed_voters":6,"votes":{},
+                "pending_voters":[]}"#,
+            VoteResults {
+                abstain: 0,
+                against: 4,
+                against_percentage: 66.666_668_653_488_16,
+                allowed_voters: 6,
+                binding: 5,
+                in_favor: 1,
+                in_favor_percentage: 16.666_666_666_666_664,
+                non_binding: 0,
+                not_voted: 1,
+                pass_threshold: 50.0,
+                passed: false,
+                pending_voters: vec![],
+                votes: BTreeMap::new(),
+            },
+        ),
+        // Percentage backfilled by migration 004 as an integer, as nobody voted against
+        (
+            br#"{"passed":true,"in_favor_percentage":100.0,"pass_threshold":50.0,"in_favor":1,
+                "against":0,"against_percentage":0,"abstain":0,"not_voted":0,"binding":1,
+                "non_binding":0,"allowed_voters":1,"votes":{},"pending_voters":[]}"#,
+            VoteResults {
+                abstain: 0,
+                against: 0,
+                against_percentage: 0.0,
+                allowed_voters: 1,
+                binding: 1,
+                in_favor: 1,
+                in_favor_percentage: 100.0,
+                non_binding: 0,
+                not_voted: 0,
+                pass_threshold: 50.0,
+                passed: true,
+                pending_voters: vec![],
+                votes: BTreeMap::new(),
+            },
+        ),
+    ];
+
+    for (row, expected) in cases {
+        // Check each row decodes as done when reading votes
+        let raw = [b"\x01", row].concat();
+        let stored = <StoredVoteResults as FromSql>::from_sql_nullable(&Type::JSONB, Some(&raw)).unwrap();
+        let results = stored.and_then(|Json(results)| results).unwrap();
+        assert_eq!(results, expected);
+
+        // Render the vote details in the audit page
+        let vote = setup_test_vote();
+        let output = tmpl::AuditVoteDetails {
+            vote: &vote,
+
+            results: Some(&results),
+        }
+        .render()
+        .unwrap();
+
+        // Check they are displayed
+        let in_favor = format!(
+            r#"<span class="badge">{:.0}<span class="percentage">%</span>"#,
+            expected.in_favor_percentage
+        );
+        assert!(output.contains(&in_favor), "{in_favor}");
+    }
+}
+
+#[test]
+fn vote_results_decode_stored_column() {
+    // Setup the stored forms of the results column and their expected values
+    let results = setup_test_vote_results();
+    let mut object = vec![1];
+    object.extend(serde_json::to_vec(&results).unwrap());
+    let cases: [(Option<&[u8]>, Option<VoteResults>); 3] = [
+        (None, None),
+        (Some(b"\x01null"), None),
+        (Some(&object), Some(results)),
+    ];
+
+    // Check each one decodes as done when reading votes
+    for (raw, expected) in cases {
+        let stored = <StoredVoteResults as FromSql>::from_sql_nullable(&Type::JSONB, raw).unwrap();
+        assert_eq!(stored.and_then(|Json(results)| results), expected);
+    }
 }
 
 #[test]
 fn vote_results_deserialize_stored_json() {
-    // Setup JSON as stored in the vote results column
+    // Setup JSON as stored in the vote results column, keeping the field order it was
+    // written with
     let stored = json!({
         "passed": false,
         "in_favor_percentage": 25.0,
@@ -740,52 +1074,52 @@ fn vote_results_deserialize_stored_json() {
     assert_eq!(
         results,
         VoteResults {
-            passed: false,
-            in_favor_percentage: 25.0,
-            pass_threshold: 50.0,
-            in_favor: 1,
+            abstain: 1,
             against: 1,
             against_percentage: 25.0,
-            abstain: 1,
-            not_voted: 1,
-            binding: 3,
-            non_binding: 1,
             allowed_voters: 4,
+            binding: 3,
+            in_favor: 1,
+            in_favor_percentage: 25.0,
+            non_binding: 1,
+            not_voted: 1,
+            pass_threshold: 50.0,
+            passed: false,
+            pending_voters: vec![USER4.to_string()],
             votes: BTreeMap::from([
                 (
                     USER1.to_string(),
                     UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp,
                         binding: true,
+                        timestamp,
+                        vote_option: VoteOption::InFavor,
                     },
                 ),
                 (
                     USER2.to_string(),
                     UserVote {
-                        vote_option: VoteOption::Against,
-                        timestamp,
                         binding: true,
+                        timestamp,
+                        vote_option: VoteOption::Against,
                     },
                 ),
                 (
                     USER3.to_string(),
                     UserVote {
-                        vote_option: VoteOption::Abstain,
-                        timestamp,
                         binding: true,
+                        timestamp,
+                        vote_option: VoteOption::Abstain,
                     },
                 ),
                 (
                     USER5.to_string(),
                     UserVote {
-                        vote_option: VoteOption::InFavor,
-                        timestamp,
                         binding: false,
+                        timestamp,
+                        vote_option: VoteOption::InFavor,
                     },
                 ),
             ]),
-            pending_voters: vec![USER4.to_string()],
         }
     );
 }
@@ -806,9 +1140,9 @@ fn vote_results_passes_with_all_allowed_voters() {
     for (in_favor, allowed_voters, pass_threshold, expected) in cases {
         // Setup results
         let results = VoteResults {
-            pass_threshold,
-            in_favor,
             allowed_voters,
+            in_favor,
+            pass_threshold,
             ..setup_test_vote_results()
         };
 
@@ -827,32 +1161,32 @@ fn vote_results_serialize() {
     assert_eq!(
         serde_json::to_value(setup_test_vote_results()).unwrap(),
         json!({
-            "passed": true,
-            "in_favor_percentage": 100.0,
-            "pass_threshold": 50.0,
-            "in_favor": 1,
+            "abstain": 0,
             "against": 0,
             "against_percentage": 0.0,
-            "abstain": 0,
-            "not_voted": 0,
-            "binding": 1,
-            "non_binding": 0,
             "allowed_voters": 1,
+            "binding": 1,
+            "in_favor": 1,
+            "in_favor_percentage": 100.0,
+            "non_binding": 0,
+            "not_voted": 0,
+            "pass_threshold": 50.0,
+            "passed": true,
+            "pending_voters": [],
             "votes": {
                 "user1": {
-                    "vote_option": "InFavor",
+                    "binding": true,
                     "timestamp": [2022, 334, 10, 0, 0, 0, 0, 0, 0],
-                    "binding": true
+                    "vote_option": "InFavor"
                 }
-            },
-            "pending_voters": []
+            }
         })
     );
 }
 
 // Helpers.
 
-/// Calculate the results of a vote using the configuration, reactions and
+/// Calculates the results of a vote using the configuration, reactions and
 /// allowed voters provided.
 async fn calculate_results(
     cfg: CfgProfile,
@@ -885,7 +1219,37 @@ async fn calculate_results(
     calculate(Arc::new(gh), OWNER, REPO, &vote).await.unwrap()
 }
 
-/// Build the expected results of a vote from the votes cast and allowed voters
+/// Calculates the results of the vote provided using the reactions and allowed voters
+/// given.
+async fn calculate_vote_results(
+    vote: &Vote,
+    reactions: Vec<Reaction>,
+    allowed_voters: Vec<UserName>,
+) -> Result<VoteResults> {
+    // Setup GitHub expectations
+    let mut gh = MockGH::new();
+    gh.expect_get_comment_reactions()
+        .with(eq(INST_ID), eq(OWNER), eq(REPO), eq(vote.vote_comment_id))
+        .times(1)
+        .return_once(move |_, _, _, _| Box::pin(future::ready(Ok(reactions))));
+    let expected_cfg = vote.cfg.clone();
+    let expected_org = vote.organization.clone();
+    gh.expect_get_allowed_voters()
+        .withf(move |inst_id, cfg, owner, repo, org| {
+            *inst_id == INST_ID
+                && *cfg == expected_cfg
+                && owner == OWNER
+                && repo == REPO
+                && *org == expected_org.as_ref()
+        })
+        .times(1)
+        .return_once(move |_, _, _, _, _| Box::pin(future::ready(Ok(allowed_voters))));
+
+    // Calculate vote results
+    calculate(Arc::new(gh), OWNER, REPO, vote).await
+}
+
+/// Builds the expected results of a vote from the votes cast and allowed voters
 /// provided, using the outcome given (passed, in favor and against percentages).
 fn expected_results(
     pass_threshold: f64,
@@ -902,9 +1266,9 @@ fn expected_results(
         .iter()
         .map(|(user, vote_option)| {
             let user_vote = UserVote {
-                vote_option: vote_option.clone(),
-                timestamp,
                 binding: is_allowed_voter(user),
+                timestamp,
+                vote_option: vote_option.clone(),
             };
             (user.clone(), user_vote)
         })
@@ -924,50 +1288,56 @@ fn expected_results(
         .cloned()
         .collect();
 
+    // Prepare the results
     VoteResults {
-        passed,
-        in_favor_percentage,
-        pass_threshold,
-        in_favor: count_binding(Some(VoteOption::InFavor)),
+        abstain: count_binding(Some(VoteOption::Abstain)),
         against: count_binding(Some(VoteOption::Against)),
         against_percentage,
-        abstain: count_binding(Some(VoteOption::Abstain)),
-        not_voted: pending_voters.len() as i64,
-        binding,
-        non_binding: votes.len() as i64 - binding,
         allowed_voters: allowed_voters.len() as i64,
-        votes,
+        binding,
+        in_favor: count_binding(Some(VoteOption::InFavor)),
+        in_favor_percentage,
+        non_binding: votes.len() as i64 - binding,
+        not_voted: pending_voters.len() as i64,
+        pass_threshold,
+        passed,
         pending_voters,
+        votes,
     }
 }
 
-/// Setup a reaction from the user provided with the content given.
+/// Formats the timestamp provided as GitHub does in a reaction.
+fn format_timestamp(timestamp: OffsetDateTime) -> String {
+    timestamp.format(&Rfc3339).unwrap()
+}
+
+/// Sets up a reaction from the user provided with the content given.
 fn reaction(user: &str, content: &str) -> Reaction {
     Reaction {
+        content: content.to_string(),
+        created_at: TIMESTAMP.to_string(),
         user: User {
             login: user.to_string(),
         },
-        content: content.to_string(),
-        created_at: TIMESTAMP.to_string(),
     }
 }
 
-/// Setup reactions for the votes provided.
+/// Sets up reactions for the votes provided.
 fn reactions(votes: &[(UserName, VoteOption)]) -> Vec<Reaction> {
     votes
         .iter()
         .map(|(user, vote_option)| {
             let content = match vote_option {
-                VoteOption::InFavor => REACTION_IN_FAVOR,
-                VoteOption::Against => REACTION_AGAINST,
                 VoteOption::Abstain => REACTION_ABSTAIN,
+                VoteOption::Against => REACTION_AGAINST,
+                VoteOption::InFavor => REACTION_IN_FAVOR,
             };
             reaction(user, content)
         })
         .collect()
 }
 
-/// Setup a profile using the pass threshold provided and the default pass
+/// Sets up a profile using the pass threshold provided and the default pass
 /// threshold base.
 fn threshold_cfg(pass_threshold: f64) -> CfgProfile {
     CfgProfile {
@@ -977,12 +1347,12 @@ fn threshold_cfg(pass_threshold: f64) -> CfgProfile {
     }
 }
 
-/// Setup a list with the first users (`user1`, `user2`, ...).
+/// Sets up a list with the first users (`user1`, `user2`, ...).
 fn users(count: usize) -> Vec<UserName> {
     (1..=count).map(|i| format!("user{i}")).collect()
 }
 
-/// Setup the votes cast by the first users: in favor first, then against and
+/// Sets up the votes cast by the first users: in favor first, then against and
 /// then abstain (i.e. `(2, 1, 0)` means `user1` and `user2` in favor and `user3`
 /// against).
 fn votes_cast(in_favor: usize, against: usize, abstain: usize) -> Vec<(UserName, VoteOption)> {
@@ -998,7 +1368,7 @@ fn votes_cast(in_favor: usize, against: usize, abstain: usize) -> Vec<(UserName,
     .collect()
 }
 
-/// Setup a profile using the votes cast as the pass threshold base.
+/// Sets up a profile using the votes cast as the pass threshold base.
 fn votes_cast_cfg(pass_threshold: f64, exclude_abstentions: Option<bool>) -> CfgProfile {
     CfgProfile {
         pass_threshold_base: Some(PassThresholdBase::VotesCast { exclude_abstentions }),
