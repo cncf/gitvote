@@ -56,7 +56,7 @@ gitvote:
   github:
     # GitHub application ID
     appID: null
-    # GitHub application private key path
+    # GitHub application private key (PEM content, not a file path)
     appPrivateKey: null
     # GitHub application webhook secret
     webhookSecret: null

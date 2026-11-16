@@ -1,0 +1,20 @@
+query AnnouncementDiscussionsQuery($owner: String!, $repo: String!, $categoryId: ID!, $after: String) {
+    repository(owner: $owner, name: $repo) {
+        discussions(
+            first: 50
+            after: $after
+            categoryId: $categoryId
+            orderBy: {field: CREATED_AT, direction: DESC}
+        ) {
+            nodes {
+                body
+                createdAt
+                viewerDidAuthor
+            }
+            pageInfo {
+                endCursor
+                hasNextPage
+            }
+        }
+    }
+}

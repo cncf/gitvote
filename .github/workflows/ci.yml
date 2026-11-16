@@ -33,3 +33,84 @@ jobs:
           toolchain: 1.99.1
       - name: Run backend tests
         run: cargo test
+
+  tests-chart-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.9.2
+      - name: Check the configuration rendered by the chart
+        run: cargo test --test chart_config -- --ignored
+
+  tests-database:
+    runs-on: ubuntu-latest
+    env:
+      GITVOTE_TEST_DB_URL: postgres://postgres:postgres@127.0.0.1:5432/gitvote_tests
+      PGDATABASE: gitvote_tests
+      PGHOST: 127.0.0.1
+      PGPASSWORD: postgres
+      PGUSER: postgres
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: gitvote_tests
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+      - name: Install tern
+        run: go install github.com/jackc/tern/v2@v2.4.3
+      - name: Install pgTAP in the PostgreSQL service
+        run: |
+          docker exec ${{ job.services.postgres.id }} sh -c \
+            "apt-get update && apt-get install -y postgresql-17-pgtap"
+      - name: Install pg_prove
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libtap-parser-sourcehandler-pgtap-perl
+      - name: Apply database migrations
+        working-directory: database/migrations
+        run: |
+          cat > "$RUNNER_TEMP/tern.conf" <<EOF
+          [database]
+          host = 127.0.0.1
+          port = 5432
+          database = gitvote_tests
+          user = postgres
+          password = postgres
+          sslmode = disable
+          EOF
+          export TERN_CONF="$RUNNER_TEMP/tern.conf"
+          ./migrate.sh
+          ./migrate.sh
+      - name: Run pgTAP tests
+        run: |
+          psql -c "create extension if not exists pgtap"
+          pg_prove --ext .sql --recurse database/tests
+      - name: Run database contract tests
+        run: cargo test db_contracts -- --ignored

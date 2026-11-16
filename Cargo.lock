@@ -1101,6 +1101,7 @@ dependencies = [
  "jsonwebtoken",
  "mockall",
  "octocrab",
+ "percent-encoding",
  "proptest",
  "regex",
  "reqwest 0.13.5",

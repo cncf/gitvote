@@ -1,14 +1,14 @@
 {
     "action": "created",
     "comment": {
-        "id": 1234,
+        "id": 3003,
         "body": "/vote-profile1"
     },
     "installation": {
-        "id": 1234
+        "id": 1001
     },
     "issue": {
-        "id": 1234,
+        "id": 2002,
         "number": 1,
         "title": "Test title"
     },

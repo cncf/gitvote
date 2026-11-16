@@ -19,7 +19,8 @@ In favor: `100.00%` · Against: `0.00%` · Passing threshold: `50%`
 <details>
       <summary><h3>Non-binding votes (302)</h3></summary>
 
-        <i>(displaying only the first 300 non-binding votes)</i>
+<i>(displaying only the first 300 non-binding votes)</i>
+
 | User | Vote  | Timestamp |
 | ---- | :---: | :-------: |
 | @supporter301 | In favor | 2023-01-01 0:00:00.0 +00:00:00 |
@@ -324,3 +325,4 @@ In favor: `100.00%` · Against: `0.00%` · Passing threshold: `50%`
 | @supporter002 | In favor | 2023-01-01 4:59:00.0 +00:00:00 |
 </details>
   
+<!-- gitvote:vote-closed:00000000-0000-0000-0000-000000000001 -->

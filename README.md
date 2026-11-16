@@ -34,18 +34,25 @@ The command **must** be on a line by itself. Please note that GitVote only detec
 
 ![create-vote](docs/screenshots/create-vote.png)
 
-Alternatively, if you have setup multiple configuration profiles, you can also start votes using any of them with the command `/vote-PROFILE`. The profile name can contain letters, digits, hyphens and underscores.
+Alternatively, if you have setup multiple configuration profiles, you can also start votes using any of them with the command `/vote-PROFILE`. The profile name can contain letters, digits, hyphens and underscores, and it must follow the hyphen: lines like `/votes` or `/vote-` are not commands.
 
 > [!NOTE]
 > Only repositories collaborators can create votes. For organization-owned repositories, the list of collaborators includes outside collaborators, organization members that are direct collaborators, organization members with access through team memberships, organization members with access through default organization permissions, and organization owners.
 
 Shortly after the comment with the `/vote` command is posted, the vote will be created and the bot will post a new comment to the corresponding issue or pull request with the vote instructions.
 
+The `duration` of a vote is set in the configuration profile used. It must be at least 1 second, and it cannot be greater than 36500 days. Otherwise no vote is created and the bot posts a comment saying the configuration is invalid.
+
 ![vote-created](docs/screenshots/vote-created.png)
 
 #### Automation
 
 GitVote allows votes to be created automatically on pull requests when any of the files affected matches certain predefined patterns. For more information about how to set it up, please see the automation section in the [reference documentation](https://github.com/cncf/gitvote/blob/main/docs/config/.gitvote.yml).
+
+> [!IMPORTANT]
+> Automatic votes are subject to the same rule as the ones created with the `/vote` command: the user who opens the pull request must be a repository collaborator. When a pull request from any other user matches an automation rule, no vote is created and GitVote posts a comment saying so. In that case, a collaborator can start the vote by calling the `/vote` command.
+
+If the automation rules cannot be evaluated when a pull request is opened (for example, because the configuration file is invalid), or the vote they request cannot be created because of an unexpected failure, no vote is created. GitVote reports a failed check and posts a comment asking maintainers to call the `/vote` command if a vote is needed.
 
 ### Voting
 
@@ -64,7 +71,7 @@ Only votes from users with a binding vote as defined in the configuration file w
 
 ### Checking votes
 
-It is possible to check the status of a vote in progress by calling the `/check-vote` command:
+It is possible to check the status of a vote in progress by calling the `/check-vote` command (this command does not accept a suffix):
 
 ![vote-status](docs/screenshots/vote-status.png)
 
@@ -77,17 +84,32 @@ Once the vote time is up, the vote will be automatically closed and the results 
 
 ![vote-closed](docs/screenshots/vote-closed.png)
 
+If the results cannot be calculated when the vote time is up, for example because GitHub is not available, GitVote keeps trying until it can, waiting up to 6 hours between attempts. The vote is closed once its results are calculated. If publishing them fails (the comment, check, labels or announcement), GitVote retries the parts missing for about 20 hours, and leaves them as they are after that. The results comment and announcement, as well as the cancellation comment, include a hidden marker that identifies the vote, so that a retry finds them instead of posting them again when a previous attempt did post them.
+
+Reactions added after the end of the vote are ignored, even if the vote takes a while to be closed. When the vote is closed early because of the `close_on_passing` feature, its end is the moment it was closed.
+
+> [!NOTE]
+> GitHub does not keep track of removed reactions, so removing a reaction after the end of the vote cannot be detected. If that happens before the results are calculated, that reaction will not be counted.
+
 ### Cancelling votes
 
-It is possible to cancel a vote in progress by calling the `/cancel-vote` command:
+It is possible to cancel a vote in progress by calling the `/cancel-vote` command (this command does not accept a suffix):
 
 ![vote-cancelled](docs/screenshots/vote-cancelled.png)
 
+The vote is cancelled as soon as the command is processed, and a new vote can be created right away. If the cancellation cannot be published on GitHub at that moment, GitVote retries publishing it for about 20 hours. When a newer vote exists, only the comment of the cancellation is posted, so that the check and labels of the newer vote are left alone.
+
+If the cancellation still cannot be published after those 20 hours, it is abandoned, and the parts not published yet are left as they are: the cancellation comment may be missing, the `gitvote/open` label may still be on the issue or pull request, and a pull request may keep the in-progress check of the cancelled vote. To clean them up, start a new vote with `/vote` and cancel it with `/cancel-vote` once GitHub is available again, or remove the label by hand. When the check is required and the pull request has no other vote, pushing a new commit also reports a new check on it.
+
 ### Checks in pull requests
 
-When a vote on a pull request is closed, GitVote will add a check to the head commit with its result. If the vote passes, the result of the check will be *success*, whereas if it doesn't pass, it'll be *failure*. When used in combination with `protected branch`, this feature can be used to *require* a vote in favor before a pull request can be merged.
+When a vote on a pull request is closed, GitVote will add a check with its result to the commit at the head of the pull request at that moment. Commits pushed after the vote is closed do not get that check, even if publishing it has to be retried. The exception is when the head of the pull request cannot be read as the vote closes: the check is then added to the head at the time it is published, which may be a later commit. If the vote passes, the result of the check will be *success*, whereas if it doesn't pass, it'll be *failure*. When used in combination with `protected branch`, this feature can be used to *require* a vote in favor before a pull request can be merged.
+
+The result of the check will also be *failure* if the vote closes without results, which happens when its comment cannot be found. The check will ask to run `/vote` again to start a new vote.
 
 ![check-passed](docs/screenshots/check-passed.png)
+
+When the check is required in the target branch and a pull request has no vote, GitVote reports it on each push. The check passes unless an automation rule matches the pull request or the rules cannot be evaluated, in which case it fails. No vote is started on a push, so a vote has to be created with the `/vote` command. This also applies to pull requests where an automatic vote was cancelled.
 
 ### Announcements
 
