@@ -4,7 +4,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, format_err};
 use ignore::gitignore::GitignoreBuilder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -18,8 +18,8 @@ mod tests;
 const DEFAULT_PROFILE: &str = "default";
 
 /// Error message used when the close on passing minimum wait is not a valid period.
-const ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT: &str = "close_on_passing_min_wait must be a number of days \
-     or weeks between 1 day and 36500 days, such as 5 days or 1 week";
+const ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT: &str = "close_on_passing_min_wait must be at least 1 second \
+     and not greater than 36500 days, in the same format as duration";
 
 /// Error message used when the duration is outside the range allowed.
 const ERR_INVALID_DURATION: &str = "duration must be at least 1 second and not greater than 36500 days";
@@ -28,25 +28,30 @@ const ERR_INVALID_DURATION: &str = "duration must be at least 1 second and not g
 const ERR_INVALID_PASS_THRESHOLD: &str = "pass threshold must be greater than 0 and not greater than 100";
 
 /// Error message used when the periodic status check is not a valid period.
-const ERR_INVALID_PERIODIC_STATUS_CHECK: &str = "periodic_status_check must be a number of days or weeks \
-     between 1 day and 36500 days, such as 5 days or 1 week";
+const ERR_INVALID_PERIODIC_STATUS_CHECK: &str = "periodic_status_check must be at least 1 day and not \
+     greater than 36500 days, in the same format as duration";
 
 /// Error message used when teams are listed in the allowed voters section on a
 /// repository that does not belong to an organization.
 const ERR_TEAMS_NOT_ALLOWED: &str = "teams in allowed voters can only be used in organizations";
 
-/// Maximum duration of a vote, the same span allowed for a period. Comparing against it
-/// needs no arithmetic on the value configured, so any duration that fits in the type is
-/// safely handled.
-const MAX_DURATION: Duration = Duration::from_hours(MAX_PERIOD_DAYS * 24);
+/// Maximum duration of a vote, which is the longest period allowed as well. It is far
+/// beyond any useful value, and it keeps them well within the range of a PostgreSQL
+/// interval. Comparing against it needs no arithmetic on the value configured, so any
+/// duration that fits in the type is safely handled.
+const MAX_DURATION: Duration = Duration::from_hours(36_500 * 24);
 
-/// Maximum number of days a period can span. It is far beyond any useful value, and it
-/// keeps periods well within the range of a PostgreSQL interval.
-const MAX_PERIOD_DAYS: u64 = 36_500;
+/// Minimum close on passing wait. Periods are stored as a whole number of seconds, so a
+/// shorter one would be stored as no time at all, which never lets the vote close early.
+const MIN_CLOSE_ON_PASSING_MIN_WAIT: Duration = Duration::from_secs(1);
 
 /// Minimum duration of a vote. Votes end a whole number of seconds after being created,
 /// so a shorter duration would end the vote as soon as it is created.
 const MIN_DURATION: Duration = Duration::from_secs(1);
+
+/// Minimum period between status checks. A vote is checked once a day at most, so a
+/// shorter period would never run a status check.
+const MIN_PERIODIC_STATUS_CHECK: Duration = Duration::from_hours(24);
 
 /// `GitVote` configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -183,7 +188,11 @@ pub(crate) struct CfgProfile {
     /// Whether the vote is closed as soon as it passes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub close_on_passing: Option<bool>,
-    /// Minimum period the vote stays open before being closed on passing.
+    /// Minimum period the vote stays open before being closed on passing. In the config
+    /// file it uses the format of the duration, and it is a number of seconds (i.e.
+    /// `172800 seconds`) in the profiles used to create votes. Stored votes may hold
+    /// any text PostgreSQL reads as an interval, so it must not be parsed when read
+    /// from them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub close_on_passing_min_wait: Option<String>,
     /// Base used to calculate the pass threshold percentage.
@@ -195,14 +204,16 @@ pub(crate) struct CfgProfile {
         with = "serde_yaml::with::singleton_map"
     )]
     pub pass_threshold_base: Option<PassThresholdBase>,
-    /// Period between the status checks run automatically while the vote is open.
+    /// Period between the status checks run automatically while the vote is open. It is
+    /// represented the same way as the close on passing minimum wait.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub periodic_status_check: Option<String>,
 }
 
 impl CfgProfile {
     /// Gets the vote configuration profile requested from the config file in
-    /// the repository if available.
+    /// the repository if available. The profile returned is valid and ready to be
+    /// stored in a vote, with its periods written as a number of seconds.
     pub(crate) async fn get<'a>(
         gh: DynGH,
         inst_id: u64,
@@ -214,15 +225,36 @@ impl CfgProfile {
         // Get the repository configuration
         let mut cfg = Cfg::get(gh, inst_id, owner, repo).await?;
 
-        // Pick the profile requested, or the default one, and validate it
+        // Pick the profile requested, or the default one
         let profile_name = profile_name.unwrap_or_else(|| DEFAULT_PROFILE.to_string());
-        match cfg.profiles.remove(&profile_name) {
-            Some(profile) => match profile.validate(is_org) {
-                Ok(()) => Ok(profile),
-                Err(err) => Err(CfgError::InvalidConfig(err.to_string())),
-            },
-            None => Err(CfgError::ProfileNotFound),
+        let Some(mut profile) = cfg.profiles.remove(&profile_name) else {
+            return Err(CfgError::ProfileNotFound);
+        };
+
+        // Validate the profile and prepare its periods to be stored
+        profile
+            .validate(is_org)
+            .and_then(|()| profile.normalize_periods())
+            .map_err(|err| CfgError::InvalidConfig(err.to_string()))?;
+
+        Ok(profile)
+    }
+
+    /// Rewrites the periods as a number of seconds. PostgreSQL reads the periods stored
+    /// in the votes as intervals, and it does not read the format used in the config
+    /// file the same way (i.e. `1M` is a month in the config file and a minute in an
+    /// interval). A number of seconds is read as exactly that.
+    fn normalize_periods(&mut self) -> Result<()> {
+        // Rewrite each of the periods set as its number of whole seconds
+        let periods = [
+            &mut self.close_on_passing_min_wait,
+            &mut self.periodic_status_check,
+        ];
+        for period in periods.into_iter().flatten() {
+            *period = format!("{} seconds", humantime::parse_duration(period)?.as_secs());
         }
+
+        Ok(())
     }
 
     /// Checks if the configuration profile is valid.
@@ -239,13 +271,20 @@ impl CfgProfile {
             bail!(ERR_INVALID_PASS_THRESHOLD);
         }
 
-        // The periods are stored in the vote and read by PostgreSQL as intervals, so
-        // only the documented format is accepted
-        if !self.close_on_passing_min_wait.as_deref().is_none_or(is_valid_period) {
-            bail!(ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT);
+        // The periods use the same format as the duration, each one with its own minimum
+        if let Some(period) = &self.close_on_passing_min_wait {
+            validate_period(
+                period,
+                MIN_CLOSE_ON_PASSING_MIN_WAIT,
+                ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT,
+            )?;
         }
-        if !self.periodic_status_check.as_deref().is_none_or(is_valid_period) {
-            bail!(ERR_INVALID_PERIODIC_STATUS_CHECK);
+        if let Some(period) = &self.periodic_status_check {
+            validate_period(
+                period,
+                MIN_PERIODIC_STATUS_CHECK,
+                ERR_INVALID_PERIODIC_STATUS_CHECK,
+            )?;
         }
 
         // Only repositories that belong to some organization can use teams in
@@ -287,24 +326,18 @@ pub(crate) enum PassThresholdBase {
 /// Type alias to represent a profile name.
 type ProfileName = String;
 
-/// Checks if the value provided is a period in the `<n> day(s)` or `<n> week(s)` format,
-/// where `n` is at least 1 and the period does not exceed the maximum allowed.
-fn is_valid_period(value: &str) -> bool {
-    // Split the number and the unit
-    let Some((number, unit)) = value.split_once(' ') else {
-        return false;
-    };
+/// Checks if the value provided is a period in the format of the duration that is not
+/// shorter than the minimum given nor longer than the maximum duration. The error
+/// returned starts with the message provided, followed by the reason when the value
+/// cannot be parsed.
+fn validate_period(value: &str, min: Duration, error: &str) -> Result<()> {
+    // Parse the period, which uses the same format as the duration
+    let period = humantime::parse_duration(value).map_err(|err| format_err!("{error}: {err}"))?;
 
-    // Get the number of days in a unit
-    let days_per_unit = match unit {
-        "day" | "days" => 1,
-        "week" | "weeks" => 7,
-        _ => return false,
-    };
+    // Check the period is within the range allowed
+    if !(min..=MAX_DURATION).contains(&period) {
+        bail!("{error}");
+    }
 
-    // Check the number, which parsing alone would allow to have a sign
-    number.bytes().all(|byte| byte.is_ascii_digit())
-        && number.parse::<u64>().is_ok_and(|number| {
-            number >= 1 && number.checked_mul(days_per_unit).is_some_and(|days| days <= MAX_PERIOD_DAYS)
-        })
+    Ok(())
 }

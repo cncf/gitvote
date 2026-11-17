@@ -629,6 +629,8 @@ async fn db_contracts_get_open_votes_with_close_on_passing_selection() {
         (enabled.clone(), false, true),
         (with_min_wait(Value::Null), false, true),
         (with_min_wait(json!("1 day")), false, true),
+        (with_min_wait(json!("86400 seconds")), false, true),
+        (with_min_wait(json!("172799 seconds")), false, true),
         // Not selected: closed, not enabled and min wait not elapsed
         (enabled, true, false),
         (json!({"close_on_passing": false}), false, false),
@@ -636,6 +638,9 @@ async fn db_contracts_get_open_votes_with_close_on_passing_selection() {
         (json!({"close_on_passing": null}), false, false),
         (json!({"close_on_passing": "banana"}), false, false),
         (with_min_wait(json!("1 week")), false, false),
+        (with_min_wait(json!("172860 seconds")), false, false),
+        (with_min_wait(json!("604800 seconds")), false, false),
+        (with_min_wait(json!("3153600000 seconds")), false, false),
         // Bad stored min wait values must not close the vote or fail the query
         (with_min_wait(json!("")), false, false),
         (with_min_wait(json!("-1 day")), false, false),
@@ -679,6 +684,8 @@ async fn db_contracts_get_pending_status_checks_selection() {
         // Selected
         (Some("1 day"), false, "2 days", "10 days", None, true),
         (Some("24 hours"), false, "2 days", "10 days", None, true),
+        (Some("86400 seconds"), false, "2 days", "10 days", None, true),
+        (Some("172799 seconds"), false, "2 days", "10 days", None, true),
         (Some("1 day"), false, "25 hours", "10 days", None, true),
         (Some("1 day"), false, "2 days", "10 days", Some("25 hours"), true),
         (Some("1 day"), false, "2 days", "61 minutes", None, true),
@@ -690,6 +697,16 @@ async fn db_contracts_get_pending_status_checks_selection() {
         (Some("1 day"), false, "2 days", "59 minutes", None, false),
         (Some("1 week"), false, "2 days", "10 days", None, false),
         (Some("23 hours"), false, "2 days", "10 days", None, false),
+        (Some("86399 seconds"), false, "2 days", "10 days", None, false),
+        (Some("172860 seconds"), false, "2 days", "10 days", None, false),
+        (
+            Some("3153600000 seconds"),
+            false,
+            "2 days",
+            "10 days",
+            None,
+            false,
+        ),
         // Bad stored values must be skipped and must not fail the query
         (Some(""), false, "2 days", "10 days", None, false),
         (Some("-1 day"), false, "2 days", "10 days", None, false),
