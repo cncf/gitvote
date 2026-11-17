@@ -5,7 +5,7 @@
 -- ============================================================================
 
 begin;
-select plan(9);
+select plan(10);
 
 -- ============================================================================
 -- TESTS
@@ -30,6 +30,13 @@ select is(
     string_to_interval('24 hours'),
     '24 hours'::interval,
     'Should convert a number of hours'
+);
+
+-- Should convert a number of seconds
+select is(
+    string_to_interval('3153600000 seconds'),
+    '36500 days'::interval,
+    'Should convert a number of seconds'
 );
 
 -- Should convert a number of weeks

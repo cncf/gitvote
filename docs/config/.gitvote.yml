@@ -76,13 +76,22 @@ profiles:
     #
     # How long the vote will be open
     #
-    # Units supported (can be combined as in 1hour 30mins):
+    # A duration is a number followed by a unit, with or without a space between
+    # them (i.e. 5m, 21d or 2 days). Several of them can be combined, as in
+    # 1hour 30mins. All the options that take a period of time use this format.
+    #
+    # Units supported:
     #
     #   seconds | second | secs | sec | s
     #   minutes | minute | mins | min | m
-    #   hours   | hour   | hrs  | hrs | h
+    #   hours   | hour   | hrs  | hr  | h
     #   days    | day    | d
     #   weeks   | week   | w
+    #   months  | month  | M
+    #   years   | year   | y
+    #
+    # Units are case sensitive, so M means months whereas m means minutes. Months
+    # and years have a fixed length of 30.44 and 365.25 days respectively.
     #
     # It must be at least 1 second, and it cannot be greater than 36500 days. Any
     # other duration is rejected as an invalid configuration when creating the vote.
@@ -192,15 +201,9 @@ profiles:
     # Automatic status checks won't be run if the vote will be closed within
     # the next hour.
     #
-    # The value must be a whole number followed by one of the units below,
-    # separated by a space. It must be at least 1 day and at most 36500 days.
-    # Any other value is rejected as an invalid configuration when creating the
-    # vote.
-    #
-    # Units supported:
-    #
-    #   - day / days
-    #   - week / weeks
+    # The value uses the same format as the duration. It must be at least 1 day
+    # and at most 36500 days. Any other value is rejected as an invalid
+    # configuration when creating the vote.
     #
     # As an example, using a value of "5 days" would mean that 5 days after the
     # vote was created, and every 5 days after that, an automatic status check
@@ -237,15 +240,10 @@ profiles:
     # already pass. This allows participants sufficient opportunity to engage
     # and reflect before the vote is automatically finalized.
     #
-    # The value must be a whole number followed by one of the units below,
-    # separated by a space. It must be at least 1 day and at most 36500 days.
-    # Any other value is rejected as an invalid configuration when creating the
-    # vote.
-    #
-    # Units supported:
-    #
-    #   - day / days
-    #   - week / weeks 
+    # The value uses the same format as the duration. It must be at least 1
+    # second and at most 36500 days. Any other value is rejected as an invalid
+    # configuration when creating the vote. As votes are checked once daily, a
+    # vote that passes is closed in the first check after the minimum wait.
     #
     # close_on_passing_min_wait: "1 week"
     #

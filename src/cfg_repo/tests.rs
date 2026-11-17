@@ -13,32 +13,30 @@ use super::*;
 /// Configuration reference published for users.
 const CONFIG_REFERENCE: &str = include_str!("../../docs/config/.gitvote.yml");
 
-/// Periods that must be rejected by the validation.
-const INVALID_PERIODS: &[&str] = &[
+/// Periods longer than the maximum allowed, which are rejected in all the fields.
+const TOO_LONG_PERIODS: &[&str] = &["36501 days", "5215 weeks", "36500days 1s", "100y", "1200M"];
+
+/// Periods that cannot be parsed, which are rejected in all the fields.
+const UNPARSABLE_PERIODS: &[&str] = &[
     "",
     " ",
     "5",
     "days",
-    "0 days",
-    "0 weeks",
     "-1 days",
     "+1 days",
-    "1.5 days",
+    "1 day ago",
     "5 dayz",
-    "5days",
-    "5  days",
-    " 5 days",
-    "5 days ",
     "5 Days",
     "1 WEEK",
-    "1 hour",
-    "1 month",
-    "1 week 2 days",
+    "2D",
+    "P2D",
+    "1 mon",
+    "1 day 12:00:00",
+    "00:10:00",
     "one week",
     "every 5 days",
+    "infinity",
     "٣ days",
-    "36501 days",
-    "5215 weeks",
     "18446744073709551615 weeks",
     "18446744073709551616 days",
 ];
@@ -405,6 +403,65 @@ fn cfg_profile_deserialize_stored_json_pass_threshold_base() {
 }
 
 #[test]
+fn cfg_profile_normalize_periods() {
+    // Setup cases (period, expected period once normalized)
+    let cases = [
+        ("1s", "1 seconds"),
+        ("1.5s", "1 seconds"),
+        ("5m", "300 seconds"),
+        ("10 minutes", "600 seconds"),
+        ("1hour 30mins", "5400 seconds"),
+        ("2d", "172800 seconds"),
+        ("2 days", "172800 seconds"),
+        (" 2 days ", "172800 seconds"),
+        ("1 week", "604800 seconds"),
+        ("1w2d", "777600 seconds"),
+        ("1M", "2630016 seconds"),
+        ("1 month", "2630016 seconds"),
+        ("1y", "31557600 seconds"),
+        ("36500 days", "3153600000 seconds"),
+    ];
+
+    for (period, expected_period) in cases {
+        // Setup profile with the period in both fields
+        let mut cfg = CfgProfile {
+            close_on_passing_min_wait: Some(period.to_string()),
+            periodic_status_check: Some(period.to_string()),
+            ..Default::default()
+        };
+
+        // Normalize the periods and check they are a number of seconds
+        cfg.normalize_periods().unwrap();
+        let expected_period = Some(expected_period.to_string());
+        assert_eq!(cfg.close_on_passing_min_wait, expected_period, "period: {period}");
+        assert_eq!(cfg.periodic_status_check, expected_period, "period: {period}");
+    }
+}
+
+#[test]
+fn cfg_profile_normalize_periods_unparsable_period() {
+    // Setup profile with a period that cannot be parsed
+    let mut cfg = CfgProfile {
+        periodic_status_check: Some("5 dayz".to_string()),
+        ..Default::default()
+    };
+
+    // Check normalizing fails and the period is left untouched
+    assert!(cfg.normalize_periods().is_err());
+    assert_eq!(cfg.periodic_status_check.as_deref(), Some("5 dayz"));
+}
+
+#[test]
+fn cfg_profile_normalize_periods_without_periods() {
+    // Setup profile without periods
+    let mut cfg = CfgProfile::default();
+
+    // Check normalizing leaves the profile untouched
+    cfg.normalize_periods().unwrap();
+    assert_eq!(cfg, CfgProfile::default());
+}
+
+#[test]
 fn cfg_profile_serialize_full() {
     // Setup profile with all fields set
     let cfg = CfgProfile {
@@ -546,35 +603,44 @@ fn cfg_profile_validate_invalid_pass_threshold() {
 
 #[test]
 fn cfg_profile_validate_invalid_periods() {
-    for period in INVALID_PERIODS {
+    // Setup cases (period, whether it can be parsed)
+    let unparsable = UNPARSABLE_PERIODS.iter().map(|period| (*period, false));
+    let too_long = TOO_LONG_PERIODS.iter().map(|period| (*period, true));
+
+    for (period, is_parsable) in unparsable.chain(too_long) {
         // Setup profiles with an invalid period
-        let period = Some((*period).to_string());
         let close_on_passing_cfg = CfgProfile {
             duration: Duration::from_mins(5),
             pass_threshold: 50.0,
 
-            close_on_passing_min_wait: period.clone(),
+            close_on_passing_min_wait: Some(period.to_string()),
             ..Default::default()
         };
         let periodic_status_check_cfg = CfgProfile {
             duration: Duration::from_mins(5),
             pass_threshold: 50.0,
 
-            periodic_status_check: period.clone(),
+            periodic_status_check: Some(period.to_string()),
             ..Default::default()
         };
 
-        // Check validation fails
-        assert_eq!(
-            close_on_passing_cfg.validate(OWNER_IS_ORG).unwrap_err().to_string(),
-            ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT,
-            "period: {period:?}"
-        );
-        assert_eq!(
-            periodic_status_check_cfg.validate(OWNER_IS_ORG).unwrap_err().to_string(),
-            ERR_INVALID_PERIODIC_STATUS_CHECK,
-            "period: {period:?}"
-        );
+        // Check validation fails, giving the reason when the period cannot be parsed
+        let cases = [
+            (close_on_passing_cfg, ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT),
+            (periodic_status_check_cfg, ERR_INVALID_PERIODIC_STATUS_CHECK),
+        ];
+        for (cfg, expected_error) in cases {
+            let error = cfg.validate(OWNER_IS_ORG).unwrap_err().to_string();
+            if is_parsable {
+                assert_eq!(error, expected_error, "period: {period:?}");
+            } else {
+                let reason = error.strip_prefix(&format!("{expected_error}: "));
+                assert!(
+                    reason.is_some_and(|reason| !reason.is_empty()),
+                    "period: {period:?}, error: {error}"
+                );
+            }
+        }
     }
 }
 
@@ -633,6 +699,71 @@ fn cfg_profile_validate_owner_org_with_teams() {
 }
 
 #[test]
+fn cfg_profile_validate_period_minimum() {
+    // Setup cases (period, valid as close on passing min wait, valid as status check)
+    let cases = [
+        ("0s", false, false),
+        ("0 days", false, false),
+        ("500ms", false, false),
+        ("999ms", false, false),
+        ("1s", true, false),
+        ("1.5s", true, false),
+        ("5m", true, false),
+        ("10 minutes", true, false),
+        ("1 hour", true, false),
+        ("12 hours", true, false),
+        ("23h 59m 59s", true, false),
+        ("24h", true, true),
+        ("1d", true, true),
+        ("1 day", true, true),
+    ];
+
+    for (period, expected_min_wait_valid, expected_status_check_valid) in cases {
+        // Setup profiles with the period in each of the fields
+        let close_on_passing_cfg = CfgProfile {
+            duration: Duration::from_mins(5),
+            pass_threshold: 50.0,
+
+            close_on_passing_min_wait: Some(period.to_string()),
+            ..Default::default()
+        };
+        let periodic_status_check_cfg = CfgProfile {
+            duration: Duration::from_mins(5),
+            pass_threshold: 50.0,
+
+            periodic_status_check: Some(period.to_string()),
+            ..Default::default()
+        };
+
+        // Check the outcome of the validation of each field
+        let cases = [
+            (
+                close_on_passing_cfg,
+                expected_min_wait_valid,
+                ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT,
+            ),
+            (
+                periodic_status_check_cfg,
+                expected_status_check_valid,
+                ERR_INVALID_PERIODIC_STATUS_CHECK,
+            ),
+        ];
+        for (cfg, expected_valid, expected_error) in cases {
+            let result = cfg.validate(OWNER_IS_ORG);
+            if expected_valid {
+                assert!(result.is_ok(), "period: {period}, result: {result:?}");
+            } else {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    expected_error,
+                    "period: {period}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn cfg_profile_validate_valid_pass_threshold() {
     for pass_threshold in [0.01, 50.0, 100.0] {
         // Setup profile with valid pass threshold
@@ -662,6 +793,23 @@ fn cfg_profile_validate_valid_periods() {
         "1 weeks",
         "2 weeks",
         "5214 weeks",
+        "1d",
+        "2d",
+        "21d",
+        "5days",
+        "5  days",
+        " 5 days ",
+        "1.5 days",
+        "24h",
+        "36 hours",
+        "1day 12h",
+        "1w",
+        "1w2d",
+        "1 week 2 days",
+        "1M",
+        "1 month",
+        "1y",
+        "99 years",
     ] {
         // Setup profile with a valid period in both fields
         let cfg = CfgProfile {
@@ -1093,6 +1241,11 @@ async fn get_cfg_profile_invalid_config_periods() {
     let cases = [
         (
             "close_on_passing_min_wait",
+            "0s",
+            ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT,
+        ),
+        (
+            "close_on_passing_min_wait",
             "one week",
             ERR_INVALID_CLOSE_ON_PASSING_MIN_WAIT,
         ),
@@ -1101,9 +1254,10 @@ async fn get_cfg_profile_invalid_config_periods() {
             "5 dayz",
             ERR_INVALID_PERIODIC_STATUS_CHECK,
         ),
+        ("periodic_status_check", "5m", ERR_INVALID_PERIODIC_STATUS_CHECK),
         (
             "periodic_status_check",
-            "every 5 days",
+            "36501 days",
             ERR_INVALID_PERIODIC_STATUS_CHECK,
         ),
     ];
@@ -1128,7 +1282,7 @@ profiles:
         // Run and check the reason in the error returned
         let err = CfgProfile::get(Arc::new(gh), INST_ID, OWNER, OWNER_IS_ORG, REPO, None).await.unwrap_err();
         assert!(
-            matches!(&err, CfgError::InvalidConfig(reason) if reason == expected_error),
+            matches!(&err, CfgError::InvalidConfig(reason) if reason.starts_with(expected_error)),
             "field: {field}, period: {period}, error: {err:?}"
         );
     }
@@ -1158,6 +1312,41 @@ async fn get_cfg_profile_invalid_config_teams_owner_not_org() {
         .unwrap_err(),
         CfgError::InvalidConfig(reason) if reason == ERR_TEAMS_NOT_ALLOWED
     ));
+}
+
+#[tokio::test]
+async fn get_cfg_profile_normalizes_periods() {
+    // Setup GitHub expectations
+    let mut gh = MockGH::new();
+    gh.expect_get_config_file()
+        .with(eq(INST_ID), eq(OWNER), eq(REPO))
+        .times(1)
+        .returning(|_, _, _| {
+            let config = r"
+profiles:
+  default:
+    duration: 21d
+    pass_threshold: 50
+    close_on_passing: true
+    close_on_passing_min_wait: 2d
+    periodic_status_check: 1 week
+";
+            Box::pin(future::ready(Ok(Some(config.to_string()))))
+        });
+
+    // Run and check the periods are a number of seconds in the profile returned
+    assert_eq!(
+        CfgProfile::get(Arc::new(gh), INST_ID, OWNER, OWNER_IS_ORG, REPO, None).await.unwrap(),
+        CfgProfile {
+            duration: Duration::from_hours(21 * 24),
+            pass_threshold: 50.0,
+
+            close_on_passing: Some(true),
+            close_on_passing_min_wait: Some("172800 seconds".to_string()),
+            periodic_status_check: Some("604800 seconds".to_string()),
+            ..Default::default()
+        }
+    );
 }
 
 #[tokio::test]

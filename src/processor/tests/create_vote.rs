@@ -544,7 +544,7 @@ profiles:
                 && repo == REPO
                 && *issue_number == ISSUE_NUM
                 && body.contains("Something went wrong while processing the configuration file")
-                && body.contains("periodic_status_check must be a number of days or weeks")
+                && body.contains("periodic_status_check must be at least 1 day")
         })
         .times(1)
         .returning(|_, _, _, _, _| Box::pin(future::ready(Ok(COMMENT_ID))));
